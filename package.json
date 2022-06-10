@@ -1,0 +1,30 @@
+{
+  "name": "katetrade",
+  "version": "1.0.0",
+  "description": "The simplest way to build, backtest and deploy your trading strategies. Trade crypto, forex and stocks across multiple exchanges.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/grinply/katetrade.git"
+  },
+  "keywords": [
+    "crypto",
+    "bot",
+    "bots",
+    "trading",
+    "algotrading",
+    "trading-strategies",
+    "bot-framework",
+    "trading-bot",
+    "katetrade"
+  ],
+  "author": "Victor Ferreira Teixeira da Silva",
+  "license": "AGPL-3.0",
+  "bugs": {
+    "url": "https://github.com/grinply/katetrade/issues"
+  },
+  "homepage": "https://github.com/grinply/katetrade#readme"
+}
