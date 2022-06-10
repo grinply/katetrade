@@ -3,9 +3,13 @@
 </div>
 
 <div align="center">
-  <h3>The best way to build, backtest and deploy quantitative models for crypto, stocks and forex</h3>
+  <b>The best way to build, backtest and deploy quantitative models for crypto, stocks and forex</b>
 </div>
 <br />
+
+# What is katetrade ?
+
+Katetrade is a platform for trading automation, backtest and development framework designed for custom trading strategies, all built-in one complete package. With few lines of code you can create a model that can trade in multiple exchange and backtest to validate your results.
 
 # Installation
 
