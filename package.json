@@ -1,10 +1,11 @@
 {
   "name": "katetrade",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "The simplest way to build, backtest and deploy your trading strategies. Trade crypto, forex and stocks across multiple exchanges.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint:fix": "eslint --fix"
   },
   "repository": {
     "type": "git",
@@ -21,10 +22,33 @@
     "trading-bot",
     "katetrade"
   ],
-  "author": "Victor Ferreira Teixeira da Silva",
+  "author": "Grinply",
   "license": "AGPL-3.0",
   "bugs": {
     "url": "https://github.com/grinply/katetrade/issues"
   },
-  "homepage": "https://github.com/grinply/katetrade#readme"
+  "husky": {
+    "hooks": {
+      "commit-msg": "commitlint -E HUSKY_GIT_PARAMS"
+    }
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint ."
+    ]
+  },
+  "homepage": "https://github.com/grinply/katetrade#readme",
+  "devDependencies": {
+    "@commitlint/cli": "^17.0.2",
+    "@commitlint/config-conventional": "^17.0.2",
+    "eslint": "^8.0.1",
+    "eslint-config-standard": "^17.0.0",
+    "eslint-plugin-import": "^2.25.2",
+    "eslint-plugin-n": "^15.0.0",
+    "eslint-plugin-promise": "^6.0.0",
+    "husky": "^8.0.1",
+    "install": "^0.13.0",
+    "lint-staged": "^13.0.1",
+    "prettier": "^2.6.2"
+  }
 }
