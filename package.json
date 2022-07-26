@@ -2,7 +2,9 @@
   "name": "katetrade",
   "version": "0.0.1",
   "description": "The simplest way to build, backtest and deploy your trading strategies. Trade crypto, forex and stocks across multiple exchanges.",
-  "main": "index.js",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "lint:fix": "eslint --fix"
@@ -50,5 +52,8 @@
     "install": "^0.13.0",
     "lint-staged": "^13.0.1",
     "prettier": "^2.6.2"
+  },
+  "dependencies": {
+    "@binance/connector": "^1.10.0"
   }
 }
