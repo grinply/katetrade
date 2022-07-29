@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "mocha",
     "lint:fix": "eslint --fix"
   },
   "repository": {
@@ -43,6 +43,7 @@
   "devDependencies": {
     "@commitlint/cli": "^17.0.2",
     "@commitlint/config-conventional": "^17.0.2",
+    "chai": "^4.3.6",
     "eslint": "^8.0.1",
     "eslint-config-standard": "^17.0.0",
     "eslint-plugin-import": "^2.25.2",
@@ -51,7 +52,9 @@
     "husky": "^8.0.1",
     "install": "^0.13.0",
     "lint-staged": "^13.0.1",
-    "prettier": "^2.6.2"
+    "mocha": "^10.0.0",
+    "prettier": "^2.6.2",
+    "sinon": "^14.0.0"
   },
   "dependencies": {
     "@binance/connector": "^1.10.0"

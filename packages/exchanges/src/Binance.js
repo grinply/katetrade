@@ -11,8 +11,8 @@ const binance = (apiKey, apiSecret, options = {}) => {
 
   return {
 
-    account: function (callback) {
-      Binance.client.account().then(callback)
+    accountInfo: function () {
+      return Binance.client.account()
     },
 
     exchangeInfo: (options = {}) => {
@@ -95,6 +95,14 @@ const binance = (apiKey, apiSecret, options = {}) => {
 
     getExchangeName: () => {
       return 'binance'
+    },
+
+    /**
+     * Temporary function ( Stub )
+     * @returns
+     */
+    _getConnector: () => {
+      return Binance.client
     }
     // openLimitOrder - Coloca uma ordem de compra ou venda no orderBook
     // openMarketOrder - Executa uma ordem de compra ou venda a preço de mercado
