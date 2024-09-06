@@ -1,4 +1,4 @@
-# profitpirates
+# KateTrade
 
 
 ## Testing
