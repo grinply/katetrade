@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::{self, Write};
 
-use std::io::{Read};
 use crate::trade_model::Trade;
+use std::io::Read;
 use std::net::TcpStream;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -44,6 +44,10 @@ impl DataFeedReader {
                     Ok(bytes_read) => {
                         if bytes_read > 0 {
                             let trade = Trade::from_bytes(&buffer[..bytes_read]);
+                            println!(
+                                "new trade for {} with price {}\n",
+                                trade.asset_ticker, trade.price
+                            );
                             // Store the trade in the shared list
                             let mut trades = trades_clone.lock().unwrap();
                             trades.push(trade);
@@ -69,30 +73,30 @@ impl DataFeedReader {
     }
 
     pub fn save_trades_to_csv(&self, file_path: &str) -> io::Result<()> {
-            let trades = self.trades.lock().unwrap();
-            let mut file = File::create(file_path)?;
+        let trades = self.trades.lock().unwrap();
+        let mut file = File::create(file_path)?;
 
-            writeln!(
+        writeln!(
                 file,
                 "price,volume,timestamp_millis,qty,buy_agent,sell_agent,trade_type,edit_trade,asset_ticker"
             )?;
 
-            for trade in trades.iter() {
-                writeln!(
-                    file,
-                    "{},{},{},{},{},{},{},{},{}",
-                    trade.price,
-                    trade.volume,
-                    trade.timestamp_millis,
-                    trade.qty,
-                    trade.buy_agent,
-                    trade.sell_agent,
-                    trade.trade_type,
-                    trade.edit_trade,
-                    trade.asset_ticker
-                )?;
-            }
-
-            Ok(())
+        for trade in trades.iter() {
+            writeln!(
+                file,
+                "{},{},{},{},{},{},{},{},{}",
+                trade.price,
+                trade.volume,
+                trade.timestamp_millis,
+                trade.qty,
+                trade.buy_agent,
+                trade.sell_agent,
+                trade.trade_type,
+                trade.edit_trade,
+                trade.asset_ticker
+            )?;
         }
+
+        Ok(())
+    }
 }

@@ -1,6 +1,6 @@
+mod data_feed_reader;
 mod market_connector_client;
 mod trade_model;
-mod data_feed_reader;
 
 use data_feed_reader::DataFeedReader;
 use market_connector_client::get_trade_feed_key;
@@ -8,12 +8,16 @@ use std::io::{self, Write};
 use std::net::TcpStream;
 
 fn main() -> io::Result<()> {
-    let message = get_trade_feed_key("myapp.com")?;
+    let message = get_trade_feed_key("market-connector.grinply.com")?;
+    println!("{}", message);
 
-    let mut stream = TcpStream::connect("127.0.0.1:8066")?;
+    // set timeout to 15 seconds
+    let mut stream = TcpStream::connect("market-connector.grinply.com:8022")?;
     println!("Connected to the remote socket server.");
 
-    if let Err(e) = stream.write_all(message.as_bytes()) {
+    let key = message + "\n";
+
+    if let Err(e) = stream.write_all(key.as_bytes()) {
         eprintln!("Failed to send message: {}", e);
         return Err(e); // Propagate the error
     }
@@ -35,8 +39,8 @@ fn main() -> io::Result<()> {
     handle.join().unwrap();
 
     data_feed_reader
-            .save_trades_to_csv("trades_output.csv")
-            .expect("Failed to save trades to CSV");
+        .save_trades_to_csv("trades_output.csv")
+        .expect("Failed to save trades to CSV");
 
     println!("Main thread has finished.");
     Ok(())

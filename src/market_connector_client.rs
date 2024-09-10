@@ -10,7 +10,7 @@ pub fn get_trade_feed_key(host: &str) -> io::Result<String> {
          Content-Length: 0\r\n\
          Connection: close\r\n\
          \r\n",
-        "/feed/WIN/start", host
+        "/api/B3/market/feed/trades/FUTURES/WIN/subscribe", host
     );
 
     http_stream.write_all(http_request.as_bytes())?;
