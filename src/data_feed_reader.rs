@@ -45,8 +45,8 @@ impl DataFeedReader {
                         if bytes_read > 0 {
                             let trade = Trade::from_bytes(&buffer[..bytes_read]);
                             println!(
-                                "new trade for {} with price {}\n",
-                                trade.asset_ticker, trade.price
+                                "new trade: number {} and price {} type {}\n",
+                                trade.trade_number, trade.price, trade.trade_type
                             );
                             // Store the trade in the shared list
                             let mut trades = trades_clone.lock().unwrap();
@@ -85,6 +85,7 @@ impl DataFeedReader {
             writeln!(
                 file,
                 "{},{},{},{},{},{},{},{},{}",
+                trade.trade_number,
                 trade.price,
                 trade.volume,
                 trade.timestamp_millis,
@@ -93,7 +94,6 @@ impl DataFeedReader {
                 trade.sell_agent,
                 trade.trade_type,
                 trade.edit_trade,
-                trade.asset_ticker
             )?;
         }
 
