@@ -1,15 +1,14 @@
-// mod data_feed_reader;
-// mod market_connector_client;
-// mod live_market_connection;
-// mod models;
-pub mod utils;
+#![allow(unused)]
 pub mod models;
+pub mod utils;
 
 use std::io;
-use utils::csv_loader;
+use utils::file;
 
 fn main() -> io::Result<()> {
     println!("hello world.");
-    csv_loader::read_trades_from_csv("myfile");
+    if utils::file::read_trades_from_csv("myfile").is_err() {
+        println!("failed to load trades file");
+    }
     Ok(())
 }

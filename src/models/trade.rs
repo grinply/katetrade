@@ -15,7 +15,15 @@ pub struct Trade {
     pub edit_trade: bool,
 }
 
+unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+    ::core::slice::from_raw_parts((p as *const T) as *const u8, ::core::mem::size_of::<T>())
+}
+
 impl Trade {
+    pub fn to_bytes(&self) -> &[u8] {
+        return unsafe { any_as_u8_slice(self) };
+    }
+
     /// Function to parse a byte array into a Trade struct
     pub fn from_bytes(data: &[u8]) -> Self {
         let price = f64::from_be_bytes(data[0..8].try_into().unwrap());
@@ -43,9 +51,8 @@ impl Trade {
         }
     }
 
-    
     /// Parses a csv row containing a single trade. The csv row should respect the following order/format of values:
-    /// 
+    ///
     /// **ticker, date, time, trade_number, price, qty, vol, buy_agent, sell_agent, trade_type, aft**
     ///
     ///  WINFUT,20190102,090034,10,87800.00000000,2,40000.0000,Modal,XP,Auction,N
@@ -66,7 +73,7 @@ impl Trade {
         let sell_agent: i8 = 19;
         let trade_type: i8 = 19;
         let edit_trade = false;
-        
+
         Trade {
             trade_number,
             price,
@@ -79,6 +86,20 @@ impl Trade {
             trade_type,
             edit_trade,
         }
+    }
+
+    pub fn to_csv_row(&self, ticker: &str) -> String {
+        /// WINFUT,20190102,090034,10,87800.00000000,2,40000.0000,Modal,XP,Auction,N
+        return format!(
+            "{},{},{},{},{},{},{},Modal,XP,Auction,N",
+            ticker.to_ascii_uppercase(),
+            self.date,
+            self.time,
+            self.trade_number,
+            self.price,
+            self.qty,
+            self.volume
+        );
     }
 }
 
