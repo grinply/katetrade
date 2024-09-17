@@ -11,7 +11,7 @@ use rand::{thread_rng, Rng};
 const TRADING_DAYS_IN_YEAR: i32 = 252;
 
 /// Calculates the **Bias Corrected Acelerated Bootstrap** based on the daily results by grouping the trading_results for each day.
-/// Produces the **anualized percentage** confidence for the provided **low_conf** and **high_conf** values provided as inputs.
+/// Produces the **anualized percentage** confidence for the provided **low_conf** and **high_conf** values inputs.
 pub fn bias_corrected_accelerated_bootstrap(
     low_conf: f64,
     high_conf: f64,
