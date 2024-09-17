@@ -1,5 +1,7 @@
 #![allow(unused)]
+pub mod evaluation;
 pub mod models;
+pub mod statistics;
 pub mod utils;
 
 use std::io;

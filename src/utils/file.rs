@@ -30,7 +30,7 @@ pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, io::E
     file.sync_all();
     let file_size_bytes = file.metadata()?.len();
     //since every Trade struct has 32 bytes we can reserve the exact required space
-    let trade_count = (file_size_bytes / 32) as usize;
+    let trade_count = (file_size_bytes / Trade::size_in_bytes() as u64) as usize;
     let mut trades = Vec::with_capacity(trade_count);
 
     let mut file_reader = io::BufReader::new(File::open(file_path)?);
@@ -109,7 +109,6 @@ mod tests {
             buy_agent: 1,
             sell_agent: 2,
             trade_type: 13,
-            edit_trade: false,
         });
 
         trades.push(Trade {
@@ -122,7 +121,6 @@ mod tests {
             buy_agent: 2,
             sell_agent: 2,
             trade_type: 2,
-            edit_trade: false,
         });
 
         return trades;

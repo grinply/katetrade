@@ -12,7 +12,6 @@ pub struct Trade {
     pub buy_agent: i8,
     pub sell_agent: i8,
     pub trade_type: i8,
-    pub edit_trade: bool,
 }
 
 unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
@@ -20,6 +19,10 @@ unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 }
 
 impl Trade {
+    pub fn size_in_bytes() -> usize {
+        return 32;
+    }
+
     pub fn to_bytes(&self) -> &[u8] {
         return unsafe { any_as_u8_slice(self) };
     }
@@ -35,7 +38,6 @@ impl Trade {
         let buy_agent = i8::from_be_bytes(data[28..29].try_into().unwrap());
         let sell_agent = i8::from_be_bytes(data[29..30].try_into().unwrap());
         let trade_type = i8::from_be_bytes(data[30..31].try_into().unwrap());
-        let edit_trade = data[31] != 0;
 
         Trade {
             trade_number,
@@ -47,7 +49,6 @@ impl Trade {
             buy_agent,
             sell_agent,
             trade_type,
-            edit_trade,
         }
     }
 
@@ -84,7 +85,6 @@ impl Trade {
             buy_agent,
             sell_agent,
             trade_type,
-            edit_trade,
         }
     }
 
@@ -111,5 +111,6 @@ mod tests {
     fn trade_struct_should_have_exactly_32_bytes_of_size() {
         const EXPECTED_SIZE: usize = 32;
         const TEST_CHECKER: [u8; EXPECTED_SIZE] = [0; std::mem::size_of::<Trade>()];
+        assert_eq!(EXPECTED_SIZE, Trade::size_in_bytes());
     }
 }
