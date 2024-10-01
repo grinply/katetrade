@@ -1,5 +1,5 @@
 [package]
-name = "profitpirates"
+name = "katetrade"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,6 +7,7 @@ edition = "2021"
 rand = "0.8.5"
 sysinfo = "0.31.4"
 itertools = "0.13.0"
+clap = { version = "4.5.18", features = ["derive"] }
 
 [dev-dependencies]
 anyhow = "1"

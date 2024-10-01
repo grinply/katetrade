@@ -25,8 +25,8 @@ pub fn bias_corrected_accelerated_bootstrap(
     let mean_pnl_real_value: f64 = pnl_sum / (daily_pnls.len() as f64);
 
     let mut z0_count = 0;
-
     let mut iteration = 0;
+
     let mut bootstrap_sample: Vec<f64> = Vec::with_capacity(daily_pnls.len());
     let mut result: Vec<f64> = Vec::with_capacity(daily_pnls.len());
 
@@ -39,8 +39,6 @@ pub fn bias_corrected_accelerated_bootstrap(
         }
         iteration += 1;
     }
-
-    let z0 = statistics::inverse_normal_cdf((z0_count / bootstrap_iterations) as f64);
 
     let mut theta_dot = 0.0;
     let mut jack_knife = &mut bootstrap_sample;
@@ -68,6 +66,7 @@ pub fn bias_corrected_accelerated_bootstrap(
 
     let zlo = statistics::inverse_normal_cdf(low_conf);
     let zhi = statistics::inverse_normal_cdf(high_conf);
+    let z0 = statistics::inverse_normal_cdf((z0_count / bootstrap_iterations) as f64);
     let alo = normal_cdf(z0 + (z0 + zlo) / (1.0 - accel * (z0 + zlo)));
     let ahi = normal_cdf(z0 + (z0 + zhi) / (1.0 - accel * (z0 + zhi)));
 
