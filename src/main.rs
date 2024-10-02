@@ -1,18 +1,15 @@
-#![allow(unused)]
-pub mod evaluation;
-pub mod models;
-pub mod statistics;
-pub mod utils;
+mod evaluation;
+mod utils;
+mod strategies;
+mod models;
+mod services;
 
-use clap::{arg, Arg, ArgAction, Command};
-use std::io;
-use utils::file;
 
-use std::ffi::OsString;
-use std::path::PathBuf;
+use clap::{arg, Arg, Command};
+
 
 fn cli() -> Command {
-    return Command::new("katetrade")
+    Command::new("katetrade")
         .about(
             "Welcome to katetrade, an algorithm trading system tailored for the Brazillian capital market",
         )
@@ -46,7 +43,7 @@ fn cli() -> Command {
                         .short('l')
                         .help("list all available trading strategies"),
                 ),
-        );
+        )
 }
 
 fn main() {

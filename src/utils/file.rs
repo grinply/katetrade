@@ -10,24 +10,24 @@ pub fn write_to_csv_file(
     trades: Vec<Trade>,
 ) -> Result<(), io::Error> {
     let mut csv = File::create(output_file_path)?;
-    writeln!(csv, "{}", TRADES_CSV_HEADER_LINE);
+    writeln!(csv, "{}", TRADES_CSV_HEADER_LINE)?;
     for trade in trades {
-        write!(csv, "{}\n", trade.to_csv_row(asset_ticker));
+        write!(csv, "{}\n", trade.to_csv_row(asset_ticker))?;
     }
-    return Ok(());
+    Ok(())
 }
 
 pub fn write_to_binary_file(trades: Vec<Trade>, output_file_path: &str) -> Result<(), io::Error> {
     let mut csv = File::create(output_file_path)?;
     for trade in trades {
-        csv.write_all(trade.to_bytes());
+        csv.write_all(trade.to_bytes())?;
     }
-    return Ok(());
+    Ok(())
 }
 
 pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, io::Error> {
     let file = File::open(file_path)?;
-    file.sync_all();
+    file.sync_all()?;
     let file_size_bytes = file.metadata()?.len();
     //since every Trade struct has 32 bytes we can reserve the exact required space
     let trade_count = (file_size_bytes / Trade::size_in_bytes() as u64) as usize;
@@ -44,7 +44,7 @@ pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, io::E
         trades.push(trade);
     }
 
-    return Ok(trades);
+    Ok(trades)
 }
 
 pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, io::Error> {
@@ -123,7 +123,7 @@ mod tests {
             trade_type: 2,
         });
 
-        return trades;
+        trades
     }
 
     #[test]
@@ -156,25 +156,25 @@ mod tests {
 
     #[test]
     fn should_create_binary_file_from_trades() {
-        let mut trades = mock_trades();
+        let trades = mock_trades();
         let test_binary_trades_file_path = "resources/WIN_TRADES";
         if Path::new(test_binary_trades_file_path).exists() {
-            remove_file(test_binary_trades_file_path);
+            remove_file(test_binary_trades_file_path).unwrap();
         }
 
         write_to_binary_file(trades, test_binary_trades_file_path).unwrap();
         assert!(Path::new(test_binary_trades_file_path).exists());
 
-        remove_file(test_binary_trades_file_path);
+        remove_file(test_binary_trades_file_path).unwrap();
     }
 
     #[test]
     fn should_create_csv_from_trades_file() {
-        let mut trades = mock_trades();
+        let trades = mock_trades();
 
         let test_trades_file_path = "resources/test_trades.csv";
         if Path::new(test_trades_file_path).exists() {
-            remove_file(test_trades_file_path);
+            remove_file(test_trades_file_path).unwrap();
         }
 
         write_to_csv_file("WIN", test_trades_file_path, trades).unwrap();
@@ -201,6 +201,6 @@ mod tests {
             second_trade_line
         );
 
-        remove_file(test_trades_file_path);
+        remove_file(test_trades_file_path).unwrap();
     }
 }

@@ -2,7 +2,7 @@ use std::cmp;
 use std::collections::HashMap;
 
 use crate::models::pnl::DetailedTradePnl;
-use crate::statistics::{self, normal_cdf};
+use crate::utils::statistics::{self, normal_cdf};
 use itertools::Itertools;
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::ThreadRng;
@@ -10,9 +10,9 @@ use rand::{thread_rng, Rng};
 
 const TRADING_DAYS_IN_YEAR: i32 = 252;
 
-/// Calculates the **Bias Corrected Acelerated Bootstrap** based on the daily results by grouping the trading_results for each day.
-/// Produces the **anualized percentage** confidence for the provided **low_conf** and **high_conf** values inputs.
-// if you wanna grasp the concept of this algorithm see the following video: https://www.youtube.com/watch?v=655X9eZGxls
+/// Calculates the **Bias Corrected Accelerated Bootstrap** based on the daily results by grouping the trading_results for each day.
+/// Produces the **annualized percentage** confidence for the provided **low_conf** and **high_conf** values inputs.
+// if you want to grasp the concept of this algorithm see the following video: https://www.youtube.com/watch?v=655X9eZGxls
 pub fn bias_corrected_accelerated_bootstrap(
     low_conf: f64,
     high_conf: f64,
