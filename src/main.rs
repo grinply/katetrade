@@ -1,47 +1,69 @@
-mod data_feed_reader;
-mod market_connector_client;
-mod trade_model;
+mod evaluation;
+mod utils;
+mod strategies;
+mod models;
+mod services;
 
-use data_feed_reader::DataFeedReader;
-use market_connector_client::get_trade_feed_key;
-use std::io::{self, Write};
-use std::net::TcpStream;
 
-fn main() -> io::Result<()> {
-    let message = get_trade_feed_key("market-connector.grinply.com")?;
-    println!("{}", message);
+use clap::{arg, Arg, Command};
 
-    // set timeout to 15 seconds
-    let mut stream = TcpStream::connect("market-connector.grinply.com:8022")?;
-    println!("Connected to the remote socket server.");
 
-    let key = message + "\n";
+fn cli() -> Command {
+    Command::new("katetrade")
+        .about(
+            "Welcome to katetrade, an algorithm trading system tailored for the Brazillian capital market",
+        )
+        .version("0.0.1")
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .subcommand(
+            Command::new("run")
+                .about("Run one or more trading strategies")
+                .arg(
+                    arg!(-m --mode <MODE> "Mode of execution for the trading strategy")
+                        .value_parser(["live", "backtest"])
+                        .num_args(0..=1)
+                        .default_value("live")
+                        .default_missing_value("live")
+                )
+                .arg(arg!(-s --strategy <STRATEGY> "Identifier (id) for the strategy you want to executed'"))
+                .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'"))
+                .arg(arg!(-a --account <ACCOUNT> "AccountId used when sending trades in live mode to the market-connector'"))
+                .arg(arg!(--config [configFile] "Optional json configuration file that enables running multiple strategies at once").required(false))
+                .arg(arg!(-d --detach "Enables execution in the background").required(false))
+                .arg(arg!(-c --connector [marketConnectorHost] "Custom URL to access the market-connector").required(false))
+            ,
+        )
+        .subcommand(
+            Command::new("connection")
+                .about("Verify remote connection with live markets and historical data storage")
+                .arg(
+                    Arg::new("list")
+                        .long("list")
+                        .short('l')
+                        .help("list all available trading strategies"),
+                ),
+        )
+}
 
-    if let Err(e) = stream.write_all(key.as_bytes()) {
-        eprintln!("Failed to send message: {}", e);
-        return Err(e); // Propagate the error
-    }
+fn main() {
+    let matches = cli().get_matches();
+    match matches.subcommand() {
+        Some(("run", sub_matches)) => {
+            let mode = sub_matches
+                .get_one::<String>("mode")
+                .expect("mode is required");
+            let strategy = sub_matches.get_one::<String>("strategy").expect("required");
+            let symbol = sub_matches.get_one::<String>("ticker").expect("required");
 
-    let data_feed_reader = DataFeedReader::new();
-    let handle = data_feed_reader.start_reading(stream);
-
-    loop {
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-
-        if input.trim().eq_ignore_ascii_case("exit") {
-            println!("Exiting program...");
-            break;
+            println!(
+                "katetrade started trading ticker {} with mode {} using strategy {}",
+                symbol, mode, strategy
+            );
         }
+        Some(("info", query_matches)) => {
+            println!("info!!")
+        }
+        _ => unreachable!(), // If all subcommands are defined above, anything else is unreachable
     }
-
-    data_feed_reader.stop();
-    handle.join().unwrap();
-
-    data_feed_reader
-        .save_trades_to_csv("trades_output.csv")
-        .expect("Failed to save trades to CSV");
-
-    println!("Main thread has finished.");
-    Ok(())
 }
