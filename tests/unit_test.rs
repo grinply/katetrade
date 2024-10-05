@@ -62,10 +62,10 @@ mod tests {
 
     #[derive()]
     pub struct TriangleDistances {
-        pub xa_ab: [f64; 2],
-        pub ab_bc: [f64; 2],
-        pub bc_cd: [f64; 2],
-        pub xa_ad: [f64; 2],
+        pub xb_distance: [f64; 2],
+        pub ac_distance: [f64; 2],
+        pub bd_distance: [f64; 2],
+        pub xd_distance: [f64; 2],
         name: String
     }
 
@@ -83,52 +83,52 @@ mod tests {
         pub fn new() -> HarmonicPatterns {
             HarmonicPatterns {
                 gartley: TriangleDistances {
-                    xa_ab: [0.618, -1.0],
-                    ab_bc: [0.382, 0.886],
-                    bc_cd: [1.13, 1.618],
-                    xa_ad: [0.786, -1.0],
+                    xb_distance: [0.618, -1.0],
+                    ac_distance: [0.382, 0.886],
+                    bd_distance: [1.13, 1.618],
+                    xd_distance: [0.786, -1.0],
                     name: "Gartley".to_string(),
                 },
                 bat: TriangleDistances {
-                    xa_ab: [0.382, 0.50],
-                    ab_bc: [0.382, 0.886],
-                    bc_cd: [1.618, 2.618],
-                    xa_ad: [0.886, -1.0],
+                    xb_distance: [0.382, 0.50],
+                    ac_distance: [0.382, 0.886],
+                    bd_distance: [1.618, 2.618],
+                    xd_distance: [0.886, -1.0],
                     name: "Bat".to_string(),
                 },
                 butterfly: TriangleDistances {
-                    xa_ab: [0.786, -1.0],
-                    ab_bc: [0.382, 0.886],
-                    bc_cd: [1.618, 2.24],
-                    xa_ad: [1.27, 1.41],
+                    xb_distance: [0.786, -1.0],
+                    ac_distance: [0.382, 0.886],
+                    bd_distance: [1.618, 2.24],
+                    xd_distance: [1.27, 1.41],
                     name: "Butterfly".to_string(),
                 },
                 crab: TriangleDistances {
-                    xa_ab: [0.382, 0.618],
-                    ab_bc: [0.382, 0.886],
-                    bc_cd: [2.618, 3.618],
-                    xa_ad: [1.618, -1.0],
+                    xb_distance: [0.382, 0.618],
+                    ac_distance: [0.382, 0.886],
+                    bd_distance: [2.618, 3.618],
+                    xd_distance: [1.618, -1.0],
                     name: "Crab".to_string(),
                 },
                 deep_crab: TriangleDistances {
-                    xa_ab: [0.886, -1.0],
-                    ab_bc: [0.382, 0.886],
-                    bc_cd: [2.0, 3.618],
-                    xa_ad: [1.618, -1.0],
+                    xb_distance: [0.886, -1.0],
+                    ac_distance: [0.382, 0.886],
+                    bd_distance: [2.0, 3.618],
+                    xd_distance: [1.618, -1.0],
                     name: "DeepCrab".to_string(),
                 },
                 cypher: TriangleDistances {
-                    xa_ab: [0.382, 0.618],
-                    ab_bc: [1.13, 1.41],
-                    bc_cd: [1.27, 2.00],
-                    xa_ad: [0.786, -1.0],
+                    xb_distance: [0.382, 0.618],
+                    ac_distance: [1.13, 1.41],
+                    bd_distance: [1.27, 2.00],
+                    xd_distance: [0.786, -1.0],
                     name: "Cypher".to_string(),
                 },
                 shark: TriangleDistances {
-                    xa_ab: [-1.0, -1.0],
-                    ab_bc: [1.13, 1.618],
-                    bc_cd: [1.618, 2.24],
-                    xa_ad: [0.886, 1.13],
+                    xb_distance: [-1.0, -1.0],
+                    ac_distance: [1.13, 1.618],
+                    bd_distance: [1.618, 2.24],
+                    xd_distance: [0.886, 1.13],
                     name: "Shark".to_string(),
                 },
             }
@@ -215,16 +215,16 @@ mod tests {
         let mut output: HashMap<String, HashMap<String, Vec<f64>>> = HashMap::new();
 
         for &pattern in harmonic_patterns.iter() {
-            println!("{:?}: xa_ab {:?} {:?} ab_bc {:?} {:?} bc_cd {:?} {:?} xa_ad {:?} {:?}",
+            println!("{:?}: xb_distance {:?} {:?} ac_distance {:?} {:?} bd_distance {:?} {:?} xd_distance {:?} {:?}",
                      pattern.name,
-                     pattern.xa_ab[0],
-                     pattern.xa_ab[1],
-                     pattern.ab_bc[0],
-                     pattern.ab_bc[1],
-                     pattern.bc_cd[0],
-                     pattern.bc_cd[1],
-                     pattern.xa_ad[0],
-                     pattern.xa_ad[1]);
+                     pattern.xb_distance[0],
+                     pattern.xb_distance[1],
+                     pattern.ac_distance[0],
+                     pattern.ac_distance[1],
+                     pattern.bd_distance[0],
+                     pattern.bd_distance[1],
+                     pattern.xd_distance[0],
+                     pattern.xd_distance[1]);
 
             let mut data: HashMap<String, Vec<f64>> = HashMap::new();
 
@@ -288,17 +288,17 @@ mod tests {
             }
 
             let dc_retrace = 0.0; // abs(D_price - extremes.iloc[extreme_i]['ext_p']) / extremes.iloc[extreme_i]['seg_height']
-            let xa_ad_retrace = 0.0 // abs(D_price - extremes.iloc[extreme_i - 2]['ext_p']) / extremes.iloc[extreme_i - 2]['seg_height']
+            let xd_distance_retrace = 0.0 // abs(D_price - extremes.iloc[extreme_i - 2]['ext_p']) / extremes.iloc[extreme_i - 2]['seg_height']
 
             let mut best_error_ratio = 0.0;
             let mut best_pattern: Option<TriangleDistances> = None;
 
             for &pattern in harmonic_patterns.iter() {
                 let mut error_ratio = 0.0;
-                error_ratio += get_error(sorted_extremes.get(current_extreme_index).unwrap().retrace_ratio, pattern.ab_bc);
-                error_ratio += get_error(sorted_extremes.get(current_extreme_index-1).unwrap().retrace_ratio, pattern.xa_ab);
-                error_ratio += get_error(dc_retrace, pattern.bc_cd);
-                error_ratio += get_error(xa_ad_retrace, pattern.xa_ad);
+                error_ratio += get_error(sorted_extremes.get(current_extreme_index).unwrap().retrace_ratio, pattern.ac_distance);
+                error_ratio += get_error(sorted_extremes.get(current_extreme_index-1).unwrap().retrace_ratio, pattern.xb_distance);
+                error_ratio += get_error(dc_retrace, pattern.bd_distance);
+                error_ratio += get_error(xd_distance_retrace, pattern.xd_distance);
                 if error_ratio < best_error_ratio {
                     best_error_ratio = error_ratio;
                     best_pattern = Some(pattern);
