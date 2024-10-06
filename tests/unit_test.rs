@@ -4,6 +4,7 @@
 mod tests {
     use std::collections::HashMap;
     use std::iter::Map;
+    use chrono::{NaiveDate, NaiveDateTime, NaiveTime, ParseError, Timelike};
 
     #[derive(Clone, Debug, Copy)]
     pub struct Trade {
@@ -16,6 +17,115 @@ mod tests {
         pub buy_agent: i8,
         pub sell_agent: i8,
         pub trade_type: i8,
+    }
+
+    #[derive(Clone, Debug, Copy)]
+    pub struct Candle {
+        pub lowest_price: f64,
+        pub highest_price: f64,
+        pub close_price: f64,
+        pub volume: f32,
+        pub initial_time: i32,
+        pub period: i64,
+        pub closed: bool
+    }
+
+    fn calculate_candles_by_period(trade_feed: Vec<Trade>, period: i64) -> Vec<Candle> {
+        let mut first_candle_time = trade_feed[0].time;
+
+        let mut lowest_candle_price: f64 = trade_feed[0].price;
+        let mut highest_candle_price: f64 = trade_feed[0].price;
+        let mut volume_candle: f32 = 0.0;
+        let mut current_price: f64 = trade_feed[0].price;
+
+        let mut candles: Vec<Candle> = Vec::new();
+
+        for (i, trade) in trade_feed.iter().enumerate() {
+
+            let current_time = to_naive_time(trade.time);
+            let first_candle_naive_time = to_naive_time(first_candle_time);
+
+            if current_time
+                .signed_duration_since(first_candle_naive_time)
+                .num_seconds() >= period {
+
+                // Candle closed, push it.
+                candles.push(Candle {
+                    lowest_price: lowest_candle_price,
+                    highest_price: highest_candle_price,
+                    volume: volume_candle,
+                    close_price: current_price,
+                    initial_time: first_candle_time,
+                    period,
+                    closed: true
+                });
+
+                // Reset variables
+                first_candle_time = (first_candle_naive_time + chrono::Duration::seconds(120))
+                                                        .format("%H%M%S")
+                                                                    .to_string().parse::<i32>()
+                                                                                                .unwrap();
+
+                lowest_candle_price = trade.price;
+                highest_candle_price = trade.price;
+                volume_candle = 0.0;
+            }
+
+            current_price = trade.price;
+            volume_candle += trade.volume;
+
+            if (current_price < lowest_candle_price) {
+                lowest_candle_price = current_price;
+            }
+
+            if (current_price > highest_candle_price) {
+                highest_candle_price = current_price;
+            }
+
+            if trade_feed.len() == (i + 1)  {
+
+                candles.push(Candle {
+                    lowest_price: lowest_candle_price,
+                    highest_price: highest_candle_price,
+                    volume: volume_candle,
+                    close_price: current_price,
+                    initial_time: first_candle_time,
+                    period,
+                    closed: false
+                });
+            }
+        }
+
+        candles
+    }
+
+    #[test]
+    fn test_generate_candles_by_period() {
+        let trade_feed = vec![
+            Trade { trade_number: 1, price: 100.0, volume: 500000.0000, date: 20231001, time: 90000, qty: 10, buy_agent: 1, sell_agent: 2, trade_type: 0 },
+            Trade { trade_number: 2, price: 101.0, volume: 50000.0000, date: 20231001, time: 90100, qty: 15, buy_agent: 2, sell_agent: 1, trade_type: 0 },
+            Trade { trade_number: 3, price: 102.0, volume: 20000.0000, date: 20231001, time: 90200, qty: 12, buy_agent: 1, sell_agent: 2, trade_type: 0 },
+            Trade { trade_number: 4, price: 98.0, volume: 50000.0000, date: 20231001, time: 90300, qty: 18, buy_agent: 2, sell_agent: 1, trade_type: 0 },
+            Trade { trade_number: 5, price: 99.0, volume: 110000.0000, date: 20231001, time: 90400, qty: 11, buy_agent: 1, sell_agent: 2, trade_type: 0 },
+            Trade { trade_number: 6, price: 100.0, volume: 25000.0000, date: 20231001, time: 90500, qty: 11, buy_agent: 1, sell_agent: 2, trade_type: 0 },
+            Trade { trade_number: 7, price: 100.0, volume: 30000.0000, date: 20231001, time: 90600, qty: 11, buy_agent: 1, sell_agent: 2, trade_type: 0 },
+        ];
+
+        let candles = calculate_candles_by_period(trade_feed, 120);
+
+        for candle in candles {
+            println!("{:?}", candle);
+        }
+    }
+
+    // fn calculate_candles_by_tick(trade_feed: Vec<Trade>, ) {
+    //     let mut current_date = trade_feed[0].date;
+    //     let mut current_time = trade_feed[0].time;
+    //
+    //
+    // }
+    fn to_naive_time(time: i32) -> NaiveTime {
+        NaiveTime::parse_from_str(format!("{:06}", time).as_str(), "%H%M%S").unwrap()
     }
 
     #[derive(Debug, Clone)]
@@ -60,7 +170,7 @@ mod tests {
         }
     }
 
-    #[derive()]
+    #[derive(Clone)]
     pub struct TriangleDistances {
         pub xb_distance: [f64; 2],
         pub ac_distance: [f64; 2],
@@ -147,6 +257,7 @@ mod tests {
         }
     }
 
+    // TODO: Use pointer instead of Clone()
     fn directional_change_percentage(sorted_trade_feed: Vec<Trade>, threshold: f64) -> Vec<Extreme> {
         let mut is_high_flow = true;
         let mut tmp_trade_min = sorted_trade_feed[0].clone();
@@ -169,8 +280,8 @@ mod tests {
                             confirmation_index: i as i32,
                             price_index: tmp_trade_min_index as i32,
                             trade: tmp_trade_min,
-                            height: Option::None,
-                            retrace_ratio: Option::None,
+                            height: None,
+                            retrace_ratio: None,
                             is_top: false}
                     );
 
@@ -190,8 +301,8 @@ mod tests {
                             confirmation_index: i as i32,
                             price_index: tmp_trade_max_index as i32,
                             trade: tmp_trade_max,
-                            height: Option::None,
-                            retrace_ratio: Option::None,
+                            height: None,
+                            retrace_ratio: None,
                             is_top: true}
                     );
 
@@ -206,15 +317,17 @@ mod tests {
         tops_and_bottoms
     }
 
-    fn get_error(value1, value2) -> f64 {
-        return 0.0
-    }
+    //TODO: Calculate Error
+    // fn get_error(value1: Option<f64>, value2: [f64; 2]) -> f64 {
+    //     // Calculate Error
+    //     return 0.0
+    // }
     fn find_harmonic_patterns(sorted_trade_feed: Vec<Trade>, sorted_extremes: Vec<Extreme>, error_threshold: f64) {
     // fn find_harmonic_patterns() {
         let harmonic_patterns = HarmonicPatterns::new();
         let mut output: HashMap<String, HashMap<String, Vec<f64>>> = HashMap::new();
 
-        for &pattern in harmonic_patterns.iter() {
+        for pattern in harmonic_patterns.iter() {
             println!("{:?}: xb_distance {:?} {:?} ac_distance {:?} {:?} bd_distance {:?} {:?} xd_distance {:?} {:?}",
                      pattern.name,
                      pattern.xb_distance[0],
@@ -237,81 +350,81 @@ mod tests {
             output.insert(pattern.name.clone(), data);
 
         }
-
-        // Get the first extreme to iterate
-        let mut current_extreme = sorted_extremes.get(0).unwrap();
-        let mut current_extreme_index = 0;
-
-        let mut bull_signal = false;
-        let mut bear_signal = false;
-        let mut pattern_used = None;
-
-        for i in current_extreme_index..sorted_trade_feed.len() {
-            if (current_extreme_index + 1) == i {
-                bull_signal = false;
-                bear_signal = false;
-                current_extreme_index += 1;
-            }
-
-            if bull_signal {
-                pattern_used
-                    .as_ref()
-                    .and_then(|pattern| output.get_mut(pattern))
-                    .and_then(|pat_data| pat_data.get_mut("bull_signal"))
-                    .map(|bull_signal| bull_signal[i] = 1.0); // Set the bull_signal at index i to 1
-            }
-
-            if bear_signal {
-                pattern_used
-                    .as_ref()
-                    .and_then(|pattern| output.get_mut(pattern))
-                    .and_then(|pat_data| pat_data.get_mut("bear_signal"))
-                    .map(|bear_signal| bear_signal[i] = -1.0); // Set the bear_signal at index i to -1
-            }
-
-            if current_extreme_index + 1 >= sorted_extremes.len() {
-                break
-            }
-
-            if current_extreme_index < 3 {
-                continue;
-            }
-
-            if sorted_extremes.get(current_extreme_index).unwrap().is_top {
-                // Calculate D_Price using sorted_trade_feed
-                // Verify if the minimum value of sorted_trade_feed between current_extreme_index and i is lower than D_Price.
-                // That will confirm the lowest since last confirmed top
-            } else {
-                // Calculate D_Price using sorted_trade_feed
-                // Verify if the maximum value of sorted_trade_feed between current_extreme_index and i is higher than D_Price.
-                // That will confirm the highest since confirmed bottom
-            }
-
-            let dc_retrace = 0.0; // abs(D_price - extremes.iloc[extreme_i]['ext_p']) / extremes.iloc[extreme_i]['seg_height']
-            let xd_distance_retrace = 0.0 // abs(D_price - extremes.iloc[extreme_i - 2]['ext_p']) / extremes.iloc[extreme_i - 2]['seg_height']
-
-            let mut best_error_ratio = 0.0;
-            let mut best_pattern: Option<TriangleDistances> = None;
-
-            for &pattern in harmonic_patterns.iter() {
-                let mut error_ratio = 0.0;
-                error_ratio += get_error(sorted_extremes.get(current_extreme_index).unwrap().retrace_ratio, pattern.ac_distance);
-                error_ratio += get_error(sorted_extremes.get(current_extreme_index-1).unwrap().retrace_ratio, pattern.xb_distance);
-                error_ratio += get_error(dc_retrace, pattern.bd_distance);
-                error_ratio += get_error(xd_distance_retrace, pattern.xd_distance);
-                if error_ratio < best_error_ratio {
-                    best_error_ratio = error_ratio;
-                    best_pattern = Some(pattern);
-                }
-            }
-
-            if best_error_ratio <= error_threshold {
-                // set best pattern used
-                // set map of indexes
-                // set if it's a bull or a bear
-                // make market calls
-            }
-        }
+    //
+    //     // Get the first extreme to iterate
+    //     let mut current_extreme = sorted_extremes.get(0).unwrap();
+    //     let mut current_extreme_index = 0;
+    //
+    //     let mut bull_signal = false;
+    //     let mut bear_signal = false;
+    //     let mut pattern_used = None;
+    //
+    //     for i in current_extreme_index..sorted_trade_feed.len() {
+    //         if (current_extreme_index + 1) == i {
+    //             bull_signal = false;
+    //             bear_signal = false;
+    //             current_extreme_index += 1;
+    //         }
+    //
+    //         if bull_signal {
+    //             pattern_used
+    //                 .as_ref()
+    //                 .and_then(|pattern| output.get_mut(pattern))
+    //                 .and_then(|pat_data| pat_data.get_mut("bull_signal"))
+    //                 .map(|bull_signal| bull_signal[i] = 1.0); // Set the bull_signal at index i to 1
+    //         }
+    //
+    //         if bear_signal {
+    //             pattern_used
+    //                 .as_ref()
+    //                 .and_then(|pattern| output.get_mut(pattern))
+    //                 .and_then(|pat_data| pat_data.get_mut("bear_signal"))
+    //                 .map(|bear_signal| bear_signal[i] = -1.0); // Set the bear_signal at index i to -1
+    //         }
+    //
+    //         if current_extreme_index + 1 >= sorted_extremes.len() {
+    //             break
+    //         }
+    //
+    //         if current_extreme_index < 3 {
+    //             continue;
+    //         }
+    //
+    //         if sorted_extremes.get(current_extreme_index).unwrap().is_top {
+    //             // Calculate D_Price using sorted_trade_feed
+    //             // Verify if the minimum value of sorted_trade_feed between current_extreme_index and i is lower than D_Price.
+    //             // That will confirm the lowest since last confirmed top
+    //         } else {
+    //             // Calculate D_Price using sorted_trade_feed
+    //             // Verify if the maximum value of sorted_trade_feed between current_extreme_index and i is higher than D_Price.
+    //             // That will confirm the highest since confirmed bottom
+    //         }
+    //
+    //         let dc_retrace = 0.0; // abs(D_price - extremes.iloc[extreme_i]['ext_p']) / extremes.iloc[extreme_i]['seg_height']
+    //         let xd_distance_retrace = 0.0; // abs(D_price - extremes.iloc[extreme_i - 2]['ext_p']) / extremes.iloc[extreme_i - 2]['seg_height']
+    //
+    //         let mut best_error_ratio = 0.0;
+    //         let mut best_pattern: Option<TriangleDistances> = None;
+    //
+    //         for &pattern in harmonic_patterns.iter() {
+    //             let mut error_ratio = 0.0;
+    //             error_ratio += get_error(sorted_extremes.get(current_extreme_index).unwrap().retrace_ratio, pattern.ac_distance);
+    //             error_ratio += get_error(sorted_extremes.get(current_extreme_index-1).unwrap().retrace_ratio, pattern.xb_distance);
+    //             error_ratio += get_error(Some(dc_retrace), pattern.bd_distance);
+    //             error_ratio += get_error(Some(xd_distance_retrace), pattern.xd_distance);
+    //             if error_ratio < best_error_ratio {
+    //                 best_error_ratio = error_ratio;
+    //                 best_pattern = Some(pattern);
+    //             }
+    //         }
+    //
+    //         if best_error_ratio <= error_threshold {
+    //             // set best pattern used
+    //             // set map of indexes
+    //             // set if it's a bull or a bear
+    //             // make market calls
+    //         }
+    //     }
     }
 
     #[test]
@@ -326,10 +439,10 @@ mod tests {
         ];
 
         let threshold = 0.02;
-        let mut extremes = directional_change_percentage(trade_feed, threshold);
+        let mut extremes = directional_change_percentage(trade_feed.clone(), threshold);
         Extreme::generate_retracement_ratios(&mut extremes);
 
-        // find_harmonic_patterns(trade_feed, extremes, 0.01);
+        find_harmonic_patterns(trade_feed, extremes, 0.01);
     }
     #[test]
     fn test_directional_change_percentage() {

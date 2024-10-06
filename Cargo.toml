@@ -9,6 +9,7 @@ sysinfo = "0.31.4"
 itertools = "0.13.0"
 clap = { version = "4.5.18", features = ["derive"] }
 crossbeam = "0.8"
+chrono = "0.4.38"
 
 [dev-dependencies]
 anyhow = "1"
