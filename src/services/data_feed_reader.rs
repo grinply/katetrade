@@ -37,8 +37,7 @@ impl TradeFeedStream {
                     }
                     Ok(bytes_read) => {
                         if bytes_read > 0 {
-                            let trade = Trade::from_bytes(&buffer[..bytes_read]);
-
+                            let _ = Trade::from_bytes(&buffer[..bytes_read]);
                         }
                     }
                     Err(e) => {

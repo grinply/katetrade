@@ -49,15 +49,15 @@ fn calculate_candles_by_period(trade_feed: Vec<Trade>, period: i64) -> Vec<Candl
         current_price = trade.price;
         volume_candle += trade.volume;
 
-        if (current_price < lowest_candle_price) {
+        if current_price < lowest_candle_price {
             lowest_candle_price = current_price;
         }
 
-        if (current_price > highest_candle_price) {
+        if current_price > highest_candle_price {
             highest_candle_price = current_price;
         }
 
-        // Caso seja o último trade, fecha o candle
+        // in case this is the last trade, closes the candlestick
         if trade_feed.len() == (i + 1) {
             candles.push(Candle {
                 lowest_price: lowest_candle_price,

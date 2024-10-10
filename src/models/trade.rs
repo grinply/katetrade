@@ -73,7 +73,6 @@ impl Trade {
         let buy_agent: i8 = 19;
         let sell_agent: i8 = 19;
         let trade_type: i8 = 19;
-        let edit_trade = false;
 
         Trade {
             trade_number,
@@ -89,8 +88,8 @@ impl Trade {
     }
 
     pub fn to_csv_row(&self, ticker: &str) -> String {
-        /// WINFUT,20190102,090034,10,87800.00000000,2,40000.0000,Modal,XP,Auction,N
-        return format!(
+        // WINFUT,20190102,090034,10,87800.00000000,2,40000.0000,Modal,XP,Auction,N
+        format!(
             "{},{},{},{},{},{},{},Modal,XP,Auction,N",
             ticker.to_ascii_uppercase(),
             self.date,
@@ -99,7 +98,7 @@ impl Trade {
             self.price,
             self.qty,
             self.volume
-        );
+        )
     }
 }
 

@@ -1,4 +1,4 @@
-use std::f64::consts::{PI, SQRT_2};
+use std::f64::consts::{PI};
 
 /// Coefficients used in the polynomial approximation of the CDF.
 const POLY_COEFF_1: f64 = 1.330274429;

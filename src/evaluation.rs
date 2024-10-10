@@ -3,9 +3,7 @@ use std::collections::HashMap;
 
 use crate::models::pnl::DetailedTradePnl;
 use crate::utils::statistics::{self, normal_cdf};
-use itertools::Itertools;
 use rand::distributions::{Distribution, Uniform};
-use rand::rngs::ThreadRng;
 use rand::{thread_rng, Rng};
 
 const TRADING_DAYS_IN_YEAR: i32 = 252;
@@ -42,7 +40,7 @@ pub fn bias_corrected_accelerated_bootstrap(
     }
 
     let mut theta_dot = 0.0;
-    let mut jack_knife = &mut bootstrap_sample;
+    let mut jack_knife = bootstrap_sample;
 
     for (i, current_day_pnl) in daily_pnls.iter().enumerate() {
         let avg_pnl_without_one_day = (pnl_sum - current_day_pnl) / (daily_pnls.len() - 1) as f64;
@@ -70,13 +68,14 @@ pub fn bias_corrected_accelerated_bootstrap(
     let z0 = statistics::inverse_normal_cdf((z0_count / bootstrap_iterations) as f64);
     let alo = normal_cdf(z0 + (z0 + zlo) / (1.0 - accel * (z0 + zlo)));
     let ahi = normal_cdf(z0 + (z0 + zhi) / (1.0 - accel * (z0 + zhi)));
+    println!("{}", ahi);
 
     let k = cmp::max(0, ((alo as usize) * (bootstrap_iterations + 1)) - 1); // Unbiased fractile estimator
 
-    return (
+    (
         result[k] * (TRADING_DAYS_IN_YEAR as f64) * 100.0,
         result[bootstrap_iterations - 1 - k] * (TRADING_DAYS_IN_YEAR as f64) * 100.0,
-    );
+    )
 }
 
 // returns the mean value from the generated sample
