@@ -7,4 +7,5 @@ pub mod exchange;
 pub mod candle;
 pub mod extreme;
 pub mod side;
+pub mod order_type;
 

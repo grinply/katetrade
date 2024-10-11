@@ -4,7 +4,18 @@ mod strategies;
 mod models;
 mod services;
 mod helpers;
+
+use std::convert::Into;
+use std::string::ToString;
 use clap::{arg, Arg, ArgMatches, Command};
+const FUTURES: &str = "FUTURES";
+const SPOT: &str = "SPOT";
+const MARKET: &str = "MARKET";
+const LIMIT: &str = "LIMIT";
+
+const BUY: &str = "BUY";
+
+const SELL: &str = "SELL";
 
 fn cli() -> Command {
     Command::new("kate")
@@ -48,24 +59,24 @@ fn cli() -> Command {
                 .arg(Arg::new("send"))
                 .arg(
                     arg!(--side <SIDE> "Side that of the order")
-                        .value_parser(["BUY", "SELL"])
+                        .value_parser([BUY, SELL])
                         .num_args(0..=1)
-                        .default_value("BUY")
-                        .default_missing_value("BUY")
+                        .default_value(BUY)
+                        .default_missing_value(BUY)
                 )
                 .arg(
                     arg!(--type <TYPE> "Type of order that will be used")
-                        .value_parser(["MARKET", "LIMIT"])
+                        .value_parser([MARKET, LIMIT])
                         .num_args(0..=1)
-                        .default_value("MARKET")
-                        .default_missing_value("MARKET")
+                        .default_value(MARKET)
+                        .default_missing_value(MARKET)
                 )
                 .arg(
                     arg!(--market <MARKET> "Market where to send the order")
-                        .value_parser(["FUTURES", "SPOT"])
+                        .value_parser([FUTURES, SPOT])
                         .num_args(0..=1)
-                        .default_value("FUTURES")
-                        .default_missing_value("FUTURES")
+                        .default_value(FUTURES)
+                        .default_missing_value(FUTURES)
                 )
                 .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'"))
                 .arg(arg!(-a --account <ACCOUNT> "AccountId to be used when sending a order to the exchange/broker"))

@@ -1,14 +1,8 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display};
 
-#[derive(Debug)]
+#[derive(Debug,strum_macros::IntoStaticStr, strum_macros::Display)]
 pub enum Market {
     SPOT,
     FUTURES,
     OPTIONS
-}
-
-impl Display for Market {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
 }
