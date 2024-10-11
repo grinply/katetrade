@@ -5,9 +5,14 @@ mod models;
 mod services;
 mod helpers;
 
+
+use services::market_connector as connector;
 use std::convert::Into;
 use std::string::ToString;
 use clap::{arg, Arg, ArgMatches, Command};
+use models::exchange::Exchange;
+use crate::services::market_connector::MarketConnectorClient;
+
 const FUTURES: &str = "FUTURES";
 const SPOT: &str = "SPOT";
 const MARKET: &str = "MARKET";
@@ -45,12 +50,10 @@ fn cli() -> Command {
         )
         .subcommand(
             Command::new("connection")
-                .about("Verify remote connection with live markets and historical data storage")
+                .about("General connection information")
                 .arg(
-                    Arg::new("list")
-                        .long("list")
-                        .short('l')
-                        .help("list all available trading strategies"),
+                    Arg::new("status")
+                        .help("evaluate the network connection with market connector"),
                 ),
         )
         .subcommand(
@@ -114,7 +117,30 @@ fn process_order_command(sub_matches: &ArgMatches){
     );
 }
 
+fn process_connection_command(sub_matches: &ArgMatches, client: MarketConnectorClient){
+    if sub_matches.get_one::<String>("status").is_some() {
+        let status_result =  client.health_status();
+        match status_result {
+            Err(_) => {
+                println!("failed to reach market-connector server");
+            },
+            Ok(is_healthy) => {
+                if !is_healthy {
+                    println!("connected market-connector server, but the server is NOT healthy");
+                }else{
+                    println!("successfully connected to market-connector, and the server is up and running");
+                }
+            },
+        }
+    }
+}
+
 fn main() {
+    let client = connector::MarketConnectorClient::new(
+        "http://market-connector.grinply.com",
+        Exchange::B3
+    );
+
     let matches = cli().get_matches();
     match matches.subcommand() {
         Some(("run", sub_matches)) => {
@@ -122,6 +148,9 @@ fn main() {
         }
         Some(("order", sub_matches)) => {
             process_order_command(sub_matches);
+        }
+        Some(("connection", sub_matches)) => {
+            process_connection_command(sub_matches, client)
         }
         _ => unreachable!(), // If all subcommcaands are defined above, anything else is unreachable
     }

@@ -1,17 +1,24 @@
 use std::io::{self, ErrorKind};
+use std::time::Duration;
 use crate::models::exchange::Exchange;
 use crate::models::market::Market;
 use crate::models::side::Side;
 
-pub static MARKET_CONNECTOR_HOST: &str = "market-connector.grinply.com";
 
-struct MarketConnectorClient {
-    host: String,
+pub struct MarketConnectorClient<'a> {
+    host: &'a str,
     exchange: Exchange,
 }
 
-impl MarketConnectorClient {
-    fn send_market_order(&self,
+impl<'a> MarketConnectorClient<'a>  {
+
+    pub fn new(host: &'a str, exchange: Exchange) -> Self {
+        Self {
+            host,
+            exchange
+        }
+    }
+    pub fn send_market_order(&self,
                          ticker: &str,
                          market: Market,
                          side: Side,
@@ -19,7 +26,7 @@ impl MarketConnectorClient {
                          account_id: &str,
                          strategy: &str) -> io::Result<i64> {
         let exchange_str = self.exchange.to_string();
-        let url = format!("{MARKET_CONNECTOR_HOST}/api/{exchange_str}/order/create");
+        let url = format!("{}/api/{exchange_str}/order/create", self.host);
         let response = ureq::post(url.as_str())
             .send_json(ureq::json!({
                 "orderType": "MARKET",
@@ -44,7 +51,7 @@ impl MarketConnectorClient {
         Ok(response_value.into_string()?.parse::<i64>().unwrap())
     }
 
-    fn send_limit_order(&self,
+    pub fn send_limit_order(&self,
                         ticker: &str,
                         market: Market,
                         side: Side,
@@ -54,7 +61,7 @@ impl MarketConnectorClient {
                         strategy: &str,
     ) -> io::Result<i64> {
         let exchange_str = self.exchange.to_string();
-        let url = format!("{MARKET_CONNECTOR_HOST}/api/{exchange_str}/order/create");
+        let url = format!("{}/api/{exchange_str}/order/create", self.host);
         let response = ureq::post(url.as_str())
             .send_json(ureq::json!({
                 "orderType": "LIMIT",
@@ -83,7 +90,7 @@ impl MarketConnectorClient {
     pub fn get_trade_feed_key(&self, ticker: String, market: Market) -> io::Result<String> {
         let exchange_str = self.exchange.to_string();
         let endpoint_path = format!("/api/{exchange_str}/market/feed/trades/{market}/{ticker}/subscribe");
-        let url = format!("{}/{}", MARKET_CONNECTOR_HOST, endpoint_path);
+        let url = format!("{}/{}", self.host, endpoint_path);
 
         let response = ureq::get(url.as_str())
             .call();
@@ -99,6 +106,18 @@ impl MarketConnectorClient {
         }
 
         Ok(response_value.into_string()?)
+    }
+
+    pub fn health_status(&self) -> io::Result<bool> {
+        let url = format!("{}/actuator/health", self.host);
+        let response = ureq::get(url.as_str())
+            .timeout(Duration::from_secs(2))
+            .call();
+        if response.is_err() {
+            return Err(io::Error::new(ErrorKind::InvalidData, response.err().unwrap()));
+        }
+        let content = response.unwrap().into_string()?;
+        Ok(content.contains("UP"))
     }
 }
 
