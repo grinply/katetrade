@@ -1,5 +1,7 @@
 use std::io::{self, ErrorKind};
+use std::thread;
 use std::time::Duration;
+use ureq::Response;
 use crate::models::exchange::Exchange;
 use crate::models::market::Market;
 use crate::models::side::Side;
@@ -10,21 +12,20 @@ pub struct MarketConnectorClient<'a> {
     exchange: Exchange,
 }
 
-impl<'a> MarketConnectorClient<'a>  {
-
+impl<'a> MarketConnectorClient<'a> {
     pub fn new(host: &'a str, exchange: Exchange) -> Self {
         Self {
             host,
-            exchange
+            exchange,
         }
     }
     pub fn send_market_order(&self,
-                         ticker: &str,
-                         market: Market,
-                         side: Side,
-                         quantity: u64,
-                         account_id: &str,
-                         strategy: &str) -> io::Result<i64> {
+                             ticker: &str,
+                             market: Market,
+                             side: Side,
+                             quantity: u64,
+                             account_id: &str,
+                             strategy: &str) -> io::Result<i64> {
         let exchange_str = self.exchange.to_string();
         let url = format!("{}/api/{exchange_str}/order/create", self.host);
         let response = ureq::post(url.as_str())
@@ -52,13 +53,13 @@ impl<'a> MarketConnectorClient<'a>  {
     }
 
     pub fn send_limit_order(&self,
-                        ticker: &str,
-                        market: Market,
-                        side: Side,
-                        price: f64,
-                        quantity: u64,
-                        account_id: &str,
-                        strategy: &str,
+                            ticker: &str,
+                            market: Market,
+                            side: Side,
+                            price: f64,
+                            quantity: u64,
+                            account_id: &str,
+                            strategy: &str,
     ) -> io::Result<i64> {
         let exchange_str = self.exchange.to_string();
         let url = format!("{}/api/{exchange_str}/order/create", self.host);
@@ -110,9 +111,26 @@ impl<'a> MarketConnectorClient<'a>  {
 
     pub fn health_status(&self) -> io::Result<bool> {
         let url = format!("{}/actuator/health", self.host);
-        let response = ureq::get(url.as_str())
-            .timeout(Duration::from_secs(2))
-            .call();
+        let thread_handle = thread::spawn(move || {
+            return ureq::get(url.as_str())
+                .timeout(Duration::from_secs(2))
+                .call();
+        });
+
+        let mut current_wait = 0;
+        let max_wait = 2500;
+
+        while current_wait < max_wait && !thread_handle.is_finished() {
+            thread::sleep(Duration::from_millis(100));
+            current_wait+=100;
+        }
+
+        if !thread_handle.is_finished() {
+            return Err(io::Error::new(ErrorKind::Other, "timeout, the server is unresponsive"));
+        }
+
+        let response = thread_handle.join().unwrap();
+
         if response.is_err() {
             return Err(io::Error::new(ErrorKind::InvalidData, response.err().unwrap()));
         }

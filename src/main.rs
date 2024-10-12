@@ -8,9 +8,11 @@ mod helpers;
 
 use services::market_connector as connector;
 use std::convert::Into;
+use std::str::FromStr;
 use std::string::ToString;
 use clap::{arg, Arg, ArgMatches, Command};
 use models::exchange::Exchange;
+use crate::models::order_type::OrderType;
 use crate::services::market_connector::MarketConnectorClient;
 
 const FUTURES: &str = "FUTURES";
@@ -88,7 +90,7 @@ fn cli() -> Command {
         )
 }
 
-fn process_run_command(sub_matches: &ArgMatches){
+fn process_run_command(sub_matches: &ArgMatches) {
     let mode = sub_matches
         .get_one::<String>("mode")
         .expect("mode is required");
@@ -101,36 +103,41 @@ fn process_run_command(sub_matches: &ArgMatches){
     );
 }
 
-fn process_order_command(sub_matches: &ArgMatches){
-    let order_type = sub_matches
-        .get_one::<String>("type")
-        .expect("order type is required");
+fn process_order_command(sub_matches: &ArgMatches, client: MarketConnectorClient) {
+    if sub_matches.contains_id("send") {
 
-    let ticker_symbol = sub_matches.get_one::<String>("ticker").expect("ticker type is required");
-    let quantity = sub_matches.get_one::<String>("qty").expect("quantity is required");
-    let order_side = sub_matches.get_one::<String>("side").expect("side is required");
-    let account_id = sub_matches.get_one::<String>("account").expect("account is required");
+        let ticker_symbol = sub_matches.get_one::<String>("ticker").expect("ticker type is required");
+        let quantity = sub_matches.get_one::<String>("qty").expect("quantity is required");
+        let order_side = sub_matches.get_one::<String>("side").expect("side is required");
 
-    println!(
-        "kate sent a {} order to {} {} shares/contracts of {} on the accountId {}",
-        order_type, order_side, quantity , ticker_symbol, account_id
-    );
+        let account_id = sub_matches.get_one::<String>("account").expect("account is required");
+
+
+        let order_type = OrderType::from_str(sub_matches
+            .get_one::<String>("type")
+            .expect("order type is required")).unwrap();
+
+        println!(
+            "kate sent a {} order to {} {} shares/contracts of {} on the accountId {}",
+            order_type.to_string(), order_side, quantity, ticker_symbol, account_id
+        );
+    }
 }
 
-fn process_connection_command(sub_matches: &ArgMatches, client: MarketConnectorClient){
-    if sub_matches.get_one::<String>("status").is_some() {
-        let status_result =  client.health_status();
+fn process_connection_command(sub_matches: &ArgMatches, client: MarketConnectorClient) {
+    if sub_matches.contains_id("status") {
+        let status_result = client.health_status();
         match status_result {
             Err(_) => {
                 println!("failed to reach market-connector server");
-            },
+            }
             Ok(is_healthy) => {
                 if !is_healthy {
                     println!("connected market-connector server, but the server is NOT healthy");
-                }else{
+                } else {
                     println!("successfully connected to market-connector, and the server is up and running");
                 }
-            },
+            }
         }
     }
 }
@@ -138,7 +145,7 @@ fn process_connection_command(sub_matches: &ArgMatches, client: MarketConnectorC
 fn main() {
     let client = connector::MarketConnectorClient::new(
         "http://market-connector.grinply.com",
-        Exchange::B3
+        Exchange::B3,
     );
 
     let matches = cli().get_matches();
@@ -147,7 +154,7 @@ fn main() {
             process_run_command(sub_matches);
         }
         Some(("order", sub_matches)) => {
-            process_order_command(sub_matches);
+            process_order_command(sub_matches, client);
         }
         Some(("connection", sub_matches)) => {
             process_connection_command(sub_matches, client)

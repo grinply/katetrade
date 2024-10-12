@@ -1,6 +1,7 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display};
+use strum_macros::{Display, EnumString,IntoStaticStr};
 
-#[derive(Debug,strum_macros::IntoStaticStr)]
+#[derive(Debug,IntoStaticStr, Display, EnumString)]
 pub enum OrderType {
     LIMIT,
     MARKET,
