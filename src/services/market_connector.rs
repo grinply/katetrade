@@ -4,6 +4,7 @@ use crate::models::side::Side;
 use std::thread;
 use std::time::Duration;
 use crate::models::order::Order;
+use crate::models::order_status::OrderStatus;
 
 pub struct MarketConnectorClient<'a> {
     host: &'a str,
@@ -20,8 +21,21 @@ impl<'a> MarketConnectorClient<'a> {
     pub fn get_order_details(&self, account_id: i64, order_id: i64) -> Result<Order, anyhow::Error>{
         println!("fetching order details for {} and order_id {}", account_id, order_id);
         let order = Order{
+            account_id: "",
+            session_id: 0,
+            exchange: Exchange::B3,
             ticker: "WIN",
+            status: OrderStatus::SentToExchange,
+            cl_ord_id: "",
+            requested_price: 0.0,
+            execution_price: 0.0,
+            qty_send: 0,
+            qty_executed: 0,
+            executed_date: "",
+            executed_time: 0,
             side: Side::BUY,
+            market_type: Market::SPOT,
+            strategy_id: "",
         };
         Ok(order)
     }

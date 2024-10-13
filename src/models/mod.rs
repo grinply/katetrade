@@ -8,3 +8,4 @@ pub mod pnl;
 pub mod side;
 pub mod trade;
 pub mod order;
+pub mod order_status;
