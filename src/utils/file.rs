@@ -22,7 +22,7 @@ pub fn write_to_csv_file(
 }
 
 #[allow(unused)]
-pub fn write_to_binary_file(trades: Vec<Trade>, output_file_path: &str) -> Result<(), io::Error> {
+pub fn write_to_binary_file(trades: Vec<Trade>, output_file_path: &str) -> Result<(), anyhow::Error> {
     let mut binary_file = File::create(output_file_path)?;
     for trade in trades {
         let trade_binary_data = trade.to_bytes()?;

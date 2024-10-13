@@ -239,6 +239,6 @@ fn main() {
                 _ => unreachable!(),
             }
         }
-        _ => unreachable!(), // If all subcommcaands are defined above, anything else is unreachable
+        _ => unreachable!(), // If all subcommands are defined above, anything else is unreachable
     }
 }

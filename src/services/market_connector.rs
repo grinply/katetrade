@@ -1,7 +1,6 @@
 use crate::models::exchange::Exchange;
 use crate::models::market::Market;
 use crate::models::side::Side;
-use std::io::{self, ErrorKind};
 use std::thread;
 use std::time::Duration;
 use crate::models::order::Order;
@@ -18,7 +17,7 @@ impl<'a> MarketConnectorClient<'a> {
         Self { host, exchange }
     }
 
-    pub fn get_order_details(&self, account_id: i64, order_id: i64) -> io::Result<Order>{
+    pub fn get_order_details(&self, account_id: i64, order_id: i64) -> Result<Order, anyhow::Error>{
         println!("fetching order details for {} and order_id {}", account_id, order_id);
         let order = Order{
             ticker: "WIN",
@@ -35,7 +34,7 @@ impl<'a> MarketConnectorClient<'a> {
         quantity: u64,
         account_id: &str,
         strategy: &str,
-    ) -> io::Result<i64> {
+    ) -> Result<i64, anyhow::Error> {
         let exchange_str = self.exchange.to_string();
         let url = format!("{}/api/{exchange_str}/order/create", self.host);
         let response = ureq::post(url.as_str()).send_json(ureq::json!({
@@ -46,25 +45,13 @@ impl<'a> MarketConnectorClient<'a> {
             "side": side.to_string(),
             "accountId": account_id,
             "strategyId": strategy
-        }));
+        }))?;
 
-        if response.is_err() {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                response.err().unwrap(),
-            ));
+        if response.status() != 200 {
+            return anyhow::bail!("failed to send market order");
         }
 
-        let response_value = response.unwrap();
-
-        if response_value.status() != 200 {
-            return Err(io::Error::new(
-                ErrorKind::Other,
-                "failed to send market order",
-            ));
-        }
-
-        Ok(response_value.into_string()?.parse::<i64>().unwrap())
+        Ok(response.into_string()?.parse::<i64>()?)
     }
 
     pub fn send_limit_order(
@@ -76,7 +63,7 @@ impl<'a> MarketConnectorClient<'a> {
         quantity: u64,
         account_id: &str,
         strategy: &str,
-    ) -> io::Result<i64> {
+    ) -> Result<i64, anyhow::Error> {
         let exchange_str = self.exchange.to_string();
         let url = format!("{}/api/{exchange_str}/order/create", self.host);
         let response = ureq::post(url.as_str()).send_json(ureq::json!({
@@ -88,55 +75,29 @@ impl<'a> MarketConnectorClient<'a> {
             "price": price,
             "accountId": account_id,
             "strategyId": strategy
-        }));
+        }))?;
 
-        if response.is_err() {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                response.err().unwrap(),
-            ));
+        if response.status() != 200 {
+            return anyhow::bail!("failed to send limit order");
         }
-
-        let response_value = response.unwrap();
-
-        if response_value.status() != 200 {
-            return Err(io::Error::new(
-                ErrorKind::Other,
-                "failed to send limit order",
-            ));
-        }
-
-        Ok(response_value.into_string()?.parse::<i64>().unwrap())
+        Ok(response.into_string()?.parse::<i64>()?)
     }
 
-    pub fn get_trade_feed_key(&self, ticker: String, market: Market) -> io::Result<String> {
+    pub fn get_trade_feed_key(&self, ticker: String, market: Market) -> Result<String, anyhow::Error> {
         let exchange_str = self.exchange.to_string();
         let endpoint_path =
             format!("/api/{exchange_str}/market/feed/trades/{market}/{ticker}/subscribe");
         let url = format!("{}/{}", self.host, endpoint_path);
 
-        let response = ureq::get(url.as_str()).call();
+        let response = ureq::get(url.as_str()).call()?;
 
-        if response.is_err() {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                response.err().unwrap(),
-            ));
+        if response.status() != 200 {
+            anyhow::bail!("failed to send limit order");
         }
-
-        let response_value = response.unwrap();
-
-        if response_value.status() != 200 {
-            return Err(io::Error::new(
-                ErrorKind::Other,
-                "failed to send limit order",
-            ));
-        }
-
-        Ok(response_value.into_string()?)
+        Ok(response.into_string()?)
     }
 
-    pub fn health_status(&self) -> io::Result<bool> {
+    pub fn health_status(&self) -> Result<bool, anyhow::Error> {
         let url = format!("{}/actuator/health", self.host);
         let thread_handle = thread::spawn(move || {
             return ureq::get(url.as_str())
@@ -153,21 +114,9 @@ impl<'a> MarketConnectorClient<'a> {
         }
 
         if !thread_handle.is_finished() {
-            return Err(io::Error::new(
-                ErrorKind::Other,
-                "timeout, the server is unresponsive",
-            ));
+            return anyhow::bail!("timeout, the server is unresponsive");
         }
-
         let response = thread_handle.join().unwrap();
-
-        if response.is_err() {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                response.err().unwrap(),
-            ));
-        }
-        let content = response.unwrap().into_string()?;
-        Ok(content.contains("UP"))
+        Ok(response?.into_string()?.contains("UP"))
     }
 }

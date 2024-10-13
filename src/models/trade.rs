@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::io;
 use std::io::Write;
 use anyhow;
 use lazy_static::lazy_static;
@@ -26,7 +25,7 @@ impl Trade {
         44
     }
 
-    pub fn to_bytes(&self) -> io::Result<Vec<u8>> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, anyhow::Error> {
         let mut buffer: Vec<u8> = vec![];
         buffer.write_all(&self.trade_number.to_be_bytes())?;
         buffer.write_all(&self.qty.to_be_bytes())?;
