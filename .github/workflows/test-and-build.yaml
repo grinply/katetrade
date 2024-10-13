@@ -1,4 +1,4 @@
-name: Cargo Build & Test
+name: KateTrade Build & Test
 
 on:
   pull_request:
@@ -11,7 +11,6 @@ on:
       - 'Dockerfile'
       - '**/test-and-build.yaml'
 
-
 jobs:
   test-and-build:
     permissions: write-all
@@ -22,10 +21,10 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Test application
-      - run: cargo test --verbose --all-features
+        run: cargo test --verbose --all-features
 
       - name: Debug build
-      - run: cargo build --verbose
+        run: cargo build --verbose
 
       - name: Release build
-      - run: cargo build --release --verbose
+        run: cargo build --release --verbose
