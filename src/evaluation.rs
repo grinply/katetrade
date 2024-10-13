@@ -1,18 +1,19 @@
 use std::cmp;
 use std::collections::HashMap;
-
+use itertools::Itertools;
 use crate::models::pnl::DetailedTradePnl;
 use crate::utils::statistics::{self, normal_cdf};
-use itertools::Itertools;
 use rand::distributions::{Distribution, Uniform};
-use rand::rngs::ThreadRng;
 use rand::{thread_rng, Rng};
 
 const TRADING_DAYS_IN_YEAR: i32 = 252;
 
+
+
 /// Calculates the **Bias Corrected Accelerated Bootstrap** based on the daily results by grouping the trading_results for each day.
 /// Produces the **annualized percentage** confidence for the provided **low_conf** and **high_conf** values inputs.
 // if you want to grasp the concept of this algorithm see the following video: https://www.youtube.com/watch?v=655X9eZGxls
+#[allow(unused)]
 pub fn bias_corrected_accelerated_bootstrap(
     low_conf: f64,
     high_conf: f64,
@@ -42,7 +43,7 @@ pub fn bias_corrected_accelerated_bootstrap(
     }
 
     let mut theta_dot = 0.0;
-    let mut jack_knife = &mut bootstrap_sample;
+    let mut jack_knife = bootstrap_sample;
 
     for (i, current_day_pnl) in daily_pnls.iter().enumerate() {
         let avg_pnl_without_one_day = (pnl_sum - current_day_pnl) / (daily_pnls.len() - 1) as f64;
@@ -70,15 +71,18 @@ pub fn bias_corrected_accelerated_bootstrap(
     let z0 = statistics::inverse_normal_cdf((z0_count / bootstrap_iterations) as f64);
     let alo = normal_cdf(z0 + (z0 + zlo) / (1.0 - accel * (z0 + zlo)));
     let ahi = normal_cdf(z0 + (z0 + zhi) / (1.0 - accel * (z0 + zhi)));
+    println!("{}", ahi);
 
     let k = cmp::max(0, ((alo as usize) * (bootstrap_iterations + 1)) - 1); // Unbiased fractile estimator
 
-    return (
+    (
         result[k] * (TRADING_DAYS_IN_YEAR as f64) * 100.0,
         result[bootstrap_iterations - 1 - k] * (TRADING_DAYS_IN_YEAR as f64) * 100.0,
-    );
+    )
 }
 
+
+#[allow(unused)]
 // returns the mean value from the generated sample
 fn inplace_new_random_bootstrap_sample<R: Rng>(
     rng: &mut R,
@@ -97,6 +101,7 @@ fn inplace_new_random_bootstrap_sample<R: Rng>(
 }
 
 /// Sum all PNL values from the same day and produce a Vec containing all the daily PNLs
+#[allow(unused)]
 fn calculate_daily_pnl(trading_results: &Vec<DetailedTradePnl>) -> Vec<f64> {
     let grouped_pnls_by_day = trading_results
         .into_iter()
@@ -105,10 +110,12 @@ fn calculate_daily_pnl(trading_results: &Vec<DetailedTradePnl>) -> Vec<f64> {
             acc
         });
     let mut all_daily_pnls = Vec::with_capacity(grouped_pnls_by_day.len());
-    for summed_daily_pnl in grouped_pnls_by_day.into_values() {
-        all_daily_pnls.push(summed_daily_pnl);
+
+    //sort this by date
+    for date in grouped_pnls_by_day.keys().sorted() {
+        all_daily_pnls.push(grouped_pnls_by_day[date]);
     }
-    return all_daily_pnls;
+    all_daily_pnls
 }
 
 #[cfg(test)]
@@ -116,8 +123,6 @@ mod tests {
     use super::*;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
-
-    use super::*;
 
     #[test]
     fn test_inplace_new_random_bootstrap_sample_deterministic() {
@@ -140,6 +145,7 @@ mod tests {
         assert_eq!(mean, expected_mean);
     }
 
+    #[test]
     fn should_compute_daily_pnl_grouping_results_from_same_day() {
         let mut trading_results: Vec<DetailedTradePnl> = Vec::new();
 

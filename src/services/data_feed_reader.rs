@@ -1,4 +1,4 @@
-use crate::models::trade::{Trade};
+use crate::models::trade::Trade;
 use std::io::Read;
 use std::net::TcpStream;
 use std::sync::{
@@ -10,9 +10,10 @@ use std::thread;
 /// Struct to manage data feed reading from a socket
 pub struct TradeFeedStream {
     pub running: Arc<AtomicBool>,
-
 }
 
+
+#[allow(unused)]
 impl TradeFeedStream {
     pub fn new() -> Self {
         Self {
@@ -29,7 +30,7 @@ impl TradeFeedStream {
             let mut buffer = [0; 8192];
 
             // Loop indefinitely until the flag is set to false
-            while running_clone.load(Ordering::SeqCst){
+            while running_clone.load(Ordering::SeqCst) {
                 match stream_clone.read(&mut buffer) {
                     Ok(0) => {
                         println!("Connection closed by the server.");
@@ -37,8 +38,7 @@ impl TradeFeedStream {
                     }
                     Ok(bytes_read) => {
                         if bytes_read > 0 {
-                            let trade = Trade::from_bytes(&buffer[..bytes_read]);
-
+                            let _ = Trade::from_bytes(&buffer[..bytes_read]);
                         }
                     }
                     Err(e) => {

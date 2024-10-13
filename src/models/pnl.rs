@@ -1,3 +1,4 @@
+#[allow(unused)]
 pub struct DetailedTradePnl {
     pub avg_entry_price: f64,
     pub avg_exit_price: f64,
@@ -10,6 +11,7 @@ pub struct DetailedTradePnl {
     pub result: f64,
 }
 
+#[allow(unused)]
 pub struct TradePnl {
     pub result: f64,
 }

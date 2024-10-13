@@ -12,13 +12,15 @@ If you have the `katetrade` binary just run `katetrade --help` to learn more,
 if you just now downloaded the source code you can execute by running `cargo run -- --help`
 
 ```bash
-Welcome to katetrade, an algorithm trading system tailored for the Brazillian capital market
+Welcome to katetrade, an algorithm trading system tailored for the Brazilian capital market
 
 Usage: katetrade <COMMAND>
 
 Commands:
-  run         Run one or more trading strategies
-  connection  Verify remote connection with live markets and historical data storage
+  run         Start trading one or more trading strategies in the real capital markets
+  order       Operations related to orders
+  backtest    Backtest a trading strategy using historical data
+  connection  General connection information
   help        Print this message or the help of the given subcommand(s)
 
 Options:

@@ -1,4 +1,5 @@
 #[derive(Debug)]
+#[allow(unused)]
 pub enum OrderAction {
     MarketLong,
     MarketShort,
@@ -7,10 +8,8 @@ pub enum OrderAction {
 }
 
 #[derive(Debug)]
+#[allow(unused)]
 pub struct TradeAction {
     enter_market_action: Option<OrderAction>,
-    exit_market_action: Option<OrderAction>
+    exit_market_action: Option<OrderAction>,
 }
-
-
-

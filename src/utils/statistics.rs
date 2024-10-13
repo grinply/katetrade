@@ -1,4 +1,4 @@
-use std::f64::consts::{PI, SQRT_2};
+use std::f64::consts::PI;
 
 /// Coefficients used in the polynomial approximation of the CDF.
 const POLY_COEFF_1: f64 = 1.330274429;
@@ -35,6 +35,7 @@ pub fn normal_cdf(z: f64) -> f64 {
 
 /// Computes the inverse of the normal CDF.
 /// Accurate to 4.5e-4.
+#[allow(unused)]
 pub fn inverse_normal_cdf(p: f64) -> f64 {
     let pp = if p <= 0.5 { p } else { 1.0 - p };
     let t = (1.0 / (pp * pp)).ln().sqrt();
@@ -46,5 +47,15 @@ pub fn inverse_normal_cdf(p: f64) -> f64 {
         -x
     } else {
         x
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_inverse_normal_cdf() {
+        assert_eq!(-1.221364155347629, inverse_normal_cdf(0.111));
     }
 }

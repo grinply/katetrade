@@ -1,9 +1,13 @@
 use crate::models::trade::Trade;
-use std::fs::{remove_file, File};
+use std::fs::{File};
+use anyhow;
 use std::io::{self, BufRead, Read, Write};
+use anyhow::bail;
 
 const TRADES_CSV_HEADER_LINE: &str = "<ticker>,<date>,<time>,<trade_number>,<price>,<qty>,<vol>,<buy_agent>,<sell_agent>,<trade_type>,<aft>";
 
+
+#[allow(unused)]
 pub fn write_to_csv_file(
     asset_ticker: &str,
     output_file_path: &str,
@@ -17,37 +21,40 @@ pub fn write_to_csv_file(
     Ok(())
 }
 
-pub fn write_to_binary_file(trades: Vec<Trade>, output_file_path: &str) -> Result<(), io::Error> {
-    let mut csv = File::create(output_file_path)?;
+#[allow(unused)]
+pub fn write_to_binary_file(trades: Vec<Trade>, output_file_path: &str) -> Result<(), anyhow::Error> {
+    let mut binary_file = File::create(output_file_path)?;
     for trade in trades {
-        csv.write_all(trade.to_bytes())?;
+        let trade_binary_data = trade.to_bytes()?;
+        binary_file.write_all(trade_binary_data.as_slice())?;
     }
     Ok(())
 }
 
-pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, io::Error> {
+#[allow(unused)]
+pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
     let file = File::open(file_path)?;
     file.sync_all()?;
     let file_size_bytes = file.metadata()?.len();
-    //since every Trade struct has 32 bytes we can reserve the exact required space
     let trade_count = (file_size_bytes / Trade::size_in_bytes() as u64) as usize;
     let mut trades = Vec::with_capacity(trade_count);
 
     let mut file_reader = io::BufReader::new(File::open(file_path)?);
 
     loop {
-        let mut buffer: [u8; 32] = [0; 32];
+        let mut buffer: [u8; Trade::size_in_bytes()] = [0; Trade::size_in_bytes()];
         if file_reader.read_exact(&mut buffer).is_err() {
             break;
         }
-        let trade = Trade::from_bytes(buffer.as_slice());
+        let trade = Trade::from_bytes(buffer.as_slice())?;
         trades.push(trade);
     }
 
     Ok(trades)
 }
 
-pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, io::Error> {
+#[allow(unused)]
+pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
     let mut file_reader = io::BufReader::new(File::open(file_path)?);
 
     let csv_header_line = &mut String::new();
@@ -70,21 +77,20 @@ pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, io::Error> {
         if expected_headers[index] != header
             && (index < 10 || expected_headers[index] != header.replace("\n", ""))
         {
-            let error_msg = std::format!(
+            return !bail!(format!(
                 "expected the header column {} in the {} position, but found {}",
                 expected_headers[index],
                 index,
                 header
-            );
-            return Err(io::Error::new(io::ErrorKind::InvalidData, error_msg));
+            ));
         }
     }
 
     let mut trades: Vec<Trade> = Vec::new();
     for line in file_reader.lines() {
-        trades.push(Trade::from_csv_row(&mut line?));
+        trades.push(Trade::from_csv_row(&mut line?)?);
     }
-    return Ok(trades);
+    Ok(trades)
 }
 
 // Test module
@@ -92,9 +98,8 @@ pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, io::Error> {
 mod tests {
     use std::path::Path;
 
-    use io::Read;
-
     use super::*;
+    use std::fs::remove_file;
 
     fn mock_trades() -> Vec<Trade> {
         let mut trades: Vec<Trade> = Vec::new();
@@ -116,11 +121,11 @@ mod tests {
             price: 87801.00000020,
             date: 20190102,
             time: 090035,
-            volume: 30000.3000,
+            volume: 30000.300,
             qty: 3,
-            buy_agent: 2,
-            sell_agent: 2,
-            trade_type: 2,
+            buy_agent: 3,
+            sell_agent: 3,
+            trade_type: 4,
         });
 
         trades
@@ -138,12 +143,25 @@ mod tests {
             "should have read 2 trades from the file '{}'",
             trades_file_path
         );
+
+        let first_trade = result.first().unwrap();
+        assert_eq!(78231, first_trade.trade_number);
+        assert_eq!(87800.00000020, first_trade.price);
+        assert_eq!(20190102, first_trade.date);
+        assert_eq!(090034, first_trade.time);
+        assert_eq!(40000.3000, first_trade.volume);
+        assert_eq!(12, first_trade.qty);
+        assert_eq!(1, first_trade.buy_agent);
+        assert_eq!(2, first_trade.sell_agent);
+        assert_eq!(13, first_trade.trade_type);
     }
 
     #[test]
     fn should_load_trades_from_example_csv_correctly() {
         let trades_file_path = "resources/example_history_trades.csv";
         let trades = read_trades_from_csv(trades_file_path);
+
+        assert!(trades.is_ok(), "trade data failed to be loaded from '{}'", trades_file_path);
         let result = trades.unwrap();
 
         assert_eq!(
@@ -157,7 +175,7 @@ mod tests {
     #[test]
     fn should_create_binary_file_from_trades() {
         let trades = mock_trades();
-        let test_binary_trades_file_path = "resources/WIN_TRADES";
+        let test_binary_trades_file_path = "resources/WIN_BINARY_TEST";
         if Path::new(test_binary_trades_file_path).exists() {
             remove_file(test_binary_trades_file_path).unwrap();
         }
