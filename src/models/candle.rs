@@ -1,4 +1,5 @@
 #[derive(Debug)]
+#[allow(unused)]
 pub struct Candle {
     pub lowest_price: f64,
     pub highest_price: f64,

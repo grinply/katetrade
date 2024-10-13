@@ -1,4 +1,5 @@
 #[derive(Debug)]
+#[allow(unused)]
 pub struct Extreme {
     pub confirmation_index: i32, // Index that this extreme point was confirmed using directional change
     pub price_index: i32,        // Index of the extreme point is inside the Vec<Trade>
@@ -8,6 +9,7 @@ pub struct Extreme {
     pub is_top: bool,
 }
 
+#[allow(unused)]
 impl Extreme {
     // Maybe generate these values in the for inside directional change for performance?
     fn generate_retracement_ratios(extremes: &mut Vec<Extreme>) {

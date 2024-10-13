@@ -5,11 +5,15 @@ use std::io::{self, ErrorKind};
 use std::thread;
 use std::time::Duration;
 
+
+
 pub struct MarketConnectorClient<'a> {
     host: &'a str,
+    #[allow(unused)]
     exchange: Exchange,
 }
 
+#[allow(unused)]
 impl<'a> MarketConnectorClient<'a> {
     pub fn new(host: &'a str, exchange: Exchange) -> Self {
         Self { host, exchange }

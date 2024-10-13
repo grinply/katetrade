@@ -12,6 +12,8 @@ pub struct TradeFeedStream {
     pub running: Arc<AtomicBool>,
 }
 
+
+#[allow(unused)]
 impl TradeFeedStream {
     pub fn new() -> Self {
         Self {

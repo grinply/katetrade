@@ -4,6 +4,8 @@ use std::io::{self, BufRead, Read, Write};
 
 const TRADES_CSV_HEADER_LINE: &str = "<ticker>,<date>,<time>,<trade_number>,<price>,<qty>,<vol>,<buy_agent>,<sell_agent>,<trade_type>,<aft>";
 
+
+#[allow(unused)]
 pub fn write_to_csv_file(
     asset_ticker: &str,
     output_file_path: &str,
@@ -17,6 +19,7 @@ pub fn write_to_csv_file(
     Ok(())
 }
 
+#[allow(unused)]
 pub fn write_to_binary_file(trades: Vec<Trade>, output_file_path: &str) -> Result<(), io::Error> {
     let mut csv = File::create(output_file_path)?;
     for trade in trades {
@@ -25,6 +28,7 @@ pub fn write_to_binary_file(trades: Vec<Trade>, output_file_path: &str) -> Resul
     Ok(())
 }
 
+#[allow(unused)]
 pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, io::Error> {
     let file = File::open(file_path)?;
     file.sync_all()?;
@@ -47,6 +51,7 @@ pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, io::E
     Ok(trades)
 }
 
+#[allow(unused)]
 pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, io::Error> {
     let mut file_reader = io::BufReader::new(File::open(file_path)?);
 
