@@ -160,8 +160,3 @@ fn main() {
         _ => unreachable!(), // If all subcommcaands are defined above, anything else is unreachable
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-}

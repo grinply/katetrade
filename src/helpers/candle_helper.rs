@@ -10,6 +10,7 @@ fn to_naive_datetime(date: i32, time: i32) -> NaiveDateTime {
     )
 }
 
+#[allow(unused)]
 fn calculate_candles_by_period(trade_feed: Vec<Trade>, period: i64) -> Vec<Candle> {
     let mut first_trade = trade_feed[0];
     let mut first_candle_datetime = to_naive_datetime(first_trade.date, first_trade.time);

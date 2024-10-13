@@ -122,8 +122,6 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
-    use super::*;
-
     #[test]
     fn test_inplace_new_random_bootstrap_sample_deterministic() {
         // Sample data
