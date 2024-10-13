@@ -15,8 +15,7 @@ on:
 jobs:
   test-and-build:
     permissions: write-all
-    runs-on:
-      runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
