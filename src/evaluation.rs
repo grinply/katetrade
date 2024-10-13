@@ -1,6 +1,7 @@
 use std::cmp;
 use std::collections::HashMap;
-
+use std::ops::Deref;
+use itertools::Itertools;
 use crate::models::pnl::DetailedTradePnl;
 use crate::utils::statistics::{self, normal_cdf};
 use rand::distributions::{Distribution, Uniform};
@@ -110,10 +111,12 @@ fn calculate_daily_pnl(trading_results: &Vec<DetailedTradePnl>) -> Vec<f64> {
             acc
         });
     let mut all_daily_pnls = Vec::with_capacity(grouped_pnls_by_day.len());
-    for summed_daily_pnl in grouped_pnls_by_day.into_values() {
-        all_daily_pnls.push(summed_daily_pnl);
+
+    //sort this by date
+    for date in grouped_pnls_by_day.keys().sorted() {
+        all_daily_pnls.push(grouped_pnls_by_day[date]);
     }
-    return all_daily_pnls;
+    all_daily_pnls
 }
 
 #[cfg(test)]
@@ -143,6 +146,7 @@ mod tests {
         assert_eq!(mean, expected_mean);
     }
 
+    #[test]
     fn should_compute_daily_pnl_grouping_results_from_same_day() {
         let mut trading_results: Vec<DetailedTradePnl> = Vec::new();
 

@@ -1,6 +1,7 @@
 use crate::models::candle::Candle;
 use crate::models::extreme::Extreme;
 
+#[allow(unused)]
 fn directional_change_percentage(candle_feed: Vec<Candle>, threshold: f64) -> Vec<Extreme> {
     let mut is_high_flow = true;
     let mut tmp_price_min = candle_feed[0].lowest_price;
