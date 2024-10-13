@@ -1,5 +1,5 @@
 use crate::models::trade::Trade;
-use std::fs::{remove_file, File};
+use std::fs::{File};
 use std::io::{self, BufRead, Read, Write};
 
 const TRADES_CSV_HEADER_LINE: &str = "<ticker>,<date>,<time>,<trade_number>,<price>,<qty>,<vol>,<buy_agent>,<sell_agent>,<trade_type>,<aft>";
@@ -92,9 +92,8 @@ pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, io::Error> {
 mod tests {
     use std::path::Path;
 
-    use io::Read;
-
     use super::*;
+    use std::fs::remove_file;
 
     fn mock_trades() -> Vec<Trade> {
         let mut trades: Vec<Trade> = Vec::new();

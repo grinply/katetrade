@@ -2,6 +2,7 @@ use crate::models::candle::Candle;
 use crate::models::trade::Trade;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
+#[allow(unused)]
 fn to_naive_datetime(date: i32, time: i32) -> NaiveDateTime {
     NaiveDateTime::new(
         NaiveDate::parse_from_str(format!("{:}", date).as_str(), "%Y%m%d").unwrap(),

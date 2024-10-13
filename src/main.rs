@@ -10,7 +10,6 @@ use crate::models::order_type::OrderType;
 use crate::services::market_connector::MarketConnectorClient;
 use clap::{arg, Arg, ArgMatches, Command};
 use models::exchange::Exchange;
-use std::convert::Into;
 use std::str::FromStr;
 use std::string::ToString;
 
@@ -93,7 +92,7 @@ fn process_run_command(sub_matches: &ArgMatches) {
     );
 }
 
-fn process_order_command(sub_matches: &ArgMatches, client: MarketConnectorClient) {
+fn process_order_command(sub_matches: &ArgMatches, _: MarketConnectorClient) {
     if sub_matches.contains_id(constants::SEND) {
         let ticker_symbol = sub_matches
             .get_one::<String>("ticker")

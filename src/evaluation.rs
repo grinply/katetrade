@@ -8,9 +8,12 @@ use rand::{thread_rng, Rng};
 
 const TRADING_DAYS_IN_YEAR: i32 = 252;
 
+
+
 /// Calculates the **Bias Corrected Accelerated Bootstrap** based on the daily results by grouping the trading_results for each day.
 /// Produces the **annualized percentage** confidence for the provided **low_conf** and **high_conf** values inputs.
 // if you want to grasp the concept of this algorithm see the following video: https://www.youtube.com/watch?v=655X9eZGxls
+#[allow(unused)]
 pub fn bias_corrected_accelerated_bootstrap(
     low_conf: f64,
     high_conf: f64,
@@ -78,6 +81,8 @@ pub fn bias_corrected_accelerated_bootstrap(
     )
 }
 
+
+#[allow(unused)]
 // returns the mean value from the generated sample
 fn inplace_new_random_bootstrap_sample<R: Rng>(
     rng: &mut R,
@@ -96,6 +101,7 @@ fn inplace_new_random_bootstrap_sample<R: Rng>(
 }
 
 /// Sum all PNL values from the same day and produce a Vec containing all the daily PNLs
+#[allow(unused)]
 fn calculate_daily_pnl(trading_results: &Vec<DetailedTradePnl>) -> Vec<f64> {
     let grouped_pnls_by_day = trading_results
         .into_iter()

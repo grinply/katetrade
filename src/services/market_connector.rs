@@ -4,7 +4,6 @@ use crate::models::side::Side;
 use std::io::{self, ErrorKind};
 use std::thread;
 use std::time::Duration;
-use ureq::Response;
 
 pub struct MarketConnectorClient<'a> {
     host: &'a str,
