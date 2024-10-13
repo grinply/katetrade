@@ -1,6 +1,7 @@
 use crate::models::exchange::Exchange;
 use crate::models::market::Market;
 #[derive(Debug)]
+#[allow(unused)]
 pub struct Asset {
     ticker: String,
     market: Market,

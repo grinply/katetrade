@@ -2,6 +2,7 @@ use std::convert::TryInto;
 
 /// Trade struct to match the Java data sent from market-connector
 #[derive(Clone, Debug, Copy)]
+#[allow(unused)]
 pub struct Trade {
     pub trade_number: i32,
     pub price: f64,

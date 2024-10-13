@@ -1,6 +1,5 @@
 use std::cmp;
 use std::collections::HashMap;
-use std::ops::Deref;
 use itertools::Itertools;
 use crate::models::pnl::DetailedTradePnl;
 use crate::utils::statistics::{self, normal_cdf};
