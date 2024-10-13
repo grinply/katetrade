@@ -392,6 +392,7 @@ dependencies = [
  "cli-candlestick-chart",
  "crossbeam",
  "itertools",
+ "lazy_static",
  "once_cell",
  "rand",
  "strum",

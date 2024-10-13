@@ -1,5 +1,5 @@
-pub const LIVE: &str = "live";
 pub const BACKTEST: &str = "backtest";
+pub const DETAILS: &str = "details";
 pub const SEND: &str = "send";
 pub const CONNECTION: &str = "connection";
 pub const ORDER: &str = "order";
@@ -12,3 +12,5 @@ pub const LIMIT: &str = "LIMIT";
 pub const BUY: &str = "BUY";
 pub const SELL: &str = "SELL";
 pub const MANUAL: &str = "MANUAL";
+
+pub const UNKNOWN: &str = "UNKNOWN";
