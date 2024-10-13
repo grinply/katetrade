@@ -14,12 +14,14 @@ use std::string::ToString;
 use crate::models::market::Market;
 use crate::models::side::Side;
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 fn cli() -> Command {
     Command::new("kate")
         .about(
-            "Welcome to katetrade, an algorithm trading system tailored for the Brazilian capital market",
+            "Welcome to katetrade, your algorithm trading system tailored for the Brazilian capital market",
         )
-        .version("0.0.1")
+        .version(VERSION)
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(
