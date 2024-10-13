@@ -109,7 +109,9 @@ mod tests {
 
     #[test]
     fn trade_struct_should_have_exactly_32_bytes_of_size() {
+
         const EXPECTED_SIZE: usize = 32;
+        #[allow(unused)]
         const TEST_CHECKER: [u8; EXPECTED_SIZE] = [0; std::mem::size_of::<Trade>()];
         assert_eq!(EXPECTED_SIZE, Trade::size_in_bytes());
     }
