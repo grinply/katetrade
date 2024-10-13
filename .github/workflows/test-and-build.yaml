@@ -30,13 +30,3 @@ jobs:
 
       - name: Release build
       - run: cargo build --release --verbose
-
-      - name: Archive executable artifact
-        uses: actions/upload-artifact@v4
-        with:
-            name: katetrade
-            path: target/release/katetrade
-
-
-
-
