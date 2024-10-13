@@ -53,4 +53,9 @@ dkms.conf
 target/
 .Ds_Store
 
+.idea/
+.idea
+.vscode
+.vscode/
+
 resources/test_trades.csv
