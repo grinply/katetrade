@@ -45,7 +45,7 @@ impl<'a> MarketConnectorClient<'a> {
         ticker: &str,
         market: Market,
         side: Side,
-        quantity: u64,
+        quantity: i32,
         account_id: &str,
         strategy: &str,
     ) -> Result<i64, anyhow::Error> {
@@ -74,7 +74,7 @@ impl<'a> MarketConnectorClient<'a> {
         market: Market,
         side: Side,
         price: f64,
-        quantity: u64,
+        quantity: i32,
         account_id: &str,
         strategy: &str,
     ) -> Result<i64, anyhow::Error> {

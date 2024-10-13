@@ -105,9 +105,9 @@ fn process_order_send_command(sub_matches: &ArgMatches, client: MarketConnectorC
         .get_one::<String>("ticker")
         .expect("ticker type is required");
 
-    let quantity = sub_matches
-        .get_one::<u64>("qty")
-        .expect("quantity is required");
+    let quantity: i32 = sub_matches
+        .get_one::<String>("qty")
+        .expect("quantity is required").parse().expect("quantity should be a valid integer");
 
     let account_id = sub_matches
         .get_one::<String>("account")
@@ -136,7 +136,7 @@ fn process_order_send_command(sub_matches: &ArgMatches, client: MarketConnectorC
             ticker_symbol,
             market,
             order_side,
-            *quantity,
+            quantity,
             account_id,
             constants::MANUAL,
         )
@@ -150,7 +150,7 @@ fn process_order_send_command(sub_matches: &ArgMatches, client: MarketConnectorC
             market,
             order_side,
             *price,
-            *quantity,
+            quantity,
             account_id,
             constants::MANUAL,
         )
