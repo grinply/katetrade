@@ -12,6 +12,8 @@ use clap::{arg, Arg, ArgMatches, Command};
 use models::exchange::Exchange;
 use std::str::FromStr;
 use std::string::ToString;
+use crate::models::market::Market;
+use crate::models::side::Side;
 
 fn cli() -> Command {
     Command::new("kate")
@@ -92,36 +94,80 @@ fn process_run_command(sub_matches: &ArgMatches) {
     );
 }
 
-fn process_order_command(sub_matches: &ArgMatches, _: MarketConnectorClient) {
+fn process_order_command(sub_matches: &ArgMatches, client: MarketConnectorClient) {
     if sub_matches.contains_id(constants::SEND) {
         let ticker_symbol = sub_matches
             .get_one::<String>("ticker")
             .expect("ticker type is required");
+
         let quantity = sub_matches
-            .get_one::<String>("qty")
+            .get_one::<u64>("qty")
             .expect("quantity is required");
-        let order_side = sub_matches
-            .get_one::<String>("side")
-            .expect("side is required");
+
         let account_id = sub_matches
             .get_one::<String>("account")
             .expect("account is required");
+
+        let order_side = Side::from_str(sub_matches
+            .get_one::<String>("side")
+            .expect("side is required")
+        ).unwrap();
+
+        let market = Market::from_str(sub_matches
+            .get_one::<String>("market")
+            .expect("market is required")
+        ).unwrap();
 
         let order_type = OrderType::from_str(
             sub_matches
                 .get_one::<String>("type")
                 .expect("order type is required"),
-        )
-        .unwrap();
+        ).unwrap();
+
+        let side_str = order_side.to_string();
+
+        let order_id = if order_type == OrderType::MARKET {
+             client.send_market_order(
+                ticker_symbol,
+                market,
+                order_side,
+                *quantity,
+                account_id,
+                constants::MANUAL
+            )
+        }else{
+            let price = sub_matches
+                .get_one::<f64>("price")
+                .expect("price is required when sending limit orders");
+
+            client.send_limit_order(
+                ticker_symbol,
+                market,
+                order_side,
+                *price,
+                *quantity,
+                account_id,
+                constants::MANUAL
+            )
+        };
 
         println!(
             "kate sent a {} order to {} {} shares/contracts of {} on the accountId {}",
             order_type.to_string(),
-            order_side,
+            side_str,
             quantity,
             ticker_symbol,
             account_id
         );
+
+        match order_id {
+            Ok(id) => {
+                println!("successfully sent order. the id for the order is {}", id);
+            }
+            Err(e) => {
+                println!("the order sent failed to be processed. {}", e);
+            }
+        }
     }
 }
 
