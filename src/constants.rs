@@ -1,0 +1,13 @@
+pub const LIVE: &str = "live";
+pub const BACKTEST: &str = "backtest";
+pub const SEND: &str = "send";
+pub const CONNECTION: &str = "connection";
+pub const ORDER: &str = "order";
+pub const RUN: &str = "run";
+pub const STATUS: &str = "status";
+pub const FUTURES: &str = "FUTURES";
+pub const SPOT: &str = "SPOT";
+pub const MARKET: &str = "MARKET";
+pub const LIMIT: &str = "LIMIT";
+pub const BUY: &str = "BUY";
+pub const SELL: &str = "SELL";

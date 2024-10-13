@@ -5,7 +5,6 @@ use crate::models::trade::Trade;
 /// TradingStrategy is a trait that defines the essential behavior that needs to met to allow an
 /// algorithmic trading strategy to operate in the capital markets, one trading day at a time.
 trait TradingStrategy {
-
     /// unique identifier for the trading strategy
     fn identifier(&self) -> String;
 

@@ -1,15 +1,14 @@
 #[derive(Debug)]
 pub struct Extreme {
     pub confirmation_index: i32, // Index that this extreme point was confirmed using directional change
-    pub price_index: i32, // Index of the extreme point is inside the Vec<Trade>
+    pub price_index: i32,        // Index of the extreme point is inside the Vec<Trade>
     pub price: f64,
     pub height: Option<f64>, // The height of the segment between two consecutive extreme points (absolute).
     pub retrace_ratio: Option<f64>, // The ratio of the current segment's height to the previous segment's height.
-    pub is_top: bool
+    pub is_top: bool,
 }
 
 impl Extreme {
-
     // Maybe generate these values in the for inside directional change for performance?
     fn generate_retracement_ratios(extremes: &mut Vec<Extreme>) {
         // Temporários para armazenar os novos valores

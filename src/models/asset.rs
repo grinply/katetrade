@@ -8,5 +8,3 @@ pub struct Asset {
     min_variation: f64,
     value_per_variation: f64,
 }
-
-

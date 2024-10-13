@@ -1,46 +1,36 @@
+mod constants;
 mod evaluation;
-mod utils;
-mod strategies;
+mod helpers;
 mod models;
 mod services;
-mod helpers;
+mod strategies;
+mod utils;
 
-
-use services::market_connector as connector;
+use crate::models::order_type::OrderType;
+use crate::services::market_connector::MarketConnectorClient;
+use clap::{arg, Arg, ArgMatches, Command};
+use models::exchange::Exchange;
 use std::convert::Into;
 use std::str::FromStr;
 use std::string::ToString;
-use clap::{arg, Arg, ArgMatches, Command};
-use models::exchange::Exchange;
-use crate::models::order_type::OrderType;
-use crate::services::market_connector::MarketConnectorClient;
-
-const FUTURES: &str = "FUTURES";
-const SPOT: &str = "SPOT";
-const MARKET: &str = "MARKET";
-const LIMIT: &str = "LIMIT";
-
-const BUY: &str = "BUY";
-
-const SELL: &str = "SELL";
 
 fn cli() -> Command {
     Command::new("kate")
         .about(
-            "Welcome to katetrade, an algorithm trading system tailored for the Brazillian capital market",
+            "Welcome to katetrade, an algorithm trading system tailored for the Brazilian capital market",
         )
         .version("0.0.1")
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(
-            Command::new("run")
+            Command::new(constants::RUN)
                 .about("Run one or more trading strategies")
                 .arg(
                     arg!(-m --mode <MODE> "Mode of execution for the trading strategy")
-                        .value_parser(["live", "backtest"])
+                        .value_parser([constants::LIVE, constants::BACKTEST])
                         .num_args(0..=1)
-                        .default_value("live")
-                        .default_missing_value("live")
+                        .default_value(constants::LIVE)
+                        .default_missing_value(constants::LIVE)
                 )
                 .arg(arg!(-s --strategy <STRATEGY> "Identifier (id) for the strategy you want to executed'"))
                 .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'"))
@@ -51,37 +41,37 @@ fn cli() -> Command {
             ,
         )
         .subcommand(
-            Command::new("connection")
+            Command::new(constants::CONNECTION)
                 .about("General connection information")
                 .arg(
-                    Arg::new("status")
+                    Arg::new(constants::STATUS)
                         .help("evaluate the network connection with market connector"),
                 ),
         )
         .subcommand(
-            Command::new("order")
+            Command::new(constants::ORDER)
                 .about("Send and view orders send to the exchange/broker")
-                .arg(Arg::new("send"))
+                .arg(Arg::new(constants::SEND))
                 .arg(
                     arg!(--side <SIDE> "Side that of the order")
-                        .value_parser([BUY, SELL])
+                        .value_parser([constants::BUY, constants::SELL])
                         .num_args(0..=1)
-                        .default_value(BUY)
-                        .default_missing_value(BUY)
+                        .default_value(constants::BUY)
+                        .default_missing_value(constants::BUY)
                 )
                 .arg(
                     arg!(--type <TYPE> "Type of order that will be used")
-                        .value_parser([MARKET, LIMIT])
+                        .value_parser([constants::MARKET, constants::LIMIT])
                         .num_args(0..=1)
-                        .default_value(MARKET)
-                        .default_missing_value(MARKET)
+                        .default_value(constants::MARKET)
+                        .default_missing_value(constants::MARKET)
                 )
                 .arg(
                     arg!(--market <MARKET> "Market where to send the order")
-                        .value_parser([FUTURES, SPOT])
+                        .value_parser([constants::FUTURES, constants::SPOT])
                         .num_args(0..=1)
-                        .default_value(FUTURES)
-                        .default_missing_value(FUTURES)
+                        .default_value(constants::FUTURES)
+                        .default_missing_value(constants::FUTURES)
                 )
                 .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'"))
                 .arg(arg!(-a --account <ACCOUNT> "AccountId to be used when sending a order to the exchange/broker"))
@@ -104,28 +94,40 @@ fn process_run_command(sub_matches: &ArgMatches) {
 }
 
 fn process_order_command(sub_matches: &ArgMatches, client: MarketConnectorClient) {
-    if sub_matches.contains_id("send") {
+    if sub_matches.contains_id(constants::SEND) {
+        let ticker_symbol = sub_matches
+            .get_one::<String>("ticker")
+            .expect("ticker type is required");
+        let quantity = sub_matches
+            .get_one::<String>("qty")
+            .expect("quantity is required");
+        let order_side = sub_matches
+            .get_one::<String>("side")
+            .expect("side is required");
+        let account_id = sub_matches
+            .get_one::<String>("account")
+            .expect("account is required");
 
-        let ticker_symbol = sub_matches.get_one::<String>("ticker").expect("ticker type is required");
-        let quantity = sub_matches.get_one::<String>("qty").expect("quantity is required");
-        let order_side = sub_matches.get_one::<String>("side").expect("side is required");
-
-        let account_id = sub_matches.get_one::<String>("account").expect("account is required");
-
-
-        let order_type = OrderType::from_str(sub_matches
-            .get_one::<String>("type")
-            .expect("order type is required")).unwrap();
+        let order_type = OrderType::from_str(
+            sub_matches
+                .get_one::<String>("type")
+                .expect("order type is required"),
+        )
+        .unwrap();
 
         println!(
             "kate sent a {} order to {} {} shares/contracts of {} on the accountId {}",
-            order_type.to_string(), order_side, quantity, ticker_symbol, account_id
+            order_type.to_string(),
+            order_side,
+            quantity,
+            ticker_symbol,
+            account_id
         );
     }
 }
 
 fn process_connection_command(sub_matches: &ArgMatches, client: MarketConnectorClient) {
-    if sub_matches.contains_id("status") {
+    if sub_matches.contains_id(constants::STATUS) {
         let status_result = client.health_status();
         match status_result {
             Err(_) => {
@@ -143,22 +145,24 @@ fn process_connection_command(sub_matches: &ArgMatches, client: MarketConnectorC
 }
 
 fn main() {
-    let client = connector::MarketConnectorClient::new(
-        "http://market-connector.grinply.com",
-        Exchange::B3,
-    );
+    let client = MarketConnectorClient::new("http://market-connector.grinply.com", Exchange::B3);
 
     let matches = cli().get_matches();
     match matches.subcommand() {
-        Some(("run", sub_matches)) => {
+        Some((constants::RUN, sub_matches)) => {
             process_run_command(sub_matches);
         }
-        Some(("order", sub_matches)) => {
+        Some((constants::ORDER, sub_matches)) => {
             process_order_command(sub_matches, client);
         }
-        Some(("connection", sub_matches)) => {
+        Some((constants::CONNECTION, sub_matches)) => {
             process_connection_command(sub_matches, client)
         }
         _ => unreachable!(), // If all subcommcaands are defined above, anything else is unreachable
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 }

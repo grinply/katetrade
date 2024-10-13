@@ -1,5 +1,5 @@
 use crate::models::trade::Trade;
-use std::fs::{File};
+use std::fs::{remove_file, File};
 use std::io::{self, BufRead, Read, Write};
 
 const TRADES_CSV_HEADER_LINE: &str = "<ticker>,<date>,<time>,<trade_number>,<price>,<qty>,<vol>,<buy_agent>,<sell_agent>,<trade_type>,<aft>";

@@ -18,16 +18,14 @@ fn directional_change_percentage(candle_feed: Vec<Candle>, threshold: f64) -> Ve
                 tmp_price_max = current_candle.highest_price;
                 tmp_price_max_index = i;
             } else if current_candle.closed_price < (tmp_price_max - (tmp_price_max * threshold)) {
-                tops_and_bottoms.push(
-                    Extreme {
-                        confirmation_index: i as i32,
-                        price_index: tmp_price_max_index as i32,
-                        price: tmp_price_max,
-                        height: None,
-                        retrace_ratio: None,
-                        is_top: true
-                    }
-                );
+                tops_and_bottoms.push(Extreme {
+                    confirmation_index: i as i32,
+                    price_index: tmp_price_max_index as i32,
+                    price: tmp_price_max,
+                    height: None,
+                    retrace_ratio: None,
+                    is_top: true,
+                });
 
                 is_high_flow = false;
                 tmp_price_min = current_candle.lowest_price;
@@ -38,16 +36,14 @@ fn directional_change_percentage(candle_feed: Vec<Candle>, threshold: f64) -> Ve
                 tmp_price_min = current_candle.lowest_price;
                 tmp_price_min_index = i;
             } else if current_candle.closed_price > (tmp_price_min + (tmp_price_min * threshold)) {
-                tops_and_bottoms.push(
-                    Extreme {
-                        confirmation_index: i as i32,
-                        price_index: tmp_price_min_index as i32,
-                        price: tmp_price_min,
-                        height: None,
-                        retrace_ratio: None,
-                        is_top: false
-                    }
-                );
+                tops_and_bottoms.push(Extreme {
+                    confirmation_index: i as i32,
+                    price_index: tmp_price_min_index as i32,
+                    price: tmp_price_min,
+                    height: None,
+                    retrace_ratio: None,
+                    is_top: false,
+                });
                 is_high_flow = true;
                 tmp_price_min = current_candle.highest_price;
                 tmp_price_min_index = i;

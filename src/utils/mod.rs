@@ -1,2 +1,2 @@
-pub mod statistics;
 mod file;
+pub mod statistics;

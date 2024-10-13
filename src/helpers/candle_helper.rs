@@ -1,11 +1,11 @@
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use crate::models::candle::Candle;
 use crate::models::trade::Trade;
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
 fn to_naive_datetime(date: i32, time: i32) -> NaiveDateTime {
     NaiveDateTime::new(
         NaiveDate::parse_from_str(format!("{:}", date).as_str(), "%Y%m%d").unwrap(),
-        NaiveTime::parse_from_str(format!("{:06}", time).as_str(), "%H%M%S").unwrap()
+        NaiveTime::parse_from_str(format!("{:06}", time).as_str(), "%H%M%S").unwrap(),
     )
 }
 
@@ -21,11 +21,13 @@ fn calculate_candles_by_period(trade_feed: Vec<Trade>, period: i64) -> Vec<Candl
     let mut candles: Vec<Candle> = Vec::new();
 
     for (i, trade) in trade_feed.iter().enumerate() {
-
         let current_datetime = to_naive_datetime(trade.date, trade.time);
 
-        if current_datetime.signed_duration_since(first_candle_datetime).num_seconds() >= period {
-
+        if current_datetime
+            .signed_duration_since(first_candle_datetime)
+            .num_seconds()
+            >= period
+        {
             // Candle closed, push it.
             candles.push(Candle {
                 lowest_price: lowest_candle_price,
@@ -35,7 +37,7 @@ fn calculate_candles_by_period(trade_feed: Vec<Trade>, period: i64) -> Vec<Candl
                 initial_date: first_trade.date,
                 initial_time: first_trade.time,
                 period,
-                closed: true
+                closed: true,
             });
 
             // Reset variables for new candle

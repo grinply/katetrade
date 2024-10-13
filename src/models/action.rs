@@ -9,8 +9,5 @@ pub enum OrderAction {
 #[derive(Debug)]
 pub struct TradeAction {
     enter_market_action: Option<OrderAction>,
-    exit_market_action: Option<OrderAction>
+    exit_market_action: Option<OrderAction>,
 }
-
-
-
