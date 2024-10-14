@@ -13,9 +13,9 @@ use std::str::FromStr;
 use std::string::ToString;
 use crate::models::market::Market;
 use crate::models::side::Side;
+use crate::services::configuration::load_configuration;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-
 fn cli() -> Command {
     Command::new("kate")
         .about(
@@ -63,6 +63,7 @@ fn cli() -> Command {
                     .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'").required(true))
                     .arg(arg!(-a --account <ACCOUNT> "AccountId to be used when sending a order to the exchange/broker").required(true))
                     .arg(arg!(-q --qty <QUANTITY> "Amount of shares/contracts that will be requested with the order").required(true))
+                    .arg(arg!(--price <PRICE> "Price when sending limit orders to the order book"))
                 )
                 .subcommand(
                     Command::new(constants::DETAILS)
@@ -141,15 +142,16 @@ fn process_order_send_command(sub_matches: &ArgMatches, client: MarketConnectorC
             constants::MANUAL,
         )
     } else {
-        let price = sub_matches
-            .get_one::<f64>("price")
-            .expect("price is required when sending limit orders");
+        let price: f64 = sub_matches
+            .get_one::<String>("price")
+            .expect("price is required when sending limit orders")
+            .parse().expect("price should be a valid number");
 
         client.send_limit_order(
             ticker_symbol,
             market,
             order_side,
-            *price,
+            price,
             quantity,
             account_id,
             constants::MANUAL,
@@ -212,7 +214,12 @@ fn process_connection_status_command(client: MarketConnectorClient) {
 }
 
 fn main() {
-    let client = MarketConnectorClient::new("http://market-connector.grinply.com", Exchange::B3);
+    // "http://market-connector.grinply.com"
+    //let client = MarketConnectorClient::new("https://0d87-45-65-157-162.ngrok-free.app", Exchange::B3);
+    let configuration = load_configuration();
+    let client = MarketConnectorClient::new(
+        configuration.market_connector_url.as_str(),
+        Exchange::B3);
 
     let matches = cli().get_matches();
 
