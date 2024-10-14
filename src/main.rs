@@ -214,8 +214,6 @@ fn process_connection_status_command(client: MarketConnectorClient) {
 }
 
 fn main() {
-    // "http://market-connector.grinply.com"
-    //let client = MarketConnectorClient::new("https://0d87-45-65-157-162.ngrok-free.app", Exchange::B3);
     let configuration = load_configuration();
     let client = MarketConnectorClient::new(
         configuration.market_connector_url.as_str(),
