@@ -598,3 +598,68 @@
 //         assert_eq!(extremes[6].retrace_ratio, Some(1.1282051282051282));
 //     }
 // }
+
+// #[cfg(test)]
+// mod sma_tests {
+//
+//     #[derive(PartialEq)]
+// pub enum MovingAverageError {
+//         ZeroWindowSize,
+//         WindowSizeTooLarge,
+//     }
+//
+//     impl std::fmt::Display for MovingAverageError {
+//         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//             match self {
+//                 MovingAverageError::ZeroWindowSize => write!(f, "Window size cannot be zero."),
+//                 MovingAverageError::WindowSizeTooLarge => write!(f, "Window size is larger than the prices vector."),
+//             }
+//         }
+//     }
+//     fn calculate_sma(data: Vec<f64>, window: usize) -> Result<f64, MovingAverageError>{
+//         if window == 0 {
+//             return Err(MovingAverageError::ZeroWindowSize);
+//         }
+//         if data.len() < window {
+//             return Err(MovingAverageError::WindowSizeTooLarge);
+//         }
+//
+//         let mut average = 0.0;
+//         let start = data.len() - window;
+//
+//         for value in &data[start..] {
+//             average += *value;
+//         }
+//
+//         Ok(average/window as f64)
+//     }
+//
+//     #[test]
+//     fn test_sma() {
+//         let data1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//
+//         let expected1 = 4.0;
+//         let result1 = calculate_sma(data1, 3);
+//         assert!(result1 == Ok(expected1));
+//
+//         let data2 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//         let expected2 = 3.0;
+//         let result2 = calculate_sma(data2, 5);
+//         assert!(result2 == Ok(expected2));
+//
+//         let data3 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//         let expected3 = Err(MovingAverageError::WindowSizeTooLarge);
+//         let result3 = calculate_sma(data3, 10);
+//         assert!(result3 == expected3);
+//
+//         let data4 = vec![1.0];
+//         let expected4 = Err(MovingAverageError::ZeroWindowSize);
+//         let result4 = calculate_sma(data4, 0);
+//         assert!(result4 == expected4);
+//
+//         let data5: Vec<f64> = (1..=1000).map(|x| x as f64).collect();
+//         let expected5 = Ok(998.0);
+//         let result5 = calculate_sma(data5, 5);
+//         assert!(result5 == expected5);
+//     }
+// }

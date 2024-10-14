@@ -34,12 +34,11 @@ fn calculate_sma(data: Vec<f64>, window: usize) -> Result<f64, MovingAverageErro
     }
 
     let mut average = 0.0;
+    let start = data.len() - window;
 
-    for i in 0..=data.len() - window {
-        let sum: f64 = data[i..i + window].iter().sum();
-        average = sum / window as f64;
-
+    for value in &data[start..] {
+        average += *value;
     }
 
-    Ok(average)
+    Ok(average/window as f64)
 }
