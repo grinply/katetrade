@@ -1,4 +1,3 @@
-use strum_macros::Display;
 use crate::models::action::TradeAction;
 use crate::models::asset::Asset;
 use crate::models::trade::Trade;
@@ -67,8 +66,6 @@ macro_rules! strategy_dispatch {
             )*
         }
     };
-
-
 }
 
 

@@ -26,6 +26,7 @@ impl TradeAction {
         }
     }
 
+    #[allow(unused)]
     pub fn send_order_with_stop_loss(enter_order: OrderAction, stop_order: OrderAction) ->  TradeAction{
         TradeAction{
             enter_market_action: Some(enter_order),
@@ -34,6 +35,7 @@ impl TradeAction {
         }
     }
 
+    #[allow(unused)]
     pub fn send_order_with_stop_loss_and_take_profit(enter_order: OrderAction,
                                                      stop_order: OrderAction,
                                                      take_profit_order: OrderAction) ->  TradeAction{
@@ -44,6 +46,7 @@ impl TradeAction {
         }
     }
 
+    #[allow(unused)]
     pub fn do_nothing() -> TradeAction{
         TradeAction {
             enter_market_action: None,
