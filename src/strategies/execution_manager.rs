@@ -118,6 +118,7 @@ impl ExecutionManager {
             if result.is_ok() {
                 println!("received order_id {} from executing {:?} of {} contracts for the ticker {}",
                          result.unwrap(), order_action.unwrap(), 1, ticker);
+                //TODO: we must validate the order execution and also keep track of the position
             }
         }
 
