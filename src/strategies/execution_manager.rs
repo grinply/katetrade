@@ -95,15 +95,18 @@ impl ExecutionManager {
                                strategy_name: &str,
                                market: Market
     ){
-
-        let actions: [Option<OrderAction>; 3] = [action.enter_market_action, action.stop_loss_action, action.take_profit_action];
+        let actions: [Option<OrderAction>; 3] = [
+            action.enter_market_action,
+            action.stop_loss_action,
+            action.take_profit_action
+        ];
 
         for order_action in actions {
             if order_action.is_none() {
                 continue;
             }
 
-            let result = match order_action {
+            let order_id_result = match order_action {
                 Some(OrderAction::MarketLong) => client.
                     send_market_order(ticker, market, Side::BUY, 1, account_id, strategy_name),
                 Some(OrderAction::MarketShort) => client.
@@ -115,13 +118,12 @@ impl ExecutionManager {
                 None => unreachable!()
             };
 
-            if result.is_ok() {
+            if order_id_result.is_ok() {
+                let order_id = order_id_result.unwrap();
                 println!("received order_id {} from executing {:?} of {} contracts for the ticker {}",
-                         result.unwrap(), order_action.unwrap(), 1, ticker);
+                         order_id, order_action.unwrap(), 1, ticker);
                 //TODO: we must validate the order execution and also keep track of the position
             }
         }
-
-
     }
 }
