@@ -27,3 +27,5 @@ Options:
   -h, --help     Print help
   -V, --version  Print version
 ```
+
+./katetrade order send --account 33003#70562729 --ticker WIN --market FUTURES --qty 1 --TYPE market

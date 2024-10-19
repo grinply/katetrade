@@ -5,15 +5,18 @@ mod services;
 mod strategies;
 mod utils;
 
+use std::io::{stdin};
 use crate::models::order_type::OrderType;
 use crate::services::market_connector::MarketConnectorClient;
 use clap::{arg, ArgMatches, Command};
 use models::exchange::Exchange;
 use std::str::FromStr;
 use std::string::ToString;
+
 use crate::models::market::Market;
 use crate::models::side::Side;
-use crate::services::configuration::load_configuration;
+use crate::services::configuration::{load_configuration, KateConfiguration};
+use crate::strategies::execution_manager::ExecutionManager;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn cli() -> Command {
@@ -27,12 +30,16 @@ fn cli() -> Command {
         .subcommand(
             Command::new(constants::RUN)
                 .about("Start trading one or more trading strategies in the real capital markets")
-                .arg(arg!(-s --strategy <STRATEGY> "Identifier (id) for the strategy you want to executed'"))
-                .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'"))
-                .arg(arg!(-a --account <ACCOUNT> "AccountId used when sending trades in live mode to the market-connector'"))
-                .arg(arg!(--config [configFile] "Optional json configuration file that enables running multiple strategies at once").required(false))
+                .arg(arg!(-s --strategy <STRATEGY> "Identifier (id) for the strategy you want to executed'").required(true))
+                .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'").required(true))
+                .arg(arg!(-a --account <ACCOUNT> "AccountId used when sending trades in live mode to the market-connector'").required(true))
+                .arg(
+                    arg!(--market <MARKET> "Market where to send the order")
+                        .value_parser([constants::FUTURES, constants::SPOT])
+                        .num_args(0..=1)
+                        .required(true)
+                )
                 .arg(arg!(-d --detach "Enables execution in the background").required(false))
-                .arg(arg!(-c --connector [marketConnectorHost] "Custom URL to access the market-connector").required(false))
             ,
         )
         .subcommand(
@@ -88,17 +95,46 @@ fn cli() -> Command {
         )
 }
 
-fn process_run_command(sub_matches: &ArgMatches) {
-    let mode = sub_matches
-        .get_one::<String>("mode")
-        .expect("mode is required");
-    let strategy = sub_matches.get_one::<String>("strategy").expect("required");
-    let symbol = sub_matches.get_one::<String>("ticker").expect("required");
+fn process_backtest_command(_: &ArgMatches, _: KateConfiguration) {}
+
+fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, configuration: KateConfiguration) {
+    let strategy_id = sub_matches.get_one::<String>("strategy").expect("required");
+    let ticker = sub_matches.get_one::<String>("ticker").expect("required");
+
+    let account_id = sub_matches
+        .get_one::<String>("account")
+        .expect("account is required");
+
+    let market = Market::from_str(sub_matches
+        .get_one::<String>("market")
+        .expect("market is required")
+    ).unwrap();
+
+
+    let mut manager = ExecutionManager::new(
+        client,
+        configuration,
+    );
+
+    let result = manager.start_strategy(
+        strategy_id.as_str(),
+        account_id,
+        ticker,
+        market,
+    );
+
+    if result.is_err() {
+        println!("Error running strategy: {}", result.err().unwrap());
+        return;
+    }
 
     println!(
-        "katetrade started trading ticker {} with mode {} using strategy {}",
-        symbol, mode, strategy
+        "started trading ticker {} for the account {} using strategy {}",
+        ticker, account_id, strategy_id
     );
+
+    let mut buffer = String::new();
+    stdin().read_line(&mut buffer).unwrap();
 }
 
 fn process_order_send_command(sub_matches: &ArgMatches, client: MarketConnectorClient) {
@@ -177,7 +213,7 @@ fn process_order_send_command(sub_matches: &ArgMatches, client: MarketConnectorC
     }
 }
 
-fn process_order_details_command(sub_matches: &ArgMatches, client: MarketConnectorClient){
+fn process_order_details_command(sub_matches: &ArgMatches, client: MarketConnectorClient) {
     let account_id = sub_matches
         .get_one::<i64>("account_id")
         .expect("account id is required");
@@ -186,7 +222,7 @@ fn process_order_details_command(sub_matches: &ArgMatches, client: MarketConnect
         .get_one::<i64>("order_id")
         .expect("order id is required");
 
-    match client.get_order_details(*account_id, *order_id){
+    match client.get_order_details(*account_id, *order_id) {
         Ok(order) => {
             println!("successfully processed order details. {} {}", order.side, order.ticker);
         }
@@ -214,16 +250,19 @@ fn process_connection_status_command(client: MarketConnectorClient) {
 }
 
 fn main() {
-    let configuration = load_configuration();
+    let configuration: KateConfiguration = load_configuration();
     let client = MarketConnectorClient::new(
-        configuration.market_connector_url.as_str(),
+        configuration.market_connector_url.clone(),
         Exchange::B3);
 
     let matches = cli().get_matches();
 
     match matches.subcommand() {
         Some((constants::RUN, sub_matches)) => {
-            process_run_command(sub_matches);
+            process_run_command(sub_matches, client, configuration);
+        }
+        Some((constants::BACKTEST, sub_matches)) => {
+            process_backtest_command(sub_matches, configuration.clone());
         }
         Some((constants::ORDER, sub_matches)) => {
             match sub_matches.subcommand() {

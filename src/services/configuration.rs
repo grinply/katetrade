@@ -7,11 +7,12 @@ use serde::{Deserialize, Serialize};
 const CONFIGURATION_FOLDER: &'static str = ".kate";
 const CONFIGURATION_FILE: &'static str = "config.json";
 const DEFAULT_MARKET_CONNECTOR_URL: &'static str = "http://market-connector.grinply.com";
+const DEFAULT_MARKET_CONNECTOR_SOCKET_URL: &'static str = "http://market-connector.grinply.com:8022";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct KateConfiguration {
     pub market_connector_url: String,
-
+    pub market_connector_socket_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_account_id: Option<String>,
 }
@@ -28,9 +29,9 @@ pub fn load_configuration() -> KateConfiguration {
         let mut config_file = File::create(config_file_path.clone())
             .expect("failed to create configuration file");
 
-
         let config_json = serde_json::to_string_pretty(&KateConfiguration{
             market_connector_url: String::from(DEFAULT_MARKET_CONNECTOR_URL),
+            market_connector_socket_url: String::from(DEFAULT_MARKET_CONNECTOR_SOCKET_URL),
             default_account_id: None,
         }).expect("failed to serialize kate configuration");
 

@@ -6,15 +6,15 @@ use std::time::Duration;
 use crate::models::order::Order;
 use crate::models::order_status::OrderStatus;
 
-pub struct MarketConnectorClient<'a> {
-    host: &'a str,
+pub struct MarketConnectorClient {
+    host: String,
     #[allow(unused)]
     exchange: Exchange,
 }
 
 #[allow(unused)]
-impl<'a> MarketConnectorClient<'a> {
-    pub fn new(host: &'a str, exchange: Exchange) -> Self {
+impl MarketConnectorClient {
+    pub fn new(host: String, exchange: Exchange) -> Self {
         Self { host, exchange }
     }
 
@@ -97,13 +97,13 @@ impl<'a> MarketConnectorClient<'a> {
         Ok(response.into_string()?.parse::<i64>()?)
     }
 
-    pub fn get_trade_feed_key(&self, ticker: String, market: Market) -> Result<String, anyhow::Error> {
+    pub fn get_trade_feed_key(&self, ticker: &str, market: Market) -> Result<String, anyhow::Error> {
         let exchange_str = self.exchange.to_string();
         let endpoint_path =
-            format!("/api/{exchange_str}/market/feed/trades/{market}/{ticker}/subscribe");
+            format!("api/{exchange_str}/market/feed/trades/{market}/{ticker}/subscribe");
         let url = format!("{}/{}", self.host, endpoint_path);
 
-        let response = ureq::get(url.as_str()).call()?;
+        let response = ureq::post(url.as_str()).call()?;
 
         if response.status() != 200 {
             anyhow::bail!("failed to send limit order");
