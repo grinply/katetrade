@@ -28,13 +28,13 @@ impl ExecutionManager {
 
     /// Run the strategy in a thread based on the strategy id
     pub fn start_strategy(&self, strategy_name: &str, account_id: &str, ticker: &str, market: Market) -> anyhow::Result<()> {
-        let running_key = Self::running_strategy_key(strategy_name, ticker, market, account_id);
+        let running_key = Self::running_strategy_key(strategy_name.to_lowercase().as_str(), ticker, market, account_id);
         if self.running_strategy_map.contains_key(running_key.as_str()) {
             anyhow::bail!("the strategy '{}' is already running for the asset '{}' in the account '{}'",
                 strategy_name, ticker, account_id);
         }
 
-        let strategy = create_strategy(strategy_name);
+        let strategy = create_strategy(strategy_name.to_lowercase().as_str());
         if strategy.is_none() {
             anyhow::bail!("No strategy found for the provided strategy name '{}'", strategy_name);
         }
@@ -53,7 +53,8 @@ impl ExecutionManager {
 
         thread::spawn(move || {
             let strategy_name = strategy_name_clone.clone();
-            let mut trading_strategy = create_strategy(strategy_name.clone().as_str()).unwrap();
+            let mut trading_strategy = create_strategy(strategy_name.to_lowercase()
+                .clone().as_str()).unwrap();
             while running.load(std::sync::atomic::Ordering::Relaxed) {
                 let new_trade = consumer_channel.recv().unwrap();
                 let _: TradeAction = strategy_process_new_trade!(trading_strategy, new_trade);
