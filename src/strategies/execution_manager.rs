@@ -118,11 +118,15 @@ impl ExecutionManager {
                 None => unreachable!()
             };
 
+            let order_type = order_action.unwrap();
             if order_id_result.is_ok() {
                 let order_id = order_id_result.unwrap();
                 println!("received order_id {} from executing {:?} of {} contracts for the ticker {}",
-                         order_id, order_action.unwrap(), 1, ticker);
+                         order_id, order_type, 1, ticker);
                 //TODO: we must validate the order execution and also keep track of the position
+            }else{
+                println!("failed when trying to execute order {:?} for ticker {} in the account {}",
+                         order_type, ticker, account_id);
             }
         }
     }
