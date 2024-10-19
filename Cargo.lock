@@ -391,6 +391,7 @@ dependencies = [
  "clap",
  "cli-candlestick-chart",
  "crossbeam",
+ "crossbeam-channel",
  "itertools",
  "lazy_static",
  "once_cell",

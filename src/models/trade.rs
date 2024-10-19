@@ -55,7 +55,6 @@ impl Trade {
         let price = f64::from_be_bytes(data[28..36].try_into()?);
         let volume = f64::from_be_bytes(data[36..44].try_into()?);
 
-
         Ok(Trade {
             trade_number,
             price,

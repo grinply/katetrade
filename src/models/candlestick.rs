@@ -68,7 +68,7 @@ impl Candlestick {
 
 #[allow(unused)]
 impl TimeCandlestickGenerator {
-    fn new(period_minutes: u8) -> TimeCandlestickGenerator {
+    pub fn new(period_minutes: u8) -> TimeCandlestickGenerator {
         if period_minutes == 0 || period_minutes > 60 {
             panic!("Invalid candlestick period, the period must be between 1 and 60 minutes");
         }

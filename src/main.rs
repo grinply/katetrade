@@ -5,15 +5,20 @@ mod services;
 mod strategies;
 mod utils;
 
+use std::io::{stdin, Write};
 use crate::models::order_type::OrderType;
 use crate::services::market_connector::MarketConnectorClient;
 use clap::{arg, ArgMatches, Command};
 use models::exchange::Exchange;
 use std::str::FromStr;
 use std::string::ToString;
+
 use crate::models::market::Market;
 use crate::models::side::Side;
-use crate::services::configuration::load_configuration;
+use crate::models::trade::Trade;
+use crate::services::configuration::{load_configuration, KateConfiguration};
+use crate::strategies::execution_manager::ExecutionManager;
+use crate::strategies::strategy::{create_strategy, TradingStrategy};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn cli() -> Command {
@@ -86,6 +91,28 @@ fn cli() -> Command {
                         .about("evaluate the network connection with market connector (service responsible for processing orders and providing live market data")
                 )
         )
+}
+
+fn process_backtest_command(_: &ArgMatches, client: MarketConnectorClient, configuration: KateConfiguration) {
+    let mut manager = ExecutionManager::new(
+        client,
+        configuration
+    );
+
+    let mut strategy = create_strategy("dummy").unwrap();
+
+    strategy_process_new_trade!(strategy, Trade{
+        trade_number: 0,date: 0,time: 0,qty: 0,buy_agent: 0,sell_agent: 0,trade_type: 0,price: 0.0 , volume: 0.0 ,
+    });
+
+    strategy_process_new_trade!(strategy, Trade{
+        trade_number: 0,date: 0,time: 0,qty: 0,buy_agent: 0,sell_agent: 0,trade_type: 0,price: 0.0 , volume: 0.0 ,
+    });
+
+    manager.start_strategy("strategyId", "WIN", Market::FUTURES);
+
+    let mut buffer = String::new();
+    stdin().read_line(&mut buffer).unwrap();
 }
 
 fn process_run_command(sub_matches: &ArgMatches) {
@@ -214,9 +241,9 @@ fn process_connection_status_command(client: MarketConnectorClient) {
 }
 
 fn main() {
-    let configuration = load_configuration();
+    let configuration:KateConfiguration = load_configuration();
     let client = MarketConnectorClient::new(
-        configuration.market_connector_url.as_str(),
+        configuration.market_connector_url.clone(),
         Exchange::B3);
 
     let matches = cli().get_matches();
@@ -224,6 +251,9 @@ fn main() {
     match matches.subcommand() {
         Some((constants::RUN, sub_matches)) => {
             process_run_command(sub_matches);
+        }
+        Some((constants::BACKTEST, sub_matches)) => {
+            process_backtest_command(sub_matches, client, configuration.clone());
         }
         Some((constants::ORDER, sub_matches)) => {
             match sub_matches.subcommand() {
