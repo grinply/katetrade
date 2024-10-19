@@ -10,7 +10,7 @@ pub fn draw_candlestick_chart(candlesticks: &Vec<Candlestick>){
     let mut chart = Chart::new(&candles);
 
     // Set the chart title
-    chart.set_name(String::from("WIN"));
+    chart.set_name(String::from("visualization"));
 
     // Set customs colors
     chart.set_bear_color(1, 205, 254);
