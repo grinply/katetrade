@@ -92,7 +92,7 @@ impl ExecutionManager {
     }
 
     /// Run the strategy in a thread based on the strategy id
-    pub fn start_strategy(&self, strategy_name: &str, account_id: &str, ticker: &str, market: Market) -> anyhow::Result<()> {
+    pub fn start_strategy(&mut self, strategy_name: &str, account_id: &str, ticker: &str, market: Market) -> anyhow::Result<()> {
         let running_key = Self::running_strategy_key(strategy_name.to_lowercase().as_str(), ticker, market, account_id);
         if self.running_strategy_map.contains_key(running_key.as_str()) {
             anyhow::bail!("the strategy '{}' is already running for the asset '{}' in the account '{}'",
@@ -113,6 +113,8 @@ impl ExecutionManager {
 
         let consumer_channel = trade_datafeed.start_reading()?;
         let active = Arc::new(AtomicBool::new(true));
+        self.running_strategy_map.insert(running_key, active.clone());
+
         let running: Arc<AtomicBool> = active.clone();
         let strategy_name_clone = strategy_name.to_string();
 

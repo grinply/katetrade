@@ -111,7 +111,7 @@ fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, 
     ).unwrap();
 
 
-    let manager = ExecutionManager::new(
+    let mut manager = ExecutionManager::new(
         client,
         configuration,
     );
