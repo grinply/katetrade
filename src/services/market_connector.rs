@@ -3,6 +3,8 @@ use crate::models::market::Market;
 use crate::models::side::Side;
 use std::thread;
 use std::time::Duration;
+use anyhow::bail;
+use ureq::Error;
 use crate::models::order::Order;
 use crate::models::order_status::OrderStatus;
 
@@ -51,7 +53,8 @@ impl MarketConnectorClient {
     ) -> Result<i64, anyhow::Error> {
         let exchange_str = self.exchange.to_string();
         let url = format!("{}/api/{exchange_str}/order/create", self.host);
-        let response = ureq::post(url.as_str()).send_json(ureq::json!({
+
+        match ureq::post(url.as_str()).send_json(ureq::json!({
             "orderType": "MARKET",
             "category": market.to_string(),
             "ticker": ticker,
@@ -59,13 +62,17 @@ impl MarketConnectorClient {
             "side": side.to_string(),
             "accountId": account_id,
             "strategyId": strategy
-        }))?;
-
-        if response.status() != 200 {
-            return anyhow::bail!("failed to send market order");
+        })){
+            Ok(response) => {
+                Ok(response.into_string()?.parse::<i64>()?)
+            }
+            Err(Error::Status(code, response)) => {
+                bail!("failed sending order - status code: {} body {}", code, response.into_string()?);
+            }
+            Err(_) => {
+                bail!("connection issues to the server prevented market order to be sent for ticker {} in the account {}", ticker, account_id);
+            }
         }
-
-        Ok(response.into_string()?.parse::<i64>()?)
     }
 
     pub fn send_limit_order(
@@ -80,7 +87,7 @@ impl MarketConnectorClient {
     ) -> Result<i64, anyhow::Error> {
         let exchange_str = self.exchange.to_string();
         let url = format!("{}/api/{exchange_str}/order/create", self.host);
-        let response = ureq::post(url.as_str()).send_json(ureq::json!({
+        match ureq::post(url.as_str()).send_json(ureq::json!({
             "orderType": "LIMIT",
             "category": market.to_string(),
             "ticker": ticker,
@@ -89,12 +96,17 @@ impl MarketConnectorClient {
             "price": price,
             "accountId": account_id,
             "strategyId": strategy
-        }))?;
-
-        if response.status() != 200 {
-            return anyhow::bail!("failed to send limit order");
+        })){
+            Ok(response) => {
+                Ok(response.into_string()?.parse::<i64>()?)
+            }
+            Err(Error::Status(code, response)) => {
+                bail!("failed sending order - status code: {} body: {}", code, response.into_string()?);
+            }
+            Err(_) => {
+                bail!("connection issues to the server prevented limit order to be sent for ticker {} in the account {}", ticker, account_id);
+            }
         }
-        Ok(response.into_string()?.parse::<i64>()?)
     }
 
     pub fn get_trade_feed_key(&self, ticker: &str, market: Market) -> Result<String, anyhow::Error> {
@@ -106,7 +118,7 @@ impl MarketConnectorClient {
         let response = ureq::post(url.as_str()).call()?;
 
         if response.status() != 200 {
-            anyhow::bail!("failed to send limit order");
+            bail!("failed to send limit order");
         }
         Ok(response.into_string()?)
     }
@@ -128,7 +140,7 @@ impl MarketConnectorClient {
         }
 
         if !thread_handle.is_finished() {
-            return anyhow::bail!("timeout, the server is unresponsive");
+            return bail!("timeout, the server is unresponsive");
         }
         let response = thread_handle.join().unwrap();
         Ok(response?.into_string()?.contains("UP"))
