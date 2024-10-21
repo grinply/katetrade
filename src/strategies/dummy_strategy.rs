@@ -20,20 +20,18 @@ impl TradingStrategy for DummyStrategy {
         // Initialize trading day logic
     }
 
-    fn process_new_trade(&mut self, new_trade: Trade) -> TradeAction {
-        println!("new trade processed by dummy strategy: {:?}", new_trade);
+    fn process_new_trade(&mut self, _: Trade) -> TradeAction {
         self.counter+=1;
-        println!("internal state is {}", self.counter);
 
-        if self.counter == 50 {
+        if self.counter == 500 {
             return TradeAction::send_order(MarketLong);
         }
 
-        if self.counter == 100 {
+        if self.counter == 1000 {
             return TradeAction::send_order(MarketShort);
         }
 
-        if self.counter > 100 {
+        if self.counter > 1000 {
             self.counter = 0;
         }
 

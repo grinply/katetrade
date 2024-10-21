@@ -74,8 +74,7 @@ impl PositionManager {
                          order_id, order_type, 1, self.ticker);
                 //TODO: we must validate the order execution and also keep track of the position
             } else {
-                println!("failed when trying to execute order {:?} for ticker {} in the account {}",
-                         order_type, self.ticker, self.account_id);
+                println!("{}", order_id_result.err().unwrap());
             }
         }
     }
