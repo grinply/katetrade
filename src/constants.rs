@@ -14,3 +14,5 @@ pub const SELL: &str = "SELL";
 pub const MANUAL: &str = "MANUAL";
 
 pub const UNKNOWN: &str = "UNKNOWN";
+
+pub const B3: &str = "B3";

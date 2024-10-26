@@ -1,4 +1,6 @@
-#[derive(Debug, strum_macros::Display)]
+use strum_macros::{Display, EnumString};
+
+#[derive(Debug, Display, EnumString)]
 pub enum Exchange {
     B3,
 }
