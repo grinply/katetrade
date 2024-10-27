@@ -12,5 +12,6 @@ pub const LIMIT: &str = "LIMIT";
 pub const BUY: &str = "BUY";
 pub const SELL: &str = "SELL";
 pub const MANUAL: &str = "MANUAL";
-
 pub const UNKNOWN: &str = "UNKNOWN";
+pub const CANDLESTICK: &str = "CANDLESTICK";
+pub const TRADE: &str = "TRADE";

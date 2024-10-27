@@ -16,7 +16,8 @@ use std::string::ToString;
 use crate::models::market::Market;
 use crate::models::side::Side;
 use crate::services::configuration::{load_configuration, KateConfiguration};
-use crate::strategies::execution_manager::ExecutionManager;
+use crate::strategies::execution_manager::{ExecutionManager, ExecutionRequest};
+use crate::strategies::strategy::StrategyInputData;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn cli() -> Command {
@@ -33,13 +34,17 @@ fn cli() -> Command {
                 .arg(arg!(-s --strategy <STRATEGY> "Identifier (id) for the strategy you want to executed'").required(true))
                 .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'").required(true))
                 .arg(arg!(-a --account <ACCOUNT> "AccountId used when sending trades in live mode to the market-connector'").required(true))
+                .arg(arg!(-d --data <DATA> "Type of data used as input for the trading strategy")
+                    .value_parser([constants::CANDLESTICK, constants::TRADE])
+                    .num_args(0..=1)
+                    .default_value(constants::CANDLESTICK)
+                )
                 .arg(
                     arg!(--market <MARKET> "Market where to send the order")
                         .value_parser([constants::FUTURES, constants::SPOT])
                         .num_args(0..=1)
                         .required(true)
                 )
-                .arg(arg!(-d --detach "Enables execution in the background").required(false))
             ,
         )
         .subcommand(
@@ -110,18 +115,26 @@ fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, 
         .expect("market is required")
     ).unwrap();
 
+    let strategy_input_data_type = StrategyInputData::from_str(sub_matches
+        .get_one::<String>("data")
+        .expect("account is required")
+    ).unwrap();
+
 
     let mut manager = ExecutionManager::new(
         client,
         configuration,
     );
 
-    let result = manager.start_strategy(
-        strategy_id.as_str(),
-        account_id,
-        ticker,
-        market,
+    let strategy_execution_request = ExecutionRequest::new(
+        strategy_input_data_type,
+        strategy_id.clone(),
+        account_id.clone(),
+        ticker.clone(),
+        market
     );
+
+    let result = manager.start_strategy(strategy_execution_request);
 
     if result.is_err() {
         println!("Error running strategy: {}", result.err().unwrap());
@@ -236,8 +249,8 @@ fn process_connection_status_command(client: MarketConnectorClient) {
     println!("checking connection status with market-connector");
     let status_result = client.health_status();
     match status_result {
-        Err(_) => {
-            println!("failed to reach market-connector server");
+        Err(e) => {
+            println!("failed to reach market-connector server. error: {}", e);
         }
         Ok(is_healthy) => {
             if !is_healthy {
