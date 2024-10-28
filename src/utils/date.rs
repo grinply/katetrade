@@ -11,7 +11,7 @@ pub fn convert_to_naive_date(date: u32) -> Result<NaiveDate, anyhow::Error> {
     let day = date % 100;
 
     if year < 1000 || year >= 9999 || day == 0 || day > 31 || month == 0 || month > 12 {
-        anyhow::bail!("invalid start_date provided, it must be in the format yyyyMMdd");
+        anyhow::bail!("invalid date provided, it must be in the format yyyyMMdd");
     }
 
     let naive_date = NaiveDate::from_ymd_opt(year as i32, month, day);
