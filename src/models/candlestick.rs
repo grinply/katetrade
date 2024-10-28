@@ -46,8 +46,10 @@ pub struct TimeCandlestickGenerator {
 
 #[allow(unused)]
 pub struct TickCandlestickGenerator {
+    current_tick_count: u64,
     ticks_per_candle: u64,
     last_candle: Option<Candlestick>,
+    date_last_trade: i32,
 }
 
 #[allow(unused)]
@@ -72,6 +74,74 @@ impl Candlestick {
         }
     }
 }
+
+impl TickCandlestickGenerator {
+    pub fn new(ticks_per_candle: u64) -> TickCandlestickGenerator {
+        TickCandlestickGenerator{
+            current_tick_count: 0,
+            ticks_per_candle,
+            last_candle: None,
+            date_last_trade: -1,
+        }
+    }
+}
+
+impl CandlestickGenerator for TickCandlestickGenerator {
+    fn description(&self) -> String {
+        "Candlestick grouped by quantity of trades".to_string()
+    }
+
+    fn parse_with_open_candles(&mut self, new_trade: &Trade) -> Candlestick {
+        if self.last_candle.is_none() {
+            self.last_candle = Some(Candlestick::new(new_trade));
+            self.date_last_trade = new_trade.date;
+            return self.last_candle.as_ref().unwrap().clone();
+        }
+
+        if new_trade.date != self.date_last_trade {
+            let result_candle = self.last_candle.as_ref().unwrap().clone();
+            self.last_candle = Some(Candlestick::new(new_trade));
+            return result_candle.clone();
+        }
+
+        let existing_candle = self.last_candle.as_mut().unwrap();
+
+        existing_candle.volume += new_trade.volume;
+
+        if new_trade.price < existing_candle.low {
+            existing_candle.low = new_trade.price;
+        }
+        if new_trade.price > existing_candle.high {
+            existing_candle.high = new_trade.price;
+        }
+
+        existing_candle.close = new_trade.price;
+
+        self.current_tick_count += 1;
+
+        let mut result_candle = existing_candle.clone();
+
+        if self.current_tick_count < self.ticks_per_candle {
+            result_candle.is_closed = false;
+        }else{
+            result_candle.is_closed = true;
+            self.current_tick_count = 0;
+            self.last_candle = None;
+        }
+
+        result_candle
+    }
+
+    fn parse_only_closed_candles(&mut self, new_trade: &Trade) -> Option<Candlestick> {
+        let candle = self.parse_with_open_candles(new_trade);
+        return if candle.is_closed {
+            Some(candle)
+        }else{
+            None
+        };
+    }
+}
+
 
 
 #[allow(unused)]

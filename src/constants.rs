@@ -15,3 +15,4 @@ pub const MANUAL: &str = "MANUAL";
 pub const UNKNOWN: &str = "UNKNOWN";
 pub const CANDLESTICK: &str = "CANDLESTICK";
 pub const TRADE: &str = "TRADE";
+pub const B3: &str = "B3";
