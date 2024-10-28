@@ -14,6 +14,14 @@ pub struct Candlestick {
     pub trades: u64,
 }
 
+#[derive(Debug,PartialEq, Eq)]
+#[allow(unused)]
+pub enum CandlestickType {
+    TIME,
+    TICK,
+    VOLUME
+}
+
 #[allow(unused)]
 pub trait CandlestickGenerator {
     fn description(&self) -> String;
@@ -138,7 +146,7 @@ impl CandlestickGenerator for TickCandlestickGenerator {
 
 #[allow(unused)]
 impl TimeCandlestickGenerator {
-    fn new(period_minutes: u8) -> TimeCandlestickGenerator {
+    pub fn new(period_minutes: u8) -> TimeCandlestickGenerator {
         if period_minutes == 0 || period_minutes > 60 {
             panic!("Invalid candlestick period, the period must be between 1 and 60 minutes");
         }
@@ -164,6 +172,7 @@ impl CandlestickGenerator for TimeCandlestickGenerator {
         TimeCandlestickGenerator::parse(self, new_trade, true)
     }
 }
+
 
 impl TimeCandlestickGenerator {
     fn parse(&mut self, new_trade: &Trade, only_closed_candles: bool) -> Option<Candlestick> {
