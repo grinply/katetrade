@@ -23,15 +23,15 @@ impl TradingStrategy for DummyStrategy {
     fn process_new_trade(&mut self, _: Trade) -> TradeAction {
         self.counter+=1;
 
-        if self.counter == 500 {
+        if self.counter == 50 {
             return TradeAction::send_order(MarketLong);
         }
 
-        if self.counter == 1000 {
+        if self.counter == 100 {
             return TradeAction::send_order(MarketShort);
         }
 
-        if self.counter > 1000 {
+        if self.counter > 100 {
             self.counter = 0;
         }
 

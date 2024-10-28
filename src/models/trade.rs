@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::io::Write;
 use anyhow;
+use anyhow::bail;
+use std::fs::{File};
+use std::io::{self, BufRead, Read, Write};
 use lazy_static::lazy_static;
 use crate::constants;
+const TRADES_CSV_HEADER_LINE: &str = "<ticker>,<date>,<time>,<trade_number>,<price>,<qty>,<vol>,<buy_agent>,<sell_agent>,<trade_type>,<aft>";
 
 /// Trade struct to match the Java data sent from market-connector
 #[derive(Debug, PartialEq)]
@@ -260,9 +263,96 @@ lazy_static! {
     .collect();
 }
 
+#[allow(unused)]
+pub fn write_to_csv_file(
+    asset_ticker: &str,
+    output_file_path: &str,
+    trades: Vec<Trade>,
+) -> Result<(), io::Error> {
+    let mut csv = File::create(output_file_path)?;
+    writeln!(csv, "{}", TRADES_CSV_HEADER_LINE)?;
+    for trade in trades {
+        write!(csv, "{}\n", trade.to_csv_row(asset_ticker))?;
+    }
+    Ok(())
+}
+
+#[allow(unused)]
+pub fn write_to_binary_file(trades: Vec<Trade>, output_file_path: &str) -> Result<(), anyhow::Error> {
+    let mut binary_file = File::create(output_file_path)?;
+    for trade in trades {
+        let trade_binary_data = trade.to_bytes()?;
+        binary_file.write_all(trade_binary_data.as_slice())?;
+    }
+    Ok(())
+}
+
+pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
+    let file = File::open(file_path)?;
+    file.sync_all()?;
+    let file_size_bytes = file.metadata()?.len();
+    let trade_count = (file_size_bytes / Trade::size_in_bytes() as u64) as usize;
+    let mut trades = Vec::with_capacity(trade_count);
+
+    let mut file_reader = io::BufReader::new(File::open(file_path)?);
+
+    loop {
+        let mut buffer: [u8; Trade::size_in_bytes()] = [0; Trade::size_in_bytes()];
+        if file_reader.read_exact(&mut buffer).is_err() {
+            break;
+        }
+        let trade = Trade::from_bytes(buffer.as_slice())?;
+        trades.push(trade);
+    }
+
+    Ok(trades)
+}
+
+#[allow(unused)]
+pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
+    let mut file_reader = io::BufReader::new(File::open(file_path)?);
+
+    let csv_header_line = &mut String::new();
+    file_reader.read_line(csv_header_line)?;
+
+    let expected_headers = [
+        "<ticker>",
+        "<date>",
+        "<time>",
+        "<trade_number>",
+        "<price>",
+        "<qty>",
+        "<vol>",
+        "<buy_agent>",
+        "<sell_agent>",
+        "<trade_type>",
+        "<aft>",
+    ];
+    for (index, header) in csv_header_line.split(",").enumerate() {
+        if expected_headers[index] != header
+            && (index < 10 || expected_headers[index] != header.replace("\n", ""))
+        {
+            return !bail!(format!(
+                "expected the header column {} in the {} position, but found {}",
+                expected_headers[index],
+                index,
+                header
+            ));
+        }
+    }
+
+    let mut trades: Vec<Trade> = Vec::new();
+    for line in file_reader.lines() {
+        trades.push(Trade::from_csv_row(&mut line?)?);
+    }
+    Ok(trades)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+    use std::fs::remove_file;
 
     #[test]
     fn trade_size_in_bytes_should_be_explicitly_defined_correctly() {
@@ -291,5 +381,126 @@ mod tests {
 
         let deserialized_trade = deserialized_trade_struct.unwrap();
         assert_eq!(example_trade, deserialized_trade);
+    }
+
+    fn mock_trades() -> Vec<Trade> {
+        let mut trades: Vec<Trade> = Vec::new();
+
+        trades.push(Trade {
+            trade_number: 78231,
+            price: 87800.00000020,
+            date: 20190102,
+            time: 090034,
+            volume: 40000.3000,
+            qty: 12,
+            buy_agent: 1,
+            sell_agent: 2,
+            trade_type: 13,
+        });
+
+        trades.push(Trade {
+            trade_number: 78232,
+            price: 87801.00000020,
+            date: 20190102,
+            time: 090035,
+            volume: 30000.300,
+            qty: 3,
+            buy_agent: 3,
+            sell_agent: 3,
+            trade_type: 4,
+        });
+
+        trades
+    }
+
+    #[test]
+    fn should_load_trades_from_binary_file_correctly() {
+        let trades_file_path = "resources/example_binary_trades";
+        let trades = read_trades_from_binary_file(trades_file_path);
+        let result = trades.unwrap();
+
+        assert_eq!(
+            2,
+            result.len(),
+            "should have read 2 trades from the file '{}'",
+            trades_file_path
+        );
+
+        let first_trade = result.first().unwrap();
+        assert_eq!(78231, first_trade.trade_number);
+        assert_eq!(87800.00000020, first_trade.price);
+        assert_eq!(20190102, first_trade.date);
+        assert_eq!(090034, first_trade.time);
+        assert_eq!(40000.3000, first_trade.volume);
+        assert_eq!(12, first_trade.qty);
+        assert_eq!(1, first_trade.buy_agent);
+        assert_eq!(2, first_trade.sell_agent);
+        assert_eq!(13, first_trade.trade_type);
+    }
+
+    #[test]
+    fn should_load_trades_from_example_csv_correctly() {
+        let trades_file_path = "resources/example_history_trades.csv";
+        let trades = read_trades_from_csv(trades_file_path);
+
+        assert!(trades.is_ok(), "trade data failed to be loaded from '{}'", trades_file_path);
+        let result = trades.unwrap();
+
+        assert_eq!(
+            9,
+            result.len(),
+            "should have read 9 trades from the file '{}'",
+            trades_file_path
+        );
+    }
+
+    #[test]
+    fn should_create_binary_file_from_trades() {
+        let trades = mock_trades();
+        let test_binary_trades_file_path = "resources/WIN_BINARY_TEST";
+        if Path::new(test_binary_trades_file_path).exists() {
+            remove_file(test_binary_trades_file_path).unwrap();
+        }
+
+        write_to_binary_file(trades, test_binary_trades_file_path).unwrap();
+        assert!(Path::new(test_binary_trades_file_path).exists());
+
+        remove_file(test_binary_trades_file_path).unwrap();
+    }
+
+    #[test]
+    fn should_create_csv_from_trades_file() {
+        let trades = mock_trades();
+
+        let test_trades_file_path = "resources/test_trades.csv";
+        if Path::new(test_trades_file_path).exists() {
+            remove_file(test_trades_file_path).unwrap();
+        }
+
+        write_to_csv_file("WIN", test_trades_file_path, trades).unwrap();
+        assert!(Path::new(test_trades_file_path).exists());
+
+        let mut generated_file = io::BufReader::new(File::open(test_trades_file_path).unwrap());
+
+        // check for the header line
+        let csv_header_line = &mut String::new();
+        generated_file.read_line(csv_header_line).unwrap();
+        assert_eq!(TRADES_CSV_HEADER_LINE, csv_header_line.replace("\n", ""));
+
+        let first_trade_line = &mut String::new();
+        generated_file.read_line(first_trade_line).unwrap();
+        assert_eq!(
+            "WIN,20190102,90034,78231,87800.0000002,12,40000.3,Modal,XP,Auction,N\n",
+            first_trade_line
+        );
+
+        let second_trade_line = &mut String::new();
+        generated_file.read_line(second_trade_line).unwrap();
+        assert_eq!(
+            "WIN,20190102,90035,78232,87801.0000002,3,30000.3,Modal,XP,Auction,N\n",
+            second_trade_line
+        );
+
+        remove_file(test_trades_file_path).unwrap();
     }
 }

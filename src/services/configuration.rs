@@ -4,8 +4,8 @@ use std::io::Write;
 use std::path::{PathBuf};
 use serde::{Deserialize, Serialize};
 
-const CONFIGURATION_FOLDER: &'static str = ".kate";
-const CONFIGURATION_FILE: &'static str = "config.json";
+pub const CONFIGURATION_FOLDER: &'static str = ".kate";
+pub const CONFIGURATION_FILE: &'static str = "config.json";
 const DEFAULT_MARKET_CONNECTOR_URL: &'static str = "http://market-connector.grinply.com";
 const DEFAULT_MARKET_CONNECTOR_SOCKET_URL: &'static str = "http://market-connector.grinply.com:8022";
 
@@ -48,7 +48,7 @@ pub fn load_configuration() -> KateConfiguration {
     configuration
 }
 
-fn home_dir() -> PathBuf {
+pub fn home_dir() -> PathBuf {
     PathBuf::from(env::var("HOME").expect("Could not get home directory"))
 }
 
