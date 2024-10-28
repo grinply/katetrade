@@ -147,15 +147,15 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
         println!("failed to initialize backtest engine. err: {}",
                  backtester_engine.err().unwrap());
         return;
-    } else {
-        let backtester = backtester_engine.unwrap();
-        println!("successfully initialized backtest engine containing {} trading days \
-            with a total of {} candlesticks generated from {} trades",
-                 backtester.qty_history_trading_days,
-                 backtester.qty_history_candles,
-                 backtester.qty_history_trades,
-        );
     }
+
+    let backtester = backtester_engine.unwrap();
+    println!("successfully initialized backtest engine containing {} trading days \
+            with a total of {} candlesticks generated from {} trades",
+             backtester.qty_history_trading_days,
+             backtester.qty_history_candles,
+             backtester.qty_history_trades,
+    );
 }
 
 fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, configuration: KateConfiguration) {
@@ -187,7 +187,7 @@ fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, 
         strategy_id.clone(),
         account_id.clone(),
         ticker.clone(),
-        market
+        market,
     );
 
     let result = manager.start_strategy(strategy_execution_request);

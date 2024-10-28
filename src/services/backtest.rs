@@ -1,9 +1,11 @@
+use chrono::Datelike;
 use crate::models::candlestick::{Candlestick, CandlestickGenerator, TickCandlestickGenerator};
 use crate::models::exchange::Exchange;
 use crate::models::market::Market;
 use crate::models::trade;
 use crate::services::configuration;
 use crate::services::configuration::home_dir;
+use crate::utils::date;
 
 #[derive(Debug)]
 pub struct TradingBacktester {
@@ -25,29 +27,8 @@ impl TradingBacktester {
         end_date: u32,
         ticks_per_candle: u64,
     ) -> Result<TradingBacktester, anyhow::Error> {
-        if start_date < 2000_01_01 || start_date > 3000_12_31 {
-            anyhow::bail!("invalid start_date, it must be in the format yyyyMMdd, received {}", start_date);
-        }
-
-        let start_year = start_date / 10000;
-        let start_month = (start_date / 100) - (start_year * 100);
-        let start_day = start_date % 100;
-
-        if start_year < 2000 || start_year >= 3000 || start_day == 0 || start_day > 31 || start_month == 0 || start_month > 12 {
-            anyhow::bail!("invalid start_date provided, it must be in the format yyyyMMdd");
-        }
-
-        if end_date < 2000_01_01 || end_date > 30001231 {
-            anyhow::bail!("invalid end_date, it must be in the format yyyyMMdd");
-        }
-
-        let end_year = end_date / 10000;
-        let end_month = (end_date / 100) - (end_year * 100);
-        let end_day = end_date % 100;
-
-        if end_year < 2000 || end_year >= 3000 || end_day == 0 || end_day > 31 || end_month == 0 || end_month > 12 {
-            anyhow::bail!("invalid end_date provided, it must be in the format yyyyMMdd");
-        }
+        let start_date = date::convert_to_naive_date(start_date)?;
+        let end_date = date::convert_to_naive_date(end_date)?;
 
         if end_date < start_date {
             anyhow::bail!("invalid dates, the end_date is before the start_date");
@@ -68,28 +49,28 @@ impl TradingBacktester {
         let mut candlesticks: Vec<Candlestick> = vec![];
         let mut tick_candlestick_parser = TickCandlestickGenerator::new(ticks_per_candle);
 
-        for year in start_year..=end_year {
-            let begin_month = if year == start_year {
-                start_month
+        for year in start_date.year()..=end_date.year() {
+            let begin_month = if year == start_date.year() {
+                start_date.month()
             }else{
                 1
             };
 
-            let finish_month = if year == end_year {
-                end_month
+            let finish_month = if year == end_date.year() {
+                end_date.month()
             }else{
                 12
             };
 
             for month in begin_month..=finish_month {
-                let begin_day = if year == start_year && month == start_month {
-                    start_day
+                let begin_day = if year == start_date.year() && month == start_date.month() {
+                    start_date.day()
                 }else{
                     1
                 };
 
-                let finish_day = if year == end_year && month == end_month {
-                    end_day
+                let finish_day = if year == end_date.year() && month == end_date.month() {
+                    end_date.day()
                 }else{
                     31
                 };
@@ -146,3 +127,6 @@ impl TradingBacktester {
         })
     }
 }
+
+
+
