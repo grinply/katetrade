@@ -27,7 +27,7 @@ jobs:
         run: cargo test --verbose --all-features
 
       - name: Run ignored tests (tests specific to run in the CI/CD pipeline)
-        run: cargo test --verbose --all-features -- --ignored
+        run: AWS_ACCESS_KEY_ID=${{secrets.AWS_ACCESS_KEY_ID }} AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} cargo test --verbose --all-features -- --ignored
 
       - name: Debug build
         run: cargo build --verbose
