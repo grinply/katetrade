@@ -26,6 +26,9 @@ jobs:
       - name: Test application
         run: cargo test --verbose --all-features
 
+      - name: Run ignored tests (tests specific to run in the CI/CD pipeline)
+        run: cargo test --verbose --all-features -- --ignored
+
       - name: Debug build
         run: cargo build --verbose
 
