@@ -101,16 +101,9 @@ impl AwsClient {
 mod test {
     use super::*;
 
-    fn setup_environment(){
-        env::set_var("AWS_ACCESS_KEY_ID", "AKIA4OVGESMNZCALAVN4");
-        env::set_var("AWS_SECRET_ACCESS_KEY", "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");
-    }
-
     #[test]
     #[ignore = "will only run in the CI/CD where proper credentials are available for integration testing"]
     fn should_download_file_from_s3_correctly() {
-        setup_environment();
-
         let temp_dir = env::temp_dir();
         let bucket_name = "profitpirates".to_string();
         let file = "/trades/IND/TRADE-B3-FUTURES-IND-20240614";
@@ -127,8 +120,6 @@ mod test {
     #[test]
     #[ignore = "will only run in the CI/CD where proper credentials are available for integration testing"]
     fn should_check_that_file_exists_on_s3_correctly() {
-        setup_environment();
-
         let bucket_name = "profitpirates".to_string();
         let file = "trades/IND/TRADE-B3-FUTURES-IND-20240614";
 
@@ -142,8 +133,6 @@ mod test {
     #[test]
     #[ignore = "will only run in the CI/CD where proper credentials are available for integration testing"]
     fn should_check_that_file_doesnt_exists_on_s3_correctly() {
-        setup_environment();
-
         let bucket_name = "profitpirates".to_string();
         let file = "trades/FILE_NOT_FOUND";
 
