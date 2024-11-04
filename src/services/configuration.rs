@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::{PathBuf};
 use serde::{Deserialize, Serialize};
 
+pub const S3_BUCKET_HISTORICAL_DATA: &'static str = "profitpirates";
 pub const CONFIGURATION_FOLDER: &'static str = ".kate";
 pub const CONFIGURATION_FILE: &'static str = "config.json";
 const DEFAULT_MARKET_CONNECTOR_URL: &'static str = "http://market-connector.grinply.com";

@@ -1,10 +1,14 @@
+use std::sync::Arc;
+use std::thread;
+use std::thread::{JoinHandle};
 use chrono::Datelike;
 use crate::models::candlestick::{Candlestick, CandlestickGenerator, TickCandlestickGenerator};
 use crate::models::exchange::Exchange;
 use crate::models::market::Market;
 use crate::models::trade;
+use crate::services::aws::AwsClient;
 use crate::services::configuration;
-use crate::services::configuration::home_dir;
+use crate::services::configuration::{home_dir, S3_BUCKET_HISTORICAL_DATA};
 use crate::utils::date;
 
 #[derive(Debug)]
@@ -48,30 +52,34 @@ impl TradingBacktester {
         let mut qty_trades = 0;
         let mut candlesticks: Vec<Candlestick> = vec![];
         let mut tick_candlestick_parser = TickCandlestickGenerator::new(ticks_per_candle);
+        let aws_client = Arc::new(AwsClient::new("sa-east-1".to_string())?);
+
+        let uppercase_ticker = ticker.to_ascii_uppercase();
+        let mut threads_handle_download_history_files: Vec<JoinHandle<Result<(), anyhow::Error>>> = vec![];
 
         for year in start_date.year()..=end_date.year() {
             let begin_month = if year == start_date.year() {
                 start_date.month()
-            }else{
+            } else {
                 1
             };
 
             let finish_month = if year == end_date.year() {
                 end_date.month()
-            }else{
+            } else {
                 12
             };
 
             for month in begin_month..=finish_month {
                 let begin_day = if year == start_date.year() && month == start_date.month() {
                     start_date.day()
-                }else{
+                } else {
                     1
                 };
 
                 let finish_day = if year == end_date.year() && month == end_date.month() {
                     end_date.day()
-                }else{
+                } else {
                     31
                 };
 
@@ -89,8 +97,11 @@ impl TradingBacktester {
                     };
 
                     //TRADE-B3-FUTURES-IND-20240722
-                    let binary_trades_file_name = format!("TRADE-{exchange}-{market}-{ticker}-{year}{formatted_month}{formatted_day}");
+                    let binary_trades_file_name = format!("TRADE-{exchange}-{market}-{uppercase_ticker}-{year}{formatted_month}{formatted_day}");
                     let binary_trades_file_full_path = history_trades_folder_path.join(binary_trades_file_name.as_str());
+
+                    //trades/IND/TRADE-B3-FUTURES-IND-20240722
+                    let file_path_on_s3 = format!("trades/{}/{}", uppercase_ticker, binary_trades_file_name);
 
                     if binary_trades_file_full_path.exists() {
                         trading_days += 1;
@@ -103,18 +114,49 @@ impl TradingBacktester {
                             }
                             Ok(trades) => {
                                 trades.iter().for_each(|trade| {
-                                    qty_trades+=1;
+                                    qty_trades += 1;
                                     match tick_candlestick_parser.parse_only_closed_candles(trade) {
                                         Some(candlestick) => {
-                                            qty_candles+=1;
+                                            qty_candles += 1;
                                             candlesticks.push(candlestick)
-                                        },
+                                        }
                                         None => (),
                                     }
                                 });
                             }
                         }
+                    } else if aws_client.file_exists_on_s3(S3_BUCKET_HISTORICAL_DATA, file_path_on_s3.as_str())? == true {
+                        let client = aws_client.clone();
+                        let file_path_on_s3 = file_path_on_s3.clone();
+                        let output_folder_on_disk = history_trades_folder_path.clone();
+                        let file_name = binary_trades_file_name.clone();
+
+                        let thread_join_handle = thread::spawn(move || {
+                            println!("downloading trades file {}", file_path_on_s3.as_str());
+                            let file_output_path_on_disk = format!("{}/{}",
+                                                                   output_folder_on_disk.to_str().unwrap(),
+                                                                   file_name.as_str()
+                            );
+                            client.download_file_from_s3(S3_BUCKET_HISTORICAL_DATA,
+                                                         file_path_on_s3.as_str(),
+                                                         file_output_path_on_disk.as_str()
+                            )
+                        });
+                        threads_handle_download_history_files.push(thread_join_handle);
                     }
+                }
+            }
+        }
+
+        for thread_handle in threads_handle_download_history_files {
+            match thread_handle.join() {
+                Ok(result) => {
+                    if result.is_err() {
+                        panic!("failed to download history file from aws s3. {}", result.err().unwrap());
+                    }
+                }
+                Err(_) => {
+                    panic!("thread failed to complete successfully.");
                 }
             }
         }
@@ -123,7 +165,7 @@ impl TradingBacktester {
             candlesticks,
             qty_history_trading_days: trading_days,
             qty_history_candles: qty_candles,
-            qty_history_trades: qty_trades
+            qty_history_trades: qty_trades,
         })
     }
 }

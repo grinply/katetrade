@@ -3,3 +3,4 @@ pub mod market_connector;
 pub mod configuration;
 pub mod visualization;
 pub mod backtest;
+pub mod aws;
