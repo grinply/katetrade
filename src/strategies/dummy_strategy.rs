@@ -51,7 +51,9 @@ impl HighResolutionTradingStrategy for DummyHighResolutionStrategy {
 
 impl CandlestickTradingStrategy for DummyCandlestickStrategy {
     fn new() -> Self {
-        todo!()
+        DummyCandlestickStrategy{
+            counter: 50
+        }
     }
 
     fn name(&self) -> &str {
