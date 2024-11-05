@@ -463,7 +463,13 @@ mod tests {
 
     #[test]
     fn time_candlesticks_generator_with_five_minute_period() {
-        let mut generator = TimeCandlestickGenerator::new(5); // Set the period to 5 minutes
+        let mut generator =TimeCandlestickGenerator {
+            last_price: 0.0,
+            last_day: 0,
+            period_minutes: 5,
+            last_candle: None,
+        };
+
         let trades = mock_trades_list_for_five_minute_period(); // Get the mock trades data
         let mut result_candlesticks: Vec<Candlestick> = vec![];
 
@@ -511,21 +517,21 @@ mod tests {
 
         // The third period (09:10:00 - 09:14:59) is not closed yet
         // Verify that the last candle is open and has correct data
-        // if let Some(last_candle) = &generator.last_candle {
-        //     assert_eq!(last_candle.is_closed, false);
-        //     assert_eq!(last_candle.start_time, 09_10_15);
-        //     assert_eq!(last_candle.open, 131110.0);
-        //     assert_eq!(last_candle.high, 131150.0);
-        //     assert_eq!(last_candle.low, 131070.0);
-        //     assert_eq!(last_candle.close, 131085.0);
-        //     assert_eq!(last_candle.trades, 5);
-        //     assert_eq!(
-        //         last_candle.volume,
-        //         300.0 + 310.0 + 320.0 + 330.0 + 340.0
-        //     );
-        // } else {
-        //     panic!("Expected a last open candle");
-        // }
+        if let Some(last_candle) = &generator.last_candle {
+            assert_eq!(last_candle.is_closed, false);
+            assert_eq!(last_candle.start_time, 09_10_15);
+            assert_eq!(last_candle.open, 131110.0);
+            assert_eq!(last_candle.high, 131150.0);
+            assert_eq!(last_candle.low, 131070.0);
+            assert_eq!(last_candle.close, 131085.0);
+            assert_eq!(last_candle.trades, 5);
+            assert_eq!(
+                last_candle.volume,
+                300.0 + 310.0 + 320.0 + 330.0 + 340.0
+            );
+        } else {
+            panic!("Expected a last open candle");
+        }
     }
 
     // Mock trades data for the test case
