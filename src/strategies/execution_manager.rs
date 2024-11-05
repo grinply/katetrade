@@ -3,18 +3,14 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread;
 use crate::models::action::{OrderAction, TradeAction};
+use crate::models::candlestick;
 use crate::models::market::Market;
 use crate::services::configuration::KateConfiguration;
 use crate::services::data_feed_reader;
 use crate::services::market_connector::MarketConnectorClient;
-use crate::strategies::strategy::CandlestickTradingStrategy;
-use crate::strategies::strategy::{create_candlestick_strategy, create_strategy,
-                                  HighResolutionTradingStrategy, StrategyInputData};
-use crate::strategies::strategy::CandlestickAlgorithmicStrategy;
-use crate::candlestick_strategy_dispatch;
-use crate::{strategy_candlestick_configuration, strategy_candlestick_type, strategy_dispatch,
-            strategy_process_closed_candlestick, strategy_process_new_trade};
-use crate::models::candlestick::{CandlestickGenerator, CandlestickType, TimeCandlestickGenerator};
+use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name, CandlestickTradingStrategy};
+use crate::strategies::strategy::{HighResolutionTradingStrategy, StrategyInputData};
+use crate::models::candlestick::{CandlestickGenerator};
 use crate::models::side::Side;
 
 pub struct ExecutionManager {
@@ -98,14 +94,14 @@ impl ExecutionRequest {
         strategy_name: String,
         account_id: String,
         ticker: String,
-        market: Market
+        market: Market,
     ) -> ExecutionRequest {
-        ExecutionRequest{
+        ExecutionRequest {
             strategy_input_data: input_data,
             strategy_name,
             account_id,
             ticker,
-            market
+            market,
         }
     }
 }
@@ -137,11 +133,22 @@ impl ExecutionManager {
             );
         }
 
-        let strategy = create_strategy(execution_request.strategy_name
-            .to_lowercase().as_str());
+        let strategy_name = execution_request.strategy_name
+            .to_lowercase();
 
-        if strategy.is_none() {
-            anyhow::bail!("No strategy found for the provided strategy name '{}'", execution_request.strategy_name);
+        match execution_request.strategy_input_data {
+            StrategyInputData::CANDLESTICK => {
+                let strategy = get_candlestick_strategy_by_name(strategy_name.as_str());
+                if strategy.is_none() {
+                    anyhow::bail!("No candlestick strategy found for the provided strategy name '{}'", execution_request.strategy_name);
+                }
+            }
+            StrategyInputData::TRADE => {
+                let strategy = get_high_resolution_strategy_by_name(strategy_name.as_str());
+                if strategy.is_none() {
+                    anyhow::bail!("No high resolution strategy found for the provided strategy name '{}'", execution_request.strategy_name);
+                }
+            }
         }
 
         let trade_datafeed = data_feed_reader::TradeFeedStream::new(
@@ -176,32 +183,26 @@ impl ExecutionManager {
 
             match input_data_type {
                 StrategyInputData::TRADE => {
-                    let mut trading_strategy = create_strategy(strategy_name.as_str()).unwrap();
+                    let mut trading_strategy = get_high_resolution_strategy_by_name(strategy_name.as_str()).unwrap();
 
                     while running.load(std::sync::atomic::Ordering::Relaxed) {
                         let new_trade = consumer_channel.recv().unwrap();
-                        let order_action: TradeAction = strategy_process_new_trade!(trading_strategy, new_trade);
+                        let order_action: TradeAction = trading_strategy.process_new_trade(new_trade);
                         position_manager.process_order_execution(order_action);
                     }
-                },
+                }
                 StrategyInputData::CANDLESTICK => {
-                    let mut trading_strategy = create_candlestick_strategy(strategy_name.as_str()).unwrap();
-                    let candlestick_type: CandlestickType = strategy_candlestick_type!(trading_strategy);
-                    let candlestick_configuration: u64 = strategy_candlestick_configuration!(trading_strategy);
-
-                    let mut candlestick_parser = match candlestick_type {
-                        CandlestickType::TIME => TimeCandlestickGenerator::new(candlestick_configuration as u8),
-                        CandlestickType::TICK => panic!("not implemented"),
-                        CandlestickType::VOLUME => panic!("not implemented"),
-                    };
+                    let mut trading_strategy = get_candlestick_strategy_by_name(strategy_name.as_str()).unwrap();
+                    let mut candlestick_parser = candlestick::select_candlestick_generator(
+                        trading_strategy.candlestick_configuration());
 
                     while running.load(std::sync::atomic::Ordering::Relaxed) {
                         let new_trade = consumer_channel.recv().unwrap();
                         match candlestick_parser.parse_only_closed_candles(&new_trade) {
                             Some(closed_candle) => {
-                                let order_action: TradeAction = strategy_process_closed_candlestick!(trading_strategy, closed_candle);
+                                let order_action: TradeAction = trading_strategy.process_closed_candlestick(closed_candle);
                                 position_manager.process_order_execution(order_action);
-                            },
+                            }
                             None => ()
                         }
                     }

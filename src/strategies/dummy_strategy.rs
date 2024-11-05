@@ -3,7 +3,7 @@ use crate::models::action::TradeAction;
 use crate::models::asset::Asset;
 use crate::models::candlestick::{Candlestick, CandlestickType};
 use crate::models::trade::Trade;
-use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
+use crate::strategies::strategy::{CandlestickConfiguration, CandlestickTradingStrategy, HighResolutionTradingStrategy};
 
 #[derive(Debug)]
 pub struct DummyHighResolutionStrategy {
@@ -22,7 +22,11 @@ impl HighResolutionTradingStrategy for DummyHighResolutionStrategy {
         }
     }
 
-    fn init_trading_day(_: &Asset, _: &Vec<Trade>) {
+    fn name(&self) -> &str {
+        "dummy high resolution strategy"
+    }
+
+    fn init_trading_day(&mut self, _: &Asset, _: &Vec<Trade>) {
         // Initialize trading day logic
     }
 
@@ -46,23 +50,23 @@ impl HighResolutionTradingStrategy for DummyHighResolutionStrategy {
 }
 
 impl CandlestickTradingStrategy for DummyCandlestickStrategy {
-    fn new() -> Self
-    where
-        Self: Sized,
-    {
+    fn new() -> Self {
         todo!()
     }
 
-    fn init_trading_day(_: &Asset, _: &Vec<Candlestick>) {
+    fn name(&self) -> &str {
+        "dummy candlestick strategy"
+    }
+
+    fn init_trading_day(&mut self, _: &Asset, _: &Vec<Candlestick>) {
         // Initialize trading day logic
     }
 
-    fn candlestick_type(&self) -> CandlestickType {
-        CandlestickType::TICK
-    }
-
-    fn candlestick_configuration(&self) -> u64 {
-        50
+    fn candlestick_configuration(&self) -> CandlestickConfiguration {
+        CandlestickConfiguration {
+            candle_type: CandlestickType::TICK,
+            candle_input_parameter: 50,
+        }
     }
 
     fn process_closed_candlestick(&mut self, _: Candlestick) -> TradeAction {

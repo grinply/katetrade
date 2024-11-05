@@ -2,22 +2,25 @@ use std::sync::Arc;
 use std::thread;
 use std::thread::{JoinHandle};
 use chrono::Datelike;
-use crate::models::candlestick::{Candlestick, CandlestickGenerator, TickCandlestickGenerator};
+use crate::models::candlestick::{Candlestick, CandlestickGenerator};
 use crate::models::exchange::Exchange;
 use crate::models::market::Market;
-use crate::models::trade;
+use crate::models::{candlestick, trade};
 use crate::services::aws::AwsClient;
 use crate::services::configuration;
 use crate::services::configuration::{home_dir, S3_BUCKET_HISTORICAL_DATA};
+use crate::strategies::strategy::CandlestickConfiguration;
 use crate::utils::date;
 
 #[derive(Debug)]
+#[allow(unused)]
 pub struct TradingBacktester {
     #[allow(unused)]
     candlesticks: Vec<Candlestick>,
     pub qty_history_trading_days: u64,
     pub qty_history_candles: u64,
     pub qty_history_trades: u64,
+    pub candlestick_configuration: CandlestickConfiguration,
 }
 
 impl TradingBacktester {
@@ -29,7 +32,7 @@ impl TradingBacktester {
         ticker: &str,
         start_date: u32,
         end_date: u32,
-        ticks_per_candle: u64,
+        candlestick_configuration: CandlestickConfiguration,
     ) -> Result<TradingBacktester, anyhow::Error> {
         let start_date = date::convert_to_naive_date(start_date)?;
         let end_date = date::convert_to_naive_date(end_date)?;
@@ -51,7 +54,7 @@ impl TradingBacktester {
         let mut qty_candles = 0;
         let mut qty_trades = 0;
         let mut candlesticks: Vec<Candlestick> = vec![];
-        let mut tick_candlestick_parser = TickCandlestickGenerator::new(ticks_per_candle);
+        let mut tick_candlestick_parser = candlestick::select_candlestick_generator(candlestick_configuration.clone());
         let aws_client = Arc::new(AwsClient::new("sa-east-1".to_string())?);
 
         let uppercase_ticker = ticker.to_ascii_uppercase();
@@ -166,6 +169,7 @@ impl TradingBacktester {
             qty_history_trading_days: trading_days,
             qty_history_candles: qty_candles,
             qty_history_trades: qty_trades,
+            candlestick_configuration,
         })
     }
 }
