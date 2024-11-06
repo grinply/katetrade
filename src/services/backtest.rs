@@ -54,7 +54,7 @@ impl TradingBacktester {
         let mut qty_candles = 0;
         let mut qty_trades = 0;
         let mut candlesticks: Vec<Candlestick> = vec![];
-        let mut tick_candlestick_parser = candlestick::select_candlestick_generator(candlestick_configuration.clone());
+        let mut candlestick_parser = candlestick::select_candlestick_generator(candlestick_configuration.clone());
         let aws_client = Arc::new(AwsClient::new("sa-east-1".to_string())?);
 
         let uppercase_ticker = ticker.to_ascii_uppercase();
@@ -118,7 +118,7 @@ impl TradingBacktester {
                             Ok(trades) => {
                                 trades.iter().for_each(|trade| {
                                     qty_trades += 1;
-                                    match tick_candlestick_parser.parse_only_closed_candles(trade) {
+                                    match candlestick_parser.parse_only_closed_candles(trade) {
                                         Some(candlestick) => {
                                             qty_candles += 1;
                                             candlesticks.push(candlestick)
