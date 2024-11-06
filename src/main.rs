@@ -106,7 +106,7 @@ fn cli() -> Command {
                     .value_parser([constants::TIME, constants::TICK, constants::VOLUME])
                     .default_value(constants::TICK)
                     .num_args(0..=1))
-                .arg(arg!(--candle_configuration <END_DATE> "Input configuration for the type of candlestick selected (time range, ticks, total volume)")
+                .arg(arg!(--candle_configuration <END_DATE> "Input configuration for the type of candlestick selected (time range in minutes, ticks, total volume)")
                     .default_value("50"))
         )
         .subcommand(
@@ -125,7 +125,6 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
     let end: u32 = sub_matches.get_one::<String>("end").expect("required")
         .parse().expect("end should a positive number in the format yyyyMMdd");
 
-    // let strategy_id = sub_matches.get_one::<String>("strategy").expect("required");
     let candle_type = CandlestickType::from_str(sub_matches
         .get_one::<String>("candle_type")
         .expect("candle_type is required")
