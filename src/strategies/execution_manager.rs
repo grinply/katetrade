@@ -13,13 +13,14 @@ use crate::strategies::strategy::{HighResolutionTradingStrategy, StrategyInputDa
 use crate::models::candlestick::{CandlestickGenerator};
 use crate::models::side::Side;
 
-pub struct ExecutionManager {
+/// responsible for keep the context and control all TradingStrategies running in the real markets
+pub struct LiveTradingManager {
     running_strategy_map: HashMap<String, Arc<AtomicBool>>, // HashMap storing strategy constructors
     client: Arc<MarketConnectorClient>,
     configuration: KateConfiguration,
 }
 
-pub struct PositionManager {
+pub struct RealExecutionManager {
     client: Arc<MarketConnectorClient>,
     ticker: String,
     market: Market,
@@ -27,14 +28,14 @@ pub struct PositionManager {
     account_id: String,
 }
 
-impl PositionManager {
+impl RealExecutionManager {
     pub fn new_real_trading_manager(
         client: Arc<MarketConnectorClient>,
         account_id: String,
         ticker: String,
         strategy_name: String,
-        market: Market) -> PositionManager {
-        PositionManager {
+        market: Market) -> RealExecutionManager {
+        RealExecutionManager {
             client,
             ticker,
             market,
@@ -107,9 +108,9 @@ impl ExecutionRequest {
 }
 
 
-impl ExecutionManager {
+impl LiveTradingManager {
     pub fn new(client: MarketConnectorClient, configuration: KateConfiguration) -> Self {
-        ExecutionManager {
+        LiveTradingManager {
             running_strategy_map: HashMap::new(),
             configuration,
             client: Arc::new(client),
@@ -173,7 +174,7 @@ impl ExecutionManager {
         let input_data_type = execution_request.strategy_input_data.clone();
 
         thread::spawn(move || {
-            let position_manager = PositionManager::new_real_trading_manager(
+            let position_manager = RealExecutionManager::new_real_trading_manager(
                 client.clone(),
                 account_id.to_string(),
                 ticker.to_string(),

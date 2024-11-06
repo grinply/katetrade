@@ -17,7 +17,7 @@ use crate::models::market::Market;
 use crate::models::side::Side;
 use crate::services::backtest;
 use crate::services::configuration::{load_configuration, KateConfiguration};
-use crate::strategies::execution_manager::{ExecutionManager, ExecutionRequest};
+use crate::strategies::execution_manager::{LiveTradingManager, ExecutionRequest};
 use crate::strategies::strategy::{CandlestickConfiguration, StrategyInputData};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -192,7 +192,7 @@ fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, 
     ).unwrap();
 
 
-    let mut manager = ExecutionManager::new(
+    let mut manager = LiveTradingManager::new(
         client,
         configuration,
     );
