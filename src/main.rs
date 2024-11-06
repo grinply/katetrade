@@ -12,13 +12,13 @@ use clap::{arg, ArgMatches, Command};
 use models::exchange::Exchange;
 use std::str::FromStr;
 use std::string::ToString;
-
+use crate::models::candlestick::CandlestickType;
 use crate::models::market::Market;
 use crate::models::side::Side;
 use crate::services::backtest;
 use crate::services::configuration::{load_configuration, KateConfiguration};
 use crate::strategies::execution_manager::{ExecutionManager, ExecutionRequest};
-use crate::strategies::strategy::StrategyInputData;
+use crate::strategies::strategy::{CandlestickConfiguration, StrategyInputData};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn cli() -> Command {
@@ -96,13 +96,18 @@ fn cli() -> Command {
                         .required(true)
                 )
                 .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'").required(true))
-                .arg(arg!(--resolution <RESOLUTION> "Amount of trades used to generate each candlestick").default_value("50"))
                 .arg(arg!(--begin <BEGIN_DATE> "Start trading day to start the execution, in the format: yyyyMMdd"))
                 .arg(arg!(--end <END_DATE> "End trading day to finish the execution, in the format: yyyyMMdd"))
                 .arg(arg!(--exchange <EXCHANGE> "Exchange where the ticker belongs to")
                     .value_parser([constants::B3])
                     .default_value(constants::B3)
                     .num_args(0..=1))
+                .arg(arg!(--candle_type <CANDLE_TYPE> "Type of candlestick that will be used in the backtest'")
+                    .value_parser([constants::TIME, constants::TICK, constants::VOLUME])
+                    .default_value(constants::TICK)
+                    .num_args(0..=1))
+                .arg(arg!(--candle_configuration <END_DATE> "Input configuration for the type of candlestick selected (time range in minutes, ticks, total volume)")
+                    .default_value("50"))
         )
         .subcommand(
             Command::new(constants::CONNECTION)
@@ -119,10 +124,16 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
         .parse().expect("begin should a positive number in the format yyyyMMdd");
     let end: u32 = sub_matches.get_one::<String>("end").expect("required")
         .parse().expect("end should a positive number in the format yyyyMMdd");
-    let resolution: u64 = sub_matches.get_one::<String>("resolution").expect("required")
-        .parse().expect("resolution should a positive number");
 
-    // let strategy_id = sub_matches.get_one::<String>("strategy").expect("required");
+    let candle_type = CandlestickType::from_str(sub_matches
+        .get_one::<String>("candle_type")
+        .expect("candle_type is required")
+    ).unwrap();
+
+    let candle_input_parameter: u64 = sub_matches.get_one::<String>("candle_configuration")
+        .expect("required")
+        .parse().expect("candle_configuration should a positive number");
+
     let ticker = sub_matches.get_one::<String>("ticker").expect("required");
     let market = Market::from_str(sub_matches
         .get_one::<String>("market")
@@ -140,7 +151,10 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
         ticker,
         begin,
         end,
-        resolution,
+        CandlestickConfiguration{
+            candle_type,
+            candle_input_parameter
+        },
     );
 
     if backtester_engine.is_err() {

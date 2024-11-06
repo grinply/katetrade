@@ -1,4 +1,6 @@
+use strum_macros::EnumString;
 use crate::models::trade::Trade;
+use crate::strategies::strategy::CandlestickConfiguration;
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
@@ -14,16 +16,18 @@ pub struct Candlestick {
     pub trades: u64,
 }
 
-#[derive(Debug,PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, EnumString)]
 #[allow(unused)]
 pub enum CandlestickType {
     TIME,
     TICK,
-    VOLUME
+    VOLUME,
 }
 
 #[allow(unused)]
 pub trait CandlestickGenerator {
+    fn new(input_configuration: u64) -> impl CandlestickGenerator;
+
     fn description(&self) -> String;
 
     /// generates a brand-new Candlestick for every new trade, representing the still open candle
@@ -58,6 +62,15 @@ pub struct VolumeCandlestickGenerator {
     last_candle: Option<Candlestick>,
 }
 
+pub fn select_candlestick_generator(configuration: CandlestickConfiguration) -> impl CandlestickGenerator {
+    if configuration.candle_type == CandlestickType::VOLUME {
+        panic!("Candlestick generator for volume is not implemented yet");
+    }
+    if configuration.candle_type == CandlestickType::TIME {
+        TimeCandlestickGenerator::new(configuration.candle_input_parameter);
+    }
+    TickCandlestickGenerator::new(configuration.candle_input_parameter)
+}
 
 impl Candlestick {
     fn new(first_trade: &Trade) -> Candlestick {
@@ -75,18 +88,17 @@ impl Candlestick {
     }
 }
 
-impl TickCandlestickGenerator {
-    pub fn new(ticks_per_candle: u64) -> TickCandlestickGenerator {
-        TickCandlestickGenerator{
+
+impl CandlestickGenerator for TickCandlestickGenerator {
+    fn new(input_configuration: u64) -> impl CandlestickGenerator {
+        TickCandlestickGenerator {
             current_tick_count: 0,
-            ticks_per_candle,
+            ticks_per_candle: input_configuration,
             last_candle: None,
             date_last_trade: -1,
         }
     }
-}
 
-impl CandlestickGenerator for TickCandlestickGenerator {
     fn description(&self) -> String {
         "Candlestick grouped by quantity of trades".to_string()
     }
@@ -123,7 +135,7 @@ impl CandlestickGenerator for TickCandlestickGenerator {
 
         if self.current_tick_count < self.ticks_per_candle {
             result_candle.is_closed = false;
-        }else{
+        } else {
             result_candle.is_closed = true;
             self.current_tick_count = 0;
             self.last_candle = None;
@@ -136,30 +148,25 @@ impl CandlestickGenerator for TickCandlestickGenerator {
         let candle = self.parse_with_open_candles(new_trade);
         return if candle.is_closed {
             Some(candle)
-        }else{
+        } else {
             None
         };
     }
 }
 
-
-
-#[allow(unused)]
-impl TimeCandlestickGenerator {
-    pub fn new(period_minutes: u8) -> TimeCandlestickGenerator {
-        if period_minutes == 0 || period_minutes > 60 {
+impl CandlestickGenerator for TimeCandlestickGenerator {
+    fn new(input_configuration: u64) -> impl CandlestickGenerator {
+        if input_configuration == 0 || input_configuration > 60 {
             panic!("Invalid candlestick period, the period must be between 1 and 60 minutes");
         }
         TimeCandlestickGenerator {
             last_price: 0.0,
             last_day: 0,
-            period_minutes,
+            period_minutes: input_configuration as u8,
             last_candle: None,
         }
     }
-}
 
-impl CandlestickGenerator for TimeCandlestickGenerator {
     fn description(&self) -> String {
         String::from(format!("candlesticks based on time slices of {} minutes", self.period_minutes))
     }
@@ -208,20 +215,20 @@ impl TimeCandlestickGenerator {
         // calculate the candlestick close
         let digits_to_remove_current_time: u32 = if new_trade.time < 99_99_99 {
             2
-        }else{
+        } else {
             5
         };
 
         let digits_to_remove_start_time: u32 = if existing_candle.start_time < 99_99_99 {
             2
-        }else{
+        } else {
             5
         };
 
         let shift_current_time: i32 = 10i32.pow(digits_to_remove_current_time);
         let shift_start_time: i32 = 10i32.pow(digits_to_remove_start_time);
 
-        let is_candle_closed = (new_trade.time/shift_current_time) >= (existing_candle.start_time / shift_start_time) + (self.period_minutes as i32);
+        let is_candle_closed = (new_trade.time / shift_current_time) >= (existing_candle.start_time / shift_start_time) + (self.period_minutes as i32);
 
         if !is_candle_closed {
             existing_candle.trades += 1;
@@ -261,7 +268,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn time_candlesticks_generator_should_correctly_create_candles_of_one_minute_including_not_closed_candles(){
+    fn time_candlesticks_generator_should_correctly_create_candles_of_one_minute_including_not_closed_candles() {
         let mut generator = TimeCandlestickGenerator::new(1);
         let trades = mock_trades_list();
         let mut result_candlesticks: Vec<Candlestick> = vec![];
@@ -456,7 +463,13 @@ mod tests {
 
     #[test]
     fn time_candlesticks_generator_with_five_minute_period() {
-        let mut generator = TimeCandlestickGenerator::new(5); // Set the period to 5 minutes
+        let mut generator =TimeCandlestickGenerator {
+            last_price: 0.0,
+            last_day: 0,
+            period_minutes: 5,
+            last_candle: None,
+        };
+
         let trades = mock_trades_list_for_five_minute_period(); // Get the mock trades data
         let mut result_candlesticks: Vec<Candlestick> = vec![];
 
@@ -548,21 +561,21 @@ mod tests {
     }
 
     fn mock_trades_list() -> Vec<Trade> {
-         vec![
-             create_mock_trade(131175.0, 1, 200.0, 09_00_00, 2024_10_14), // open - first value for the first candle
-             create_mock_trade(131170.0, 2, 200.0, 09_00_10, 2024_10_14),
-             create_mock_trade(131010.0, 3, 200.0, 09_00_20, 2024_10_14), // min price
-             create_mock_trade(131275.0, 4, 200.0, 09_00_30, 2024_10_14),
-             create_mock_trade(131385.0, 5, 200.0, 09_00_40, 2024_10_14), // high price
-             create_mock_trade(131095.0, 6, 200.0, 09_00_59, 2024_10_14), // close - last value for the first candle
-             create_mock_trade(131000.0, 7, 200.0, 09_01_07_234, 2024_10_14), // open/low - second candle
-             create_mock_trade(131085.0, 8, 200.0, 09_01_10, 2024_10_14),
-             create_mock_trade(131105.0, 9, 200.0, 09_01_20, 2024_10_14),
-             create_mock_trade(131115.0, 10, 200.0, 09_01_30, 2024_10_14),
-             create_mock_trade(131200.0, 11, 200.0, 09_01_59, 2024_10_14),
-             create_mock_trade(131210.0, 12, 200.0, 09_02_10, 2024_10_14),
-             create_mock_trade(131215.0, 13, 200.0, 09_02_15, 2024_10_14),
-             create_mock_trade(131225.0, 14, 200.0, 09_02_25, 2024_10_14),
+        vec![
+            create_mock_trade(131175.0, 1, 200.0, 09_00_00, 2024_10_14), // open - first value for the first candle
+            create_mock_trade(131170.0, 2, 200.0, 09_00_10, 2024_10_14),
+            create_mock_trade(131010.0, 3, 200.0, 09_00_20, 2024_10_14), // min price
+            create_mock_trade(131275.0, 4, 200.0, 09_00_30, 2024_10_14),
+            create_mock_trade(131385.0, 5, 200.0, 09_00_40, 2024_10_14), // high price
+            create_mock_trade(131095.0, 6, 200.0, 09_00_59, 2024_10_14), // close - last value for the first candle
+            create_mock_trade(131000.0, 7, 200.0, 09_01_07_234, 2024_10_14), // open/low - second candle
+            create_mock_trade(131085.0, 8, 200.0, 09_01_10, 2024_10_14),
+            create_mock_trade(131105.0, 9, 200.0, 09_01_20, 2024_10_14),
+            create_mock_trade(131115.0, 10, 200.0, 09_01_30, 2024_10_14),
+            create_mock_trade(131200.0, 11, 200.0, 09_01_59, 2024_10_14),
+            create_mock_trade(131210.0, 12, 200.0, 09_02_10, 2024_10_14),
+            create_mock_trade(131215.0, 13, 200.0, 09_02_15, 2024_10_14),
+            create_mock_trade(131225.0, 14, 200.0, 09_02_25, 2024_10_14),
         ]
     }
 
