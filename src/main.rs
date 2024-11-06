@@ -17,7 +17,7 @@ use crate::models::market::Market;
 use crate::models::side::Side;
 use crate::services::backtest;
 use crate::services::configuration::{load_configuration, KateConfiguration};
-use crate::strategies::execution_manager::{ExecutionManager, ExecutionRequest};
+use crate::strategies::execution_manager::{LiveStrategyExecutor, ExecutionRequest};
 use crate::strategies::strategy::{CandlestickConfiguration, StrategyInputData};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -191,7 +191,7 @@ fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, 
     ).unwrap();
 
 
-    let mut manager = ExecutionManager::new(
+    let mut manager = LiveStrategyExecutor::new(
         client,
         configuration,
     );
@@ -204,7 +204,7 @@ fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, 
         market,
     );
 
-    let result = manager.start_strategy(strategy_execution_request);
+    let result = manager.run_strategy(strategy_execution_request);
 
     if result.is_err() {
         println!("Error running strategy: {}", result.err().unwrap());

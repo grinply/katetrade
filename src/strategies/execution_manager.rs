@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread;
+use crossbeam_channel::Receiver;
 use crate::models::action::{OrderAction, TradeAction};
 use crate::models::candlestick;
 use crate::models::market::Market;
@@ -12,29 +13,34 @@ use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_res
 use crate::strategies::strategy::{HighResolutionTradingStrategy, StrategyInputData};
 use crate::models::candlestick::{CandlestickGenerator};
 use crate::models::side::Side;
+use crate::models::trade::Trade;
 
-pub struct ExecutionManager {
+/// responsible to keep the context and control the execution of HighResolutionTradingStrategy
+/// and CandlestickTradingStrategy in live markets
+pub struct LiveStrategyExecutor {
     running_strategy_map: HashMap<String, Arc<AtomicBool>>, // HashMap storing strategy constructors
     client: Arc<MarketConnectorClient>,
     configuration: KateConfiguration,
 }
 
-pub struct PositionManager {
+/// handles the execution of orders to the live markets
+/// this executor has a unique instance for every running CandlestickTradingStrategy or HighResolutionTradingStrategy
+pub struct LiveOrderExecutionManager {
     client: Arc<MarketConnectorClient>,
     ticker: String,
     market: Market,
-    strategy_id: String,
+    pub strategy_id: String,
     account_id: String,
 }
 
-impl PositionManager {
+impl LiveOrderExecutionManager {
     pub fn new_real_trading_manager(
         client: Arc<MarketConnectorClient>,
         account_id: String,
         ticker: String,
         strategy_name: String,
-        market: Market) -> PositionManager {
-        PositionManager {
+        market: Market) -> LiveOrderExecutionManager {
+        LiveOrderExecutionManager {
             client,
             ticker,
             market,
@@ -43,7 +49,7 @@ impl PositionManager {
         }
     }
 
-    fn process_order_execution(&self, action: TradeAction) {
+    fn execute_orders(&self, action: TradeAction) {
         let actions: [Option<OrderAction>; 3] = [
             action.enter_market_action,
             action.stop_loss_action,
@@ -107,9 +113,9 @@ impl ExecutionRequest {
 }
 
 
-impl ExecutionManager {
+impl LiveStrategyExecutor {
     pub fn new(client: MarketConnectorClient, configuration: KateConfiguration) -> Self {
-        ExecutionManager {
+        LiveStrategyExecutor {
             running_strategy_map: HashMap::new(),
             configuration,
             client: Arc::new(client),
@@ -117,7 +123,48 @@ impl ExecutionManager {
     }
 
     /// Run the strategy in a thread based on the strategy id
-    pub fn start_strategy(&mut self, execution_request: ExecutionRequest) -> anyhow::Result<()> {
+    pub fn run_strategy(&mut self, execution_request: ExecutionRequest) -> anyhow::Result<()> {
+        let execution_key = self.can_run_strategy(&execution_request)?;
+
+        let trade_datafeed = data_feed_reader::TradeFeedStream::new(
+            self.configuration.market_connector_socket_url.as_str(),
+            execution_request.ticker.as_str(),
+            execution_request.market,
+            &self.client,
+        );
+
+        let consumer_channel = trade_datafeed.start_reading()?;
+        let active = Arc::new(AtomicBool::new(true));
+        self.running_strategy_map.insert(execution_key.clone(), active.clone());
+
+        let order_executor = LiveOrderExecutionManager::new_real_trading_manager(
+            self.client.clone(),
+            execution_request.account_id.to_string(),
+            execution_request.ticker.to_string(),
+            execution_request.strategy_name.to_string().to_lowercase(),
+            execution_request.market.clone(),
+        );
+
+        match execution_request.strategy_input_data {
+            StrategyInputData::TRADE => self.start_high_resolution_strategy_execution(
+                execution_key,
+                order_executor,
+                consumer_channel,
+            ),
+            StrategyInputData::CANDLESTICK => self.start_candlestick_strategy_execution(
+                execution_key,
+                order_executor,
+                consumer_channel,
+            )
+        }
+
+        Ok(())
+    }
+
+    /// validate if all requirements for the provided ExecutionRequest are met
+    /// if everything is ok an `execution_key` will be returned as Result
+    /// else an Error will be generated with the reason why the execution isn´t valid
+    fn can_run_strategy(&self, execution_request: &ExecutionRequest) -> Result<String, anyhow::Error> {
         let running_key = Self::running_strategy_key(
             execution_request.strategy_name.to_lowercase().as_str(),
             execution_request.ticker.as_str(),
@@ -151,67 +198,44 @@ impl ExecutionManager {
             }
         }
 
-        let trade_datafeed = data_feed_reader::TradeFeedStream::new(
-            self.configuration.market_connector_socket_url.as_str(),
-            execution_request.ticker.as_str(),
-            execution_request.market,
-            &self.client,
-        );
+        Ok(running_key)
+    }
 
-        let consumer_channel = trade_datafeed.start_reading()?;
-        let active = Arc::new(AtomicBool::new(true));
-        self.running_strategy_map.insert(running_key, active.clone());
-
-        let running: Arc<AtomicBool> = active.clone();
-        let strategy_name_clone = execution_request.strategy_name.to_string();
-
-        let client = self.client.clone();
-        let ticker = execution_request.ticker.to_string();
-        let market = execution_request.market.clone();
-        let account_id = execution_request.account_id.to_string();
-        let strategy_name = strategy_name_clone.to_lowercase().clone();
-        let input_data_type = execution_request.strategy_input_data.clone();
+    fn start_candlestick_strategy_execution(&self, execution_key: String,
+                                            order_executor: LiveOrderExecutionManager,
+                                            consumer_channel: Receiver<Trade>) {
+        let running = self.running_strategy_map.get(execution_key.as_str()).unwrap().clone();
 
         thread::spawn(move || {
-            let position_manager = PositionManager::new_real_trading_manager(
-                client.clone(),
-                account_id.to_string(),
-                ticker.to_string(),
-                strategy_name.to_string(),
-                market,
-            );
+            let mut trading_strategy = get_candlestick_strategy_by_name(order_executor.strategy_id.as_str()).unwrap();
+            let mut candlestick_parser = candlestick::select_candlestick_generator(
+                trading_strategy.candlestick_configuration());
 
-            match input_data_type {
-                StrategyInputData::TRADE => {
-                    let mut trading_strategy = get_high_resolution_strategy_by_name(strategy_name.as_str()).unwrap();
-
-                    while running.load(std::sync::atomic::Ordering::Relaxed) {
-                        let new_trade = consumer_channel.recv().unwrap();
-                        let order_action: TradeAction = trading_strategy.process_new_trade(new_trade);
-                        position_manager.process_order_execution(order_action);
-                    }
-                }
-                StrategyInputData::CANDLESTICK => {
-                    let mut trading_strategy = get_candlestick_strategy_by_name(strategy_name.as_str()).unwrap();
-                    let mut candlestick_parser = candlestick::select_candlestick_generator(
-                        trading_strategy.candlestick_configuration());
-
-                    while running.load(std::sync::atomic::Ordering::Relaxed) {
-                        let new_trade = consumer_channel.recv().unwrap();
-                        match candlestick_parser.parse_only_closed_candles(&new_trade) {
-                            Some(closed_candle) => {
-                                let order_action: TradeAction = trading_strategy.process_closed_candlestick(closed_candle);
-                                position_manager.process_order_execution(order_action);
-                            }
-                            None => ()
-                        }
-                    }
+            while running.load(std::sync::atomic::Ordering::Relaxed) {
+                let new_trade = consumer_channel.recv().unwrap(); // this will block the thread until a new trade is available
+                if let Some(closed_candle) = candlestick_parser.parse_only_closed_candles(&new_trade) {
+                    let action: TradeAction = trading_strategy.process_closed_candlestick(closed_candle);
+                    order_executor.execute_orders(action);
                 }
             }
         });
-
-        Ok(())
     }
+
+    fn start_high_resolution_strategy_execution(&self, execution_key: String,
+                                                order_executor: LiveOrderExecutionManager,
+                                                consumer_channel: Receiver<Trade>) {
+        let running = self.running_strategy_map.get(execution_key.as_str()).unwrap().clone();
+        thread::spawn(move || {
+            let mut trading_strategy = get_high_resolution_strategy_by_name(order_executor.strategy_id.as_str()).unwrap();
+
+            while running.load(std::sync::atomic::Ordering::Relaxed) {
+                let new_trade = consumer_channel.recv().unwrap(); // this will block the thread until a new trade is available
+                let order_action: TradeAction = trading_strategy.process_new_trade(new_trade);
+                order_executor.execute_orders(order_action);
+            }
+        });
+    }
+
 
     #[allow(unused)]
     pub fn stop_strategy(&mut self, account_id: &str, strategy_id: &str, ticker: &str, market: Market) {
