@@ -1,5 +1,6 @@
 use std::{env, fs};
-use std::io::Read;
+use std::fs::File;
+use std::io::{Read, Write};
 use std::time::Duration;
 use rusty_s3::{Bucket, Credentials, S3Action, UrlStyle};
 use ureq::Error;
@@ -92,7 +93,9 @@ impl AwsClient {
             .take((len + 1) as u64)
             .read_to_end(&mut bytes)?;
 
-        fs::write(file_output_location, bytes)?;
+        let mut file = File::create(file_output_location)?;
+        file.write_all(bytes.as_slice())?;
+        file.sync_all()?;
         Ok(())
     }
 }

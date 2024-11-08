@@ -29,7 +29,7 @@ pub trait CandlestickTradingStrategy {
     fn name(&self) -> &str;
 
     /// starts the trading day providing the context necessary to know what is going to be traded
-    fn init_trading_day(&mut self, asset: &Asset, context_candles: &Vec<Candlestick>);
+    fn init_trading_day(&mut self, asset: &Asset, context_candles: &[Candlestick]);
 
     /// the input parameter used for type of candlestick select
     /// for TICK: number of trades | for TIME: minutes | for VOLUME: total volume
@@ -37,7 +37,7 @@ pub trait CandlestickTradingStrategy {
 
     /// process the latest closed Candlestick.
     /// the strategy can make an action to decide to buy, exit or do nothing
-    fn process_closed_candlestick(&mut self, closed_candle: Candlestick) -> TradeAction;
+    fn process_closed_candlestick(&mut self, closed_candle: &Candlestick) -> TradeAction;
 }
 
 /// Input data used in the trading strategy

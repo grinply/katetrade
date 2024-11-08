@@ -15,6 +15,11 @@ use crate::models::candlestick::{CandlestickGenerator};
 use crate::models::side::Side;
 use crate::models::trade::Trade;
 
+#[allow(unused)]
+pub trait OrderExecutor {
+    fn execute_order_action(&self, action: TradeAction);
+}
+
 /// responsible to keep the context and control the execution of HighResolutionTradingStrategy
 /// and CandlestickTradingStrategy in live markets
 pub struct LiveStrategyExecutor {
@@ -25,65 +30,12 @@ pub struct LiveStrategyExecutor {
 
 /// handles the execution of orders to the live markets
 /// this executor has a unique instance for every running CandlestickTradingStrategy or HighResolutionTradingStrategy
-pub struct LiveOrderExecutionManager {
+pub struct LiveOrderExecutor {
     client: Arc<MarketConnectorClient>,
     ticker: String,
     market: Market,
     pub strategy_id: String,
     account_id: String,
-}
-
-impl LiveOrderExecutionManager {
-    pub fn new_real_trading_manager(
-        client: Arc<MarketConnectorClient>,
-        account_id: String,
-        ticker: String,
-        strategy_name: String,
-        market: Market) -> LiveOrderExecutionManager {
-        LiveOrderExecutionManager {
-            client,
-            ticker,
-            market,
-            strategy_id: strategy_name,
-            account_id,
-        }
-    }
-
-    fn execute_orders(&self, action: TradeAction) {
-        let actions: [Option<OrderAction>; 3] = [
-            action.enter_market_action,
-            action.stop_loss_action,
-            action.take_profit_action
-        ];
-
-        for order_action in actions {
-            if order_action.is_none() {
-                continue;
-            }
-
-            let order_id_result = match order_action {
-                Some(OrderAction::MarketLong) => self.client.
-                    send_market_order(self.ticker.as_str(), self.market, Side::BUY, 1, self.account_id.as_str(), self.strategy_id.as_str()),
-                Some(OrderAction::MarketShort) => self.client.
-                    send_market_order(self.ticker.as_str(), self.market, Side::SELL, 1, self.account_id.as_str(), self.strategy_id.as_str()),
-                Some(OrderAction::LimitLong(price_requested)) => self.client.
-                    send_limit_order(self.ticker.as_str(), self.market, Side::BUY, price_requested, 1, self.account_id.as_str(), self.strategy_id.as_str()),
-                Some(OrderAction::LimitShort(price_requested)) => self.client.
-                    send_limit_order(self.ticker.as_str(), self.market, Side::SELL, price_requested, 1, self.account_id.as_str(), self.strategy_id.as_str()),
-                None => unreachable!()
-            };
-
-            let order_type = order_action.unwrap();
-            if order_id_result.is_ok() {
-                let order_id = order_id_result.unwrap();
-                println!("received order_id {} from executing {:?} of {} contracts for the ticker {}",
-                         order_id, order_type, 1, self.ticker);
-                //TODO: we must validate the order execution and also keep track of the position
-            } else {
-                println!("{}", order_id_result.err().unwrap());
-            }
-        }
-    }
 }
 
 pub struct ExecutionRequest {
@@ -92,6 +44,23 @@ pub struct ExecutionRequest {
     account_id: String,
     ticker: String,
     market: Market,
+}
+
+impl LiveOrderExecutor {
+    pub fn new(
+        client: Arc<MarketConnectorClient>,
+        account_id: String,
+        ticker: String,
+        strategy_name: String,
+        market: Market) -> LiveOrderExecutor {
+        LiveOrderExecutor {
+            client,
+            ticker,
+            market,
+            strategy_id: strategy_name,
+            account_id,
+        }
+    }
 }
 
 impl ExecutionRequest {
@@ -111,7 +80,6 @@ impl ExecutionRequest {
         }
     }
 }
-
 
 impl LiveStrategyExecutor {
     pub fn new(client: MarketConnectorClient, configuration: KateConfiguration) -> Self {
@@ -137,7 +105,7 @@ impl LiveStrategyExecutor {
         let active = Arc::new(AtomicBool::new(true));
         self.running_strategy_map.insert(execution_key.clone(), active.clone());
 
-        let order_executor = LiveOrderExecutionManager::new_real_trading_manager(
+        let order_executor = LiveOrderExecutor::new(
             self.client.clone(),
             execution_request.account_id.to_string(),
             execution_request.ticker.to_string(),
@@ -202,7 +170,7 @@ impl LiveStrategyExecutor {
     }
 
     fn start_candlestick_strategy_execution(&self, execution_key: String,
-                                            order_executor: LiveOrderExecutionManager,
+                                            order_executor: LiveOrderExecutor,
                                             consumer_channel: Receiver<Trade>) {
         let running = self.running_strategy_map.get(execution_key.as_str()).unwrap().clone();
 
@@ -214,15 +182,15 @@ impl LiveStrategyExecutor {
             while running.load(std::sync::atomic::Ordering::Relaxed) {
                 let new_trade = consumer_channel.recv().unwrap(); // this will block the thread until a new trade is available
                 if let Some(closed_candle) = candlestick_parser.parse_only_closed_candles(&new_trade) {
-                    let action: TradeAction = trading_strategy.process_closed_candlestick(closed_candle);
-                    order_executor.execute_orders(action);
+                    let action: TradeAction = trading_strategy.process_closed_candlestick(&closed_candle);
+                    order_executor.execute_order_action(action);
                 }
             }
         });
     }
 
     fn start_high_resolution_strategy_execution(&self, execution_key: String,
-                                                order_executor: LiveOrderExecutionManager,
+                                                order_executor: LiveOrderExecutor,
                                                 consumer_channel: Receiver<Trade>) {
         let running = self.running_strategy_map.get(execution_key.as_str()).unwrap().clone();
         thread::spawn(move || {
@@ -231,7 +199,7 @@ impl LiveStrategyExecutor {
             while running.load(std::sync::atomic::Ordering::Relaxed) {
                 let new_trade = consumer_channel.recv().unwrap(); // this will block the thread until a new trade is available
                 let order_action: TradeAction = trading_strategy.process_new_trade(new_trade);
-                order_executor.execute_orders(order_action);
+                order_executor.execute_order_action(order_action);
             }
         });
     }
@@ -248,5 +216,43 @@ impl LiveStrategyExecutor {
 
     fn running_strategy_key(strategy_id: &str, ticker: &str, market: Market, account_id: &str) -> String {
         format!("{}-{}-{}-{}", account_id, ticker, market, strategy_id)
+    }
+}
+
+impl OrderExecutor for LiveOrderExecutor {
+    fn execute_order_action(&self, action: TradeAction) {
+        let actions: [Option<OrderAction>; 3] = [
+            action.enter_market_action,
+            action.stop_loss_action,
+            action.take_profit_action
+        ];
+
+        for order_action in actions {
+            if order_action.is_none() {
+                continue;
+            }
+
+            let order_id_result = match order_action {
+                Some(OrderAction::MarketLong) => self.client.
+                    send_market_order(self.ticker.as_str(), self.market, Side::BUY, 1, self.account_id.as_str(), self.strategy_id.as_str()),
+                Some(OrderAction::MarketShort) => self.client.
+                    send_market_order(self.ticker.as_str(), self.market, Side::SELL, 1, self.account_id.as_str(), self.strategy_id.as_str()),
+                Some(OrderAction::LimitLong(price_requested)) => self.client.
+                    send_limit_order(self.ticker.as_str(), self.market, Side::BUY, price_requested, 1, self.account_id.as_str(), self.strategy_id.as_str()),
+                Some(OrderAction::LimitShort(price_requested)) => self.client.
+                    send_limit_order(self.ticker.as_str(), self.market, Side::SELL, price_requested, 1, self.account_id.as_str(), self.strategy_id.as_str()),
+                None => unreachable!()
+            };
+
+            let order_type = order_action.unwrap();
+            if order_id_result.is_ok() {
+                let order_id = order_id_result.unwrap();
+                println!("received order_id {} from executing {:?} of {} contracts for the ticker {}",
+                         order_id, order_type, 1, self.ticker);
+                //TODO: we must validate the order execution and also keep track of the position
+            } else {
+                println!("{}", order_id_result.err().unwrap());
+            }
+        }
     }
 }

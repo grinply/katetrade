@@ -12,13 +12,15 @@ use clap::{arg, ArgMatches, Command};
 use models::exchange::Exchange;
 use std::str::FromStr;
 use std::string::ToString;
+use std::time::Instant;
+use crate::models::asset::Asset;
 use crate::models::candlestick::CandlestickType;
 use crate::models::market::Market;
 use crate::models::side::Side;
 use crate::services::backtest;
 use crate::services::configuration::{load_configuration, KateConfiguration};
 use crate::strategies::execution_manager::{LiveStrategyExecutor, ExecutionRequest};
-use crate::strategies::strategy::{CandlestickConfiguration, StrategyInputData};
+use crate::strategies::strategy::{get_candlestick_strategy_by_name, CandlestickConfiguration, StrategyInputData};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn cli() -> Command {
@@ -145,10 +147,24 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
         .expect("exchange is required")
     ).unwrap();
 
+    let asset = Asset::get_asset(ticker, market, exchange);
+
+    if asset.is_none(){
+        eprintln!("[ERROR] asset with ticker '{}' and market '{}' not found", ticker, market);
+        return;
+    }
+
+    let strategy_name = sub_matches.get_one::<String>("strategy").expect("required");
+    let strategy = get_candlestick_strategy_by_name(strategy_name.as_str());
+
+    if strategy.is_none() {
+        eprintln!("[ERROR] candlestick strategy with name '{}' not found", strategy_name);
+        return;
+    }
+
+    let start_load_data = Instant::now();
     let backtester_engine = backtest::TradingBacktester::new(
-        exchange,
-        market,
-        ticker,
+        &asset.unwrap(),
         begin,
         end,
         CandlestickConfiguration{
@@ -156,20 +172,26 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
             candle_input_parameter
         },
     );
-
+    let finish_load_data = start_load_data.elapsed();
+    print!("historical data loaded in {:.2?} | ", finish_load_data);
     if backtester_engine.is_err() {
-        println!("failed to initialize backtest engine. err: {}",
+        eprintln!("failed to initialize backtest engine. err: {}",
                  backtester_engine.err().unwrap());
         return;
     }
 
     let backtester = backtester_engine.unwrap();
-    println!("successfully initialized backtest engine containing {} trading days \
-            with a total of {} candlesticks generated from {} trades",
+    println!("{} trading days with {} candlesticks generated from {} trades",
              backtester.qty_history_trading_days,
              backtester.qty_history_candles,
              backtester.qty_history_trades,
     );
+
+    println!("starting backtest execution");
+    let now = Instant::now();
+    backtester.run_backtest(strategy.unwrap());
+    let elapsed = now.elapsed();
+    println!("backtest executed successfully in {:.2?}", elapsed);
 }
 
 fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, configuration: KateConfiguration) {

@@ -23,7 +23,7 @@ impl HighResolutionTradingStrategy for DummyHighResolutionStrategy {
     }
 
     fn name(&self) -> &str {
-        "dummy high resolution strategy"
+        "dummy_high_resolution_strategy"
     }
 
     fn init_trading_day(&mut self, _: &Asset, _: &Vec<Trade>) {
@@ -57,10 +57,10 @@ impl CandlestickTradingStrategy for DummyCandlestickStrategy {
     }
 
     fn name(&self) -> &str {
-        "dummy candlestick strategy"
+        "dummy_candlestick_strategy"
     }
 
-    fn init_trading_day(&mut self, _: &Asset, _: &Vec<Candlestick>) {
+    fn init_trading_day(&mut self, _: &Asset, _: &[Candlestick]) {
         // Initialize trading day logic
     }
 
@@ -71,7 +71,7 @@ impl CandlestickTradingStrategy for DummyCandlestickStrategy {
         }
     }
 
-    fn process_closed_candlestick(&mut self, _: Candlestick) -> TradeAction {
+    fn process_closed_candlestick(&mut self, _: &Candlestick) -> TradeAction {
         self.counter += 1;
 
         if self.counter == 10 {

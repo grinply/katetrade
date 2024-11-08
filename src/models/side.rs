@@ -1,6 +1,6 @@
 use strum_macros::{Display, EnumString, IntoStaticStr};
 
-#[derive(Debug, IntoStaticStr, Display, EnumString)]
+#[derive(Debug, PartialEq, Eq, IntoStaticStr, Display, EnumString, Clone)]
 pub enum Side {
     BUY,
     SELL,

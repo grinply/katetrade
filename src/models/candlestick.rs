@@ -50,7 +50,6 @@ pub struct TimeCandlestickGenerator {
 
 #[allow(unused)]
 pub struct TickCandlestickGenerator {
-    current_tick_count: u64,
     ticks_per_candle: u64,
     last_candle: Option<Candlestick>,
     date_last_trade: i32,
@@ -92,7 +91,6 @@ impl Candlestick {
 impl CandlestickGenerator for TickCandlestickGenerator {
     fn new(input_configuration: u64) -> impl CandlestickGenerator {
         TickCandlestickGenerator {
-            current_tick_count: 0,
             ticks_per_candle: input_configuration,
             last_candle: None,
             date_last_trade: -1,
@@ -128,16 +126,14 @@ impl CandlestickGenerator for TickCandlestickGenerator {
         }
 
         existing_candle.close = new_trade.price;
-
-        self.current_tick_count += 1;
+        existing_candle.trades += 1;
 
         let mut result_candle = existing_candle.clone();
 
-        if self.current_tick_count < self.ticks_per_candle {
+        if existing_candle.trades < self.ticks_per_candle {
             result_candle.is_closed = false;
         } else {
             result_candle.is_closed = true;
-            self.current_tick_count = 0;
             self.last_candle = None;
         }
 
@@ -146,11 +142,11 @@ impl CandlestickGenerator for TickCandlestickGenerator {
 
     fn parse_only_closed_candles(&mut self, new_trade: &Trade) -> Option<Candlestick> {
         let candle = self.parse_with_open_candles(new_trade);
-        return if candle.is_closed {
+        if candle.is_closed {
             Some(candle)
         } else {
             None
-        };
+        }
     }
 }
 
@@ -197,7 +193,7 @@ impl TimeCandlestickGenerator {
 
         self.last_day = new_trade.date;
 
-        if self.last_candle.is_none() { // the very start when not trade was parsed yet
+        if self.last_candle.is_none() { // the very start when no trade was parsed yet
             self.last_price = new_trade.price;
             let new_candle = Candlestick::new(new_trade);
             self.last_candle = Some(new_candle.clone());
@@ -208,7 +204,7 @@ impl TimeCandlestickGenerator {
                 Some(new_candle)
             };
         }
-        let existing_candle = self.last_candle.as_mut().unwrap();
+        let existing_candle = self.last_candle.as_mut()?;
 
         // time is represented as a number with format HHmmSS or HHmmSSsss
         // we do some math to calculate to make all values beyond the minute zero values to better

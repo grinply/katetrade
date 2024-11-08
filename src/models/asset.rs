@@ -1,11 +1,49 @@
+use lazy_static::lazy_static;
 use crate::models::exchange::Exchange;
+use crate::models::exchange::Exchange::B3;
 use crate::models::market::Market;
+use crate::models::market::Market::FUTURES;
+
 #[derive(Debug)]
 #[allow(unused)]
 pub struct Asset {
-    ticker: String,
-    market: Market,
-    exchange: Exchange,
-    min_variation: f64,
-    value_per_variation: f64,
+    pub ticker: String,
+    pub market: Market,
+    pub exchange: Exchange,
+    pub min_variation: f64,
+    pub value_per_variation: f64,
+}
+
+impl Asset {
+    fn new(ticker: &str,
+           market: Market,
+           exchange: Exchange,
+           min_variation: f64,
+           value_per_variation: f64) -> Self {
+        Asset {
+            ticker: ticker.to_ascii_uppercase(),
+            market,
+            exchange,
+            min_variation,
+            value_per_variation,
+        }
+    }
+
+    pub fn get_asset(ticker: &str, market: Market, exchange: Exchange) -> Option<&Asset>{
+        let ticker = ticker.to_uppercase();
+        for asset in AVAILABLE_ASSETS.iter() {
+            if asset.ticker == ticker && asset.market == market && asset.exchange == exchange {
+                return Some(asset);
+            }
+        }
+        None
+    }
+}
+
+
+
+lazy_static! {
+    static ref AVAILABLE_ASSETS: Vec<Asset> = vec![
+        Asset::new("WIN", FUTURES, B3, 5.0, 0.2),
+    ];
 }
