@@ -1,10 +1,10 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[allow(unused)]
 pub enum OrderAction {
-    MarketLong,
-    MarketShort,
-    LimitLong(f64),
-    LimitShort(f64),
+    MarketLong,     // will execute immediately a long position at the market
+    MarketShort,    // will execute immediately a short position at the market
+    LimitLong(f64), // will send a long limit order to the exchange order book that MAY ( or may not)  be triggered later with the given price
+    LimitShort(f64),// will send a short limit order to the exchange order book that MAY ( or may not)  be triggered later with the given price
 }
 
 #[derive(Debug)]

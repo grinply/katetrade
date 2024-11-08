@@ -12,6 +12,7 @@ pub struct Candlestick {
     pub volume: f64,
     pub date: i32,
     pub start_time: i32,
+    pub close_time: i32,
     pub is_closed: bool,
     pub trades: u64,
 }
@@ -81,6 +82,7 @@ impl Candlestick {
             volume: first_trade.volume,
             date: first_trade.date,
             start_time: first_trade.time,
+            close_time: -1,
             is_closed: false,
             trades: 1,
         }

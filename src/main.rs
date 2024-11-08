@@ -187,11 +187,11 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
              backtester.qty_history_trades,
     );
 
-    println!("starting backtest execution");
     let now = Instant::now();
-    backtester.run_backtest(strategy.unwrap());
+    let metrics = backtester.run_backtest(strategy.unwrap());
     let elapsed = now.elapsed();
     println!("backtest executed successfully in {:.2?}", elapsed);
+    println!("{}", metrics);
 }
 
 fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, configuration: KateConfiguration) {

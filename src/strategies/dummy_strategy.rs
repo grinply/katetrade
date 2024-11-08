@@ -74,15 +74,15 @@ impl CandlestickTradingStrategy for DummyCandlestickStrategy {
     fn process_closed_candlestick(&mut self, _: &Candlestick) -> TradeAction {
         self.counter += 1;
 
-        if self.counter == 10 {
+        if self.counter == 1000 {
             return TradeAction::send_order(MarketLong);
         }
 
-        if self.counter == 20 {
+        if self.counter == 3000 {
             return TradeAction::send_order(MarketShort);
         }
 
-        if self.counter > 20 {
+        if self.counter > 3000 {
             self.counter = 0;
         }
 

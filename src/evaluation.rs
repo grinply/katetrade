@@ -123,6 +123,7 @@ mod tests {
     use super::*;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use crate::models::side::Side;
 
     #[test]
     fn test_inplace_new_random_bootstrap_sample_deterministic() {
@@ -150,6 +151,7 @@ mod tests {
         let mut trading_results: Vec<Position> = Vec::new();
 
         trading_results.push(Position {
+            side: Side::BUY,
             avg_entry_price: 1.0,
             avg_exit_price: 1.0,
             date: 17092024,
@@ -157,11 +159,17 @@ mod tests {
             exit_time: 132205,
             start_datapoint_number: 1,
             end_datapoint_number: 2,
-            qty: 2,
+            total_qty: 2,
+            open_qty: 0,
             gross_pnl: 21.4,
+            liquid_pnl: 0.0,
+            total_paid_in_fees: 0.0,
+            quantity_of_orders: 0,
+            is_closed: false,
         });
 
         trading_results.push(Position {
+            side: Side::BUY,
             avg_entry_price: 1.0,
             avg_exit_price: 1.0,
             date: 17092024,
@@ -169,11 +177,17 @@ mod tests {
             exit_time: 132205,
             start_datapoint_number: 1,
             end_datapoint_number: 2,
-            qty: 2,
+            total_qty: 2,
+            open_qty: 0,
             gross_pnl: 10.5,
+            liquid_pnl: 0.0,
+            total_paid_in_fees: 0.0,
+            quantity_of_orders: 0,
+            is_closed: false,
         });
 
         trading_results.push(Position {
+            side: Side::BUY,
             avg_entry_price: 1.0,
             avg_exit_price: 1.0,
             date: 18092024,
@@ -181,11 +195,17 @@ mod tests {
             exit_time: 132205,
             start_datapoint_number: 1,
             end_datapoint_number: 2,
-            qty: 2,
+            total_qty: 2,
+            open_qty: 0,
             gross_pnl: -40.5,
+            liquid_pnl: 0.0,
+            total_paid_in_fees: 0.0,
+            quantity_of_orders: 0,
+            is_closed: false,
         });
 
         trading_results.push(Position {
+            side: Side::BUY,
             avg_entry_price: 1.0,
             avg_exit_price: 1.0,
             date: 19092024,
@@ -193,8 +213,13 @@ mod tests {
             exit_time: 132205,
             start_datapoint_number: 1,
             end_datapoint_number: 2,
-            qty: 2,
+            total_qty: 2,
+            open_qty: 0,
             gross_pnl: 22.5,
+            liquid_pnl: 0.0,
+            total_paid_in_fees: 0.0,
+            quantity_of_orders: 0,
+            is_closed: false,
         });
 
         let daily_pnls = calculate_daily_pnl(&trading_results);
