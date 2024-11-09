@@ -1,7 +1,7 @@
 use std::cmp;
 use std::collections::HashMap;
 use itertools::Itertools;
-use crate::models::pnl::DetailedTradePnl;
+use crate::models::pnl::Position;
 use crate::utils::statistics::{self, normal_cdf};
 use rand::distributions::{Distribution, Uniform};
 use rand::{thread_rng, Rng};
@@ -18,7 +18,7 @@ pub fn bias_corrected_accelerated_bootstrap(
     low_conf: f64,
     high_conf: f64,
     bootstrap_iterations: usize,
-    trading_results: Vec<DetailedTradePnl>,
+    trading_results: Vec<Position>,
 ) -> (f64, f64) {
     let mut rng = thread_rng();
     let daily_pnls = calculate_daily_pnl(&trading_results);
@@ -102,11 +102,11 @@ fn inplace_new_random_bootstrap_sample<R: Rng>(
 
 /// Sum all PNL values from the same day and produce a Vec containing all the daily PNLs
 #[allow(unused)]
-fn calculate_daily_pnl(trading_results: &Vec<DetailedTradePnl>) -> Vec<f64> {
+fn calculate_daily_pnl(trading_results: &Vec<Position>) -> Vec<f64> {
     let grouped_pnls_by_day = trading_results
         .into_iter()
         .fold(HashMap::new(), |mut acc, pnl| {
-            *acc.entry(pnl.date).or_insert(0.0) += pnl.result;
+            *acc.entry(pnl.date).or_insert(0.0) += pnl.gross_pnl;
             acc
         });
     let mut all_daily_pnls = Vec::with_capacity(grouped_pnls_by_day.len());
@@ -123,6 +123,7 @@ mod tests {
     use super::*;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use crate::models::side::Side;
 
     #[test]
     fn test_inplace_new_random_bootstrap_sample_deterministic() {
@@ -147,63 +148,87 @@ mod tests {
 
     #[test]
     fn should_compute_daily_pnl_grouping_results_from_same_day() {
-        let mut trading_results: Vec<DetailedTradePnl> = Vec::new();
+        let mut trading_results: Vec<Position> = Vec::new();
 
-        trading_results.push(DetailedTradePnl {
+        trading_results.push(Position {
+            side: Side::BUY,
             avg_entry_price: 1.0,
             avg_exit_price: 1.0,
             date: 17092024,
             entry_time: 132205,
             exit_time: 132205,
-            start_trade_number: 1,
-            end_trade_number: 2,
-            qty: 2,
-            result: 21.4,
+            start_datapoint_number: 1,
+            end_datapoint_number: 2,
+            total_qty: 2,
+            open_qty: 0,
+            gross_pnl: 21.4,
+            liquid_pnl: 0.0,
+            total_paid_in_fees: 0.0,
+            quantity_of_orders: 0,
+            is_closed: false,
         });
 
-        trading_results.push(DetailedTradePnl {
+        trading_results.push(Position {
+            side: Side::BUY,
             avg_entry_price: 1.0,
             avg_exit_price: 1.0,
             date: 17092024,
             entry_time: 132205,
             exit_time: 132205,
-            start_trade_number: 1,
-            end_trade_number: 2,
-            qty: 2,
-            result: 10.5,
+            start_datapoint_number: 1,
+            end_datapoint_number: 2,
+            total_qty: 2,
+            open_qty: 0,
+            gross_pnl: 10.5,
+            liquid_pnl: 0.0,
+            total_paid_in_fees: 0.0,
+            quantity_of_orders: 0,
+            is_closed: false,
         });
 
-        trading_results.push(DetailedTradePnl {
+        trading_results.push(Position {
+            side: Side::BUY,
             avg_entry_price: 1.0,
             avg_exit_price: 1.0,
             date: 18092024,
             entry_time: 132205,
             exit_time: 132205,
-            start_trade_number: 1,
-            end_trade_number: 2,
-            qty: 2,
-            result: -40.5,
+            start_datapoint_number: 1,
+            end_datapoint_number: 2,
+            total_qty: 2,
+            open_qty: 0,
+            gross_pnl: -40.5,
+            liquid_pnl: 0.0,
+            total_paid_in_fees: 0.0,
+            quantity_of_orders: 0,
+            is_closed: false,
         });
 
-        trading_results.push(DetailedTradePnl {
+        trading_results.push(Position {
+            side: Side::BUY,
             avg_entry_price: 1.0,
             avg_exit_price: 1.0,
             date: 19092024,
             entry_time: 132205,
             exit_time: 132205,
-            start_trade_number: 1,
-            end_trade_number: 2,
-            qty: 2,
-            result: 22.5,
+            start_datapoint_number: 1,
+            end_datapoint_number: 2,
+            total_qty: 2,
+            open_qty: 0,
+            gross_pnl: 22.5,
+            liquid_pnl: 0.0,
+            total_paid_in_fees: 0.0,
+            quantity_of_orders: 0,
+            is_closed: false,
         });
 
         let daily_pnls = calculate_daily_pnl(&trading_results);
         assert_eq!(3, daily_pnls.len());
         assert_eq!(
-            trading_results[0].result + trading_results[1].result,
+            trading_results[0].gross_pnl + trading_results[1].gross_pnl,
             daily_pnls[0]
         );
-        assert_eq!(trading_results[2].result, daily_pnls[1]);
-        assert_eq!(trading_results[3].result, daily_pnls[2]);
+        assert_eq!(trading_results[2].gross_pnl, daily_pnls[1]);
+        assert_eq!(trading_results[3].gross_pnl, daily_pnls[2]);
     }
 }

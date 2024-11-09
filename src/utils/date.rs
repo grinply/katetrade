@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use chrono::{NaiveDate};
 
 /// Convert a number in the format yyyyMMdd into a NaiveDate
 pub fn convert_to_naive_date(date: u32) -> Result<NaiveDate, anyhow::Error> {
