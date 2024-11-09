@@ -94,7 +94,8 @@ struct ExchangeEventHandler<'a> {
     event_index: usize,
     positions: Vec<Position>,
     current_candlestick: Option<&'a Candlestick>,
-    total_orders_executed: u64,
+    total_contracts_executed_current_month: u64,
+    current_month_year: i32,
 }
 
 impl DataProvider {
@@ -132,7 +133,8 @@ impl<'a> ExchangeEventHandler<'a> {
             event_index: 0,
             positions: vec![],
             scheduled_orders: vec![],
-            total_orders_executed: 0,
+            total_contracts_executed_current_month: 0,
+            current_month_year: -1,
         }
     }
 
@@ -157,6 +159,7 @@ impl<'a> ExchangeEventHandler<'a> {
             match event {
                 NewCandle(candlestick) => {
                     self.current_candlestick = Some(candlestick);
+                    self.track_current_month();
                     self.check_compulsory_close_position(candlestick);
                     self.check_scheduled_order_trigger(candlestick);
                 }
@@ -253,6 +256,7 @@ impl<'a> ExchangeEventHandler<'a> {
 
     fn increase_position(&mut self, current_entry_price: f64){
         assert!(self.current_position.is_some(), "sanity check, should not try to increase a position that doesnt exit");
+
         let current_fee = &self.calculate_fees(self.base_qty_per_order as u64);
         let position = self.current_position.as_mut().unwrap();
         let new_total = position.total_qty + self.base_qty_per_order as i32;
@@ -261,6 +265,7 @@ impl<'a> ExchangeEventHandler<'a> {
         position.open_qty+= new_total;
 
         position.total_paid_in_fees+= current_fee;
+        self.total_contracts_executed_current_month+=self.base_qty_per_order as u64;
         self.current_balance-=current_fee;
     }
 
@@ -276,9 +281,22 @@ impl<'a> ExchangeEventHandler<'a> {
 
         position.total_paid_in_fees+= current_fee;
         self.current_balance-=current_fee;
+        self.total_contracts_executed_current_month+=self.base_qty_per_order as u64;
 
         if position.open_qty == 0 {
             self.close_position(candlestick);
+        }
+    }
+
+    fn track_current_month(&mut self){
+        let current_month_year = self.current_candlestick.as_ref().unwrap().date / 100;
+        if self.current_month_year == -1 {
+            self.current_month_year = current_month_year;
+        }
+
+        if self.current_month_year != current_month_year {
+            self.current_month_year = current_month_year;
+            self.total_contracts_executed_current_month = 0;
         }
     }
 
@@ -304,6 +322,7 @@ impl<'a> ExchangeEventHandler<'a> {
         };
         self.current_position = Some(new_position);
         self.current_balance-=fee_open_position;
+        self.total_contracts_executed_current_month+=self.base_qty_per_order as u64;
     }
 
     fn close_position(&mut self, candlestick: &Candlestick){
@@ -334,7 +353,7 @@ impl<'a> ExchangeEventHandler<'a> {
     fn calculate_fees(&self, total_orders: u64) -> f64{
         let asset = self.asset;
         let brokerage = if asset.market == Market::FUTURES && asset.ticker == "WIN" || asset.ticker == "WDO" {
-            match self.total_orders_executed {
+            match self.total_contracts_executed_current_month {
                 0_u64..=50_u64 => 0.95,
                 51_u64..=100_u64 => 0.90,
                 101_u64..=200_u64 => 0.87,
