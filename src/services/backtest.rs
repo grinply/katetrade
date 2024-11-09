@@ -26,11 +26,13 @@ const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 
 #[allow(unused)]
 pub struct BacktestMetrics {
+    pub total_trading_days: u64,
     pub final_balance: f64,
     pub initial_balance: f64,
     pub total_return_percentage: f64,
     pub total_gross_profit: f64,
     pub total_liquid_profit: f64,
+    pub avg_trade_liquid_pnl: f64,
     pub avg_daily_liquid_profit: f64,
     pub worse_day_liquid_profit: f64,
     pub best_day_liquid_profit: f64,
@@ -49,18 +51,22 @@ pub struct BacktestMetrics {
 
 impl Display for BacktestMetrics {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{0: <20} {1: <20.2?}", "Start Balance", INITIAL_BALANCE)?;
-        writeln!(f, "{0: <20} {1: <20.2?}", "Final Balance", self.final_balance)?;
-        writeln!(f, "{0: <20} {1: <20.2?}", "Total Return(%)", self.total_return_percentage)?;
-        writeln!(f, "{0: <20} {1: <20.2?}", "Fees Paid", self.total_fees_paid)?;
-        writeln!(f, "{0: <20} {1: <20.2?}", "Win Rate(%)", self.win_rate_percentage)?;
-        writeln!(f, "{0: <20} {1: <20.2?}", "Total Wins", self.total_wins)?;
-        writeln!(f, "{0: <20} {1: <20.2?}", "Max Win Streak", self.max_win_streak)?;
-        writeln!(f, "{0: <20} {1: <20.2?}", "Total Loses", self.total_loses)?;
-        writeln!(f, "{0: <20} {1: <20.2?}", "Max Lose Streak", self.max_lose_streak)?;
-        writeln!(f, "{0: <20} {1: <20.2?}", "Total Trades", self.total_trades)?;
-        writeln!(f, "{0: <20} {1: <20.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
-        writeln!(f, "{0: <20} {1: <20.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)
+        writeln!(f, "{0: <25} {1: <25.2?}", "Trading Days", self.total_trading_days)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Start Balance", INITIAL_BALANCE)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Final Balance", self.final_balance)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Absolute Return", self.final_balance - INITIAL_BALANCE)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Total Return(%)", self.total_return_percentage)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Fees Paid", self.total_fees_paid)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Win Rate(%)", self.win_rate_percentage)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Total Wins", self.total_wins)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Max Win Streak", self.max_win_streak)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Total Loses", self.total_loses)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Max Lose Streak", self.max_lose_streak)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Total Trades", self.total_trades)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Avg Trade Liquid PNL", self.avg_trade_liquid_pnl)
     }
 }
 
@@ -618,10 +624,12 @@ impl<'a> TradingBacktester<'a> {
         }else{
             -1
         };
+        let mut total_trading_days = 1;
         for position in &event_handler.positions {
             if position.date != current_day{
                 liquid_profit_per_day.push(liquid_profit_current_day);
                 liquid_profit_current_day = 0.0;
+                total_trading_days+=1;
             }
 
             total_trades +=1;
@@ -666,7 +674,8 @@ impl<'a> TradingBacktester<'a> {
             total_return_percentage: ((event_handler.current_balance-INITIAL_BALANCE)/INITIAL_BALANCE)*100.0,
             total_gross_profit: total_gross_pnl,
             total_liquid_profit: total_liquid_pnl,
-            avg_daily_liquid_profit: 0.0,
+            avg_trade_liquid_pnl: total_liquid_pnl/total_trades as f64,
+            avg_daily_liquid_profit: total_liquid_pnl / total_trading_days as f64,
             worse_day_liquid_profit: liquid_profit_worst_day,
             best_day_liquid_profit: liquid_profit_best_day,
             median_day_liquid_profit: 0.0,
@@ -680,6 +689,7 @@ impl<'a> TradingBacktester<'a> {
             avg_risk_reward: 0.0,
             max_win_streak,
             max_lose_streak,
+            total_trading_days
         }
     }
 }
