@@ -12,7 +12,7 @@ If you have the `katetrade` binary just run `katetrade --help` to learn more,
 if you just now downloaded the source code you can execute by running `cargo run -- --help`
 
 ```bash
-Welcome to katetrade, your algorithmic trading system tailored for the Brazilian capital market
+Welcome to katetrade, your algorithm trading system tailored for the Brazilian capital market
 
 Usage: katetrade <COMMAND>
 
@@ -27,5 +27,3 @@ Options:
   -h, --help     Print help
   -V, --version  Print version
 ```
-
-./katetrade order send --account 33003#70562729 --ticker WIN --market FUTURES --qty 1 --TYPE market
