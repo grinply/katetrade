@@ -11,8 +11,7 @@ use crate::models::asset::Asset;
 use crate::models::pnl::Position;
 use crate::services::aws::AwsClient;
 use crate::services::backtest::TradeEvent::NewCandle;
-use crate::services::configuration;
-use crate::services::configuration::{home_dir, S3_BUCKET_HISTORICAL_DATA};
+use crate::services::configuration::{kate_configuration_directory, S3_BUCKET_HISTORICAL_DATA};
 use crate::strategies::strategy::{CandlestickConfiguration, CandlestickTradingStrategy};
 use crate::utils::date;
 use simple_bar::ProgressBar;
@@ -458,8 +457,7 @@ impl<'a> TradingBacktester<'a> {
             anyhow::bail!("invalid dates, the end_date is before the start_date");
         }
 
-        let history_trades_folder_path = home_dir()
-            .join(configuration::CONFIGURATION_FOLDER)
+        let history_trades_folder_path = kate_configuration_directory()
             .join("history_trades")
             .join(asset.ticker.as_str());
 
