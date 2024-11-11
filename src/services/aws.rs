@@ -10,6 +10,7 @@ pub struct AwsClient {
     region: String,
 }
 
+const DEFAULT_REQUEST_TIMEOUT_SECONDS: u64 = 30 * 60;
 const AWS_S3_ENDPOINT: &str = "https://s3.amazonaws.com";
 
 impl AwsClient {
@@ -35,14 +36,13 @@ impl AwsClient {
             bucket_name.to_string(),
             region)?;
 
-        let timeout_seconds: u64 = 30 * 60;
         let head_object = bucket.head_object(Some(&self.credentials), s3_file_path);
-        let signed_url = head_object.sign(Duration::from_secs(timeout_seconds));
+        let signed_url = head_object.sign(Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECONDS));
 
         let url = signed_url.as_str();
 
         let response_result = ureq::head(url)
-            .timeout(Duration::from_secs(timeout_seconds))
+            .timeout(Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECONDS))
             .call();
 
         match response_result {
@@ -75,12 +75,11 @@ impl AwsClient {
             format!("/{}", s3_file_path)
         };
 
-        let timeout_seconds: u64 = 10 * 60;
         let get_object = bucket.get_object(Some(&self.credentials), s3_file_path.as_str());
-        let signed_url = get_object.sign(Duration::from_secs(timeout_seconds));
+        let signed_url = get_object.sign(Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECONDS));
 
         let response = ureq::get(signed_url.as_str())
-            .timeout(Duration::from_secs(timeout_seconds))
+            .timeout(Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECONDS))
             .call()?;
 
         assert!(response.has("Content-Length"));
