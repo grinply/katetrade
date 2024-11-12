@@ -4,12 +4,15 @@ use anyhow;
 use anyhow::bail;
 use std::fs::{File};
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::{process, thread};
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use simple_bar::ProgressBar;
 use crate::constants;
 use crate::models::candlestick::Candlestick;
 
+const ONE_HUNDRED_KB_IN_BYTES: u64 = 100_000;
 const TRADES_CSV_HEADER_LINE: &str = "<ticker>,<date>,<time>,<trade_number>,<price>,<qty>,<vol>,<buy_agent>,<sell_agent>,<trade_type>,<aft>";
 
 /// Trade struct to match the Java data sent from market-connector
@@ -82,7 +85,7 @@ impl Trade {
     ///  WINFUT,20190102,090034,10,87800.00000000,2,40000.0000,Modal,XP,Auction,N
     pub fn from_csv_row(csv_line: &str) -> Result<Self, anyhow::Error> {
         let mut line = csv_line.split(",");
-        line.next();
+        line.next();// skip the ticker symbol that will not be stored
 
         let date: i32 = line.next().unwrap().parse()?;
         let time: i32 = line.next().unwrap().parse()?;
@@ -312,8 +315,101 @@ pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, anyho
     Ok(trades)
 }
 
+pub fn get_available_trading_days_from_csv(file_path: &str) -> Result<Vec<i32>, anyhow::Error> {
+    validate_trades_csv(file_path)?;
+    let mut file_reader = io::BufReader::new(File::open(file_path)?);
 
-pub fn read_trades_from_csv(file_path: &str, show_progress_bar: bool) -> Result<Vec<Trade>, anyhow::Error> {
+    let mut unique_trading_days = vec![];
+    let mut current_day: i32 = -1;
+
+    let mut lines_iterator = file_reader.lines();
+    lines_iterator.next(); // remove the header line;
+    for line in lines_iterator {
+        let date: i32 = line?.split(",").nth(1).unwrap().parse()?;
+
+        if date != current_day {
+            unique_trading_days.push(date);
+            current_day = date;
+        }
+    }
+
+    Ok(unique_trading_days)
+}
+
+
+pub fn read_trades_for_exact_day_from_csv(date: i32, file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
+    validate_trades_csv(file_path)?;
+    let mut file_reader = io::BufReader::new(File::open(file_path)?);
+    let mut trades: Vec<Trade> = Vec::new();
+
+    let mut lines_iterator = file_reader.lines();
+    lines_iterator.next();
+
+    for line in lines_iterator {
+        let mut line_content = line?;
+        let trade_date: i32 = line_content.as_str().split(",").nth(1).unwrap().parse()?;
+
+        if trade_date > date {
+            break
+        }
+        if trade_date == date {
+            let trade = Trade::from_csv_row(&mut line_content)?;
+            trades.push(trade);
+        }
+    }
+    Ok(trades)
+}
+
+pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
+    validate_trades_csv(file_path)?;
+    let file = File::open(file_path)?;
+    let mut file_reader = io::BufReader::new(File::open(file_path)?);
+
+    let mut trades: Vec<Vec<Trade>> = Vec::new();
+    let file_size = file.metadata()?.len();
+
+    // we don't need to run parallel code for small files
+    if file_size <= ONE_HUNDRED_KB_IN_BYTES {
+        let mut trades: Vec<Trade> = Vec::new();
+        for line in file_reader.lines() {
+            trades.push(Trade::from_csv_row(&mut line?)?);
+        }
+        return Ok(trades);
+    }
+
+    // we are going to subdivide the big file by the amount of threads available
+    // each thread will parse a chunk of the csv that will be later combined into a single vector
+    let num_chunks = rayon::current_num_threads()-1;
+    let estimated_bytes_per_line = 81;
+    let chunk_size = (file_size / num_chunks as u64).max(estimated_bytes_per_line as u64);
+
+    // find the start offset for each thread that begins in a valid start position of a new line
+    let mut start_positions = vec![];
+    for chunk_index in 0..num_chunks {
+        let file = File::open(file_path)?;
+        let mut reader = BufReader::new(file);
+
+        let start = chunk_index as u64 * chunk_size;
+        reader.seek(SeekFrom::Start(start))?;
+
+        let mut temp_line = String::new();
+        let bytes_read = reader.read_line(&mut temp_line)? as u64;
+        start_positions.push(start + bytes_read);
+    }
+
+    assert_eq!(num_chunks, start_positions.len());
+    start_positions.push(file_size);
+
+    (0..num_chunks).into_par_iter().map(|chunk_index| {
+        let start = start_positions.get(chunk_index).unwrap();
+        let end = *start_positions.get(chunk_index+1).unwrap();
+        read_trade_csv_file_chunk(file_path, *start, end).unwrap() as Vec<Trade>
+    }).collect_into_vec(&mut trades);
+
+    Ok(trades.into_iter().flatten().collect())
+}
+
+fn validate_trades_csv(file_path: &str) -> Result<(), anyhow::Error>{
     let file = File::open(file_path)?;
     let mut file_reader = io::BufReader::new(File::open(file_path)?);
 
@@ -337,7 +433,7 @@ pub fn read_trades_from_csv(file_path: &str, show_progress_bar: bool) -> Result<
         if expected_headers[index] != header
             && (index < 10 || expected_headers[index] != header.replace("\n", "").replace("\r", ""))
         {
-            return !bail!(format!(
+            return bail!(format!(
                 "expected the header column '{}' in the {} position, but found '{}'",
                 expected_headers[index],
                 index,
@@ -346,51 +442,25 @@ pub fn read_trades_from_csv(file_path: &str, show_progress_bar: bool) -> Result<
         }
     }
 
-    let mut trades: Vec<Vec<Trade>> = Vec::new();
-    let lines = file_reader.lines();
-
-    let file_size = file.metadata()?.len();
-    let estimated_bytes_per_line = 81;
-    let num_chunks = rayon::current_num_threads();
-    let chunk_size = (file_size / num_chunks as u64).max(estimated_bytes_per_line as u64);
-
-    let offset_to_avoid_frequent_io_draws: usize = 4000;
-    let estimated_item_count = file_size / estimated_bytes_per_line / offset_to_avoid_frequent_io_draws as u64;
-    //let mut progress_bar = ProgressBar::default(estimated_item_count as u32, 100, false);
-
-    (0..num_chunks).into_par_iter().map(|chunk_index| {
-        let start = chunk_index as u64 * chunk_size;
-        let end = if chunk_index == num_chunks - 1 {
-            file_size
-        } else {
-            (chunk_index as u64 + 1) * chunk_size
-        };
-        let chunk_trades: Vec<Trade> = read_chunk(file_path, start, end).unwrap();
-        chunk_trades
-    }).collect_into_vec(&mut trades);
-
-    let trades: Vec<Trade> = trades.into_iter().flatten().collect();
-    Ok(trades)
+    Ok(())
 }
 
-fn read_chunk(file_path: &str, start: u64, end: u64) -> Result<Vec<Trade>, anyhow::Error> {
+fn read_trade_csv_file_chunk(file_path: &str, start: u64, end: u64) -> Result<Vec<Trade>, anyhow::Error> {
     let file = File::open(file_path)?;
     let mut reader = BufReader::new(file);
     reader.seek(SeekFrom::Start(start))?;
-
-    // If not at the beginning of a line, skip to the next newline
-    if start > 0 {
-        let mut temp_line = String::new();
-        reader.read_line(&mut temp_line)?; // Discard this partial line
-    }
 
     let mut trades = Vec::new();
     let mut line = String::new();
     let mut current_pos = start;
 
-    while current_pos < end && reader.read_line(&mut line)? > 0 {
+    while current_pos < end  {
+        let bytes_read = reader.read_line(&mut line)?;
+        if bytes_read == 0 {
+            break;
+        }
         trades.push(Trade::from_csv_row(line.trim_end())?);
-        current_pos += line.len() as u64;
+        current_pos += bytes_read as u64;
         line.clear();
     }
 
@@ -496,9 +566,40 @@ mod tests {
         let result = trades.unwrap();
 
         assert_eq!(
-            9,
+            36,
             result.len(),
-            "should have read 9 trades from the file '{}'",
+            "should have read 36 trades from the file '{}'",
+            trades_file_path
+        );
+    }
+
+
+    #[test]
+    fn should_get_only_trades_for_specific_trading_day_from_csv_correctly() {
+        let trades_file_path = "resources/example_many_days_history_trades.csv";
+        let trading_days = read_trades_for_exact_day_from_csv(20190110, trades_file_path);
+
+        let result = trading_days.unwrap();
+
+        assert_eq!(
+            3,
+            result.len(),
+            "should have read 3 trades for the specific date 20190110 in the file '{}'",
+            trades_file_path
+        );
+    }
+
+    #[test]
+    fn should_get_available_trading_days_from_csv_correctly() {
+        let trades_file_path = "resources/example_many_days_history_trades.csv";
+        let trading_days = get_available_trading_days_from_csv(trades_file_path);
+
+        let result = trading_days.unwrap();
+
+        assert_eq!(
+            21,
+            result.len(),
+            "should have read 36 unique trading days from the file '{}'",
             trades_file_path
         );
     }

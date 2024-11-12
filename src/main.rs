@@ -15,6 +15,7 @@ use std::str::FromStr;
 use std::string::ToString;
 use std::time::Instant;
 use itertools::enumerate;
+use rayon::iter::IntoParallelIterator;
 use simple_bar::ProgressBar;
 use crate::models::asset::Asset;
 use crate::models::candlestick::CandlestickType;
@@ -172,22 +173,18 @@ fn parse_file_command(sub_matches: &ArgMatches) {
         println!("currently only .csv is supported as a input type");
         return;
     }
-    println!("loading trades from csv");
-    let trades_csv_load_result = trade::read_trades_from_csv(input_file_path, true);
-    if trades_csv_load_result.is_err() {
-        eprintln!("[ERROR] failed to load trades from file '{}'. {}", input_file_path, trades_csv_load_result.err().unwrap());
-        return;
-    }
+
 
     if result != "binary" {
         eprintln!("currently only output as binary is supported");
         return;
     }
 
+    println!("evaluating trading days available on csv");
+    let trading_days_present_in_csv = trade::get_available_trading_days_from_csv(input_file_path)?;
+    println!("available trading days: {:?}", trading_days_present_in_csv);
 
-    let trades_list = trades_csv_load_result.unwrap();
     let mut start_index: usize = 0;
-    let mut current_day = trades_list.first().unwrap().date;
 
     let output_file_path = if output.is_some(){
         output.unwrap().to_string()
@@ -198,22 +195,18 @@ fn parse_file_command(sub_matches: &ArgMatches) {
     };
 
     println!("saving trades into binary files");
-    let mut progress_bar = ProgressBar::default(trades_list.len() as u32, 100, false);
+    let mut progress_bar = ProgressBar::default(trading_days_present_in_csv.len() as u32, 100, false);
 
-    for (index,trade) in enumerate(&trades_list) {
-        if current_day != trade.date {
-            let file_name = format!("TRADE-{exchange}-{market}-{ticker}-{current_day}");
-            let full_output_file_path = PathBuf::from(output_file_path.as_str()).join(file_name);
-            println!("full_output_file_path");
-            trade::write_to_binary_file(&trades_list[start_index..index], full_output_file_path.to_str().unwrap())
-                .expect("should persist file correctly");
-            start_index = index;
-            current_day = trade.date;
-            println!("new file '{}' saved to local disk", full_output_file_path.to_str().unwrap());
-        }
+    trading_days_present_in_csv.into_par_iter().for_each(|trading_date|{
+        let trades = trade::read_trades_for_exact_day_from_csv(trading_date, input_file_path).unwrap();
+        let file_name = format!("TRADE-{exchange}-{market}-{ticker}-{trading_date}");
+        let full_output_file_path = PathBuf::from(output_file_path.as_str()).join(file_name);
+        println!("full_output_file_path");
+        trade::write_to_binary_file(trades.as_slice(), full_output_file_path.to_str().unwrap())
+            .expect("should persist file correctly");
+        println!("new file '{}' saved to local disk", full_output_file_path.to_str().unwrap());
         progress_bar.update();
-    }
-    println!("finished reading trades from csv");
+    });
 }
 
 fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
