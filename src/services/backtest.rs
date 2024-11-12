@@ -412,23 +412,29 @@ impl<'a> TradingBacktester<'a> {
     pub fn run_backtest(&self, mut strategy: impl CandlestickTradingStrategy) -> BacktestMetrics {
         let mut event_handler = ExchangeEventHandler::new(self.asset);
 
-        let first_day = self.data_provider.candlesticks.first().unwrap().date;
+
+        let mut days_of_context = strategy.days_of_context();
+        let mut current_day = self.data_provider.candlesticks.first().unwrap().date;
 
         // separate the first day of data to initialize the strategy
-        let mut index_first_candle_second_day = 0;
+        let mut index_initial_candle_to_trade = 0;
         for (index, initialization_candle) in self.data_provider.candlesticks.iter().enumerate() {
-            if initialization_candle.date != first_day {
-                index_first_candle_second_day = index;
-                break;
+            if initialization_candle.date != current_day {
+                current_day = initialization_candle.date;
+                days_of_context-=1;
+                if days_of_context == 0 {
+                    index_initial_candle_to_trade = index;
+                    break;
+                }
             }
         }
 
         strategy.init_trading_day(
             self.asset,
-            &self.data_provider.candlesticks[0..index_first_candle_second_day],
+            &self.data_provider.candlesticks[0..index_initial_candle_to_trade],
         );
 
-        for candlestick in self.data_provider.candlesticks.iter().skip(index_first_candle_second_day) {
+        for candlestick in self.data_provider.candlesticks.iter().skip(index_initial_candle_to_trade) {
             let trade_action = strategy.process_closed_candlestick(candlestick);
             event_handler.add_candlestick_event(&candlestick);
             add_orders_event(&mut event_handler, trade_action);

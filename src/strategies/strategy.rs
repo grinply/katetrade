@@ -12,6 +12,11 @@ pub trait HighResolutionTradingStrategy {
 
     fn name(&self) -> &str;
 
+    /// amount of data ( in days ) that will be provided by init_trading_day
+    fn days_of_context(&self) -> u32 {
+        1
+    }
+
     /// starts the trading day providing the context necessary to know what is going to be traded
     fn init_trading_day(&mut self, asset: &Asset, context_trades: &Vec<Trade>);
 
@@ -27,6 +32,11 @@ pub trait CandlestickTradingStrategy {
     fn new() -> Self;
 
     fn name(&self) -> &str;
+
+    /// amount of data ( in days ) that will be provided by init_trading_day
+    fn days_of_context(&self) -> u32 {
+        1
+    }
 
     /// starts the trading day providing the context necessary to know what is going to be traded
     fn init_trading_day(&mut self, asset: &Asset, context_candles: &[Candlestick]);
