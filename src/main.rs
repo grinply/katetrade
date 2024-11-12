@@ -6,6 +6,7 @@ mod strategies;
 mod utils;
 
 use std::io::{stdin};
+use std::path::PathBuf;
 use crate::models::order_type::OrderType;
 use crate::services::market_connector::MarketConnectorClient;
 use clap::{arg, ArgMatches, Command};
@@ -13,11 +14,14 @@ use models::exchange::Exchange;
 use std::str::FromStr;
 use std::string::ToString;
 use std::time::Instant;
+use itertools::enumerate;
+use simple_bar::ProgressBar;
 use crate::models::asset::Asset;
 use crate::models::candlestick::CandlestickType;
 use crate::models::market::Market;
 use crate::models::side::Side;
-use crate::services::backtest;
+use crate::models::trade;
+use crate::services::{backtest, configuration};
 use crate::services::configuration::{load_configuration, KateConfiguration};
 use crate::strategies::execution_manager::{LiveStrategyExecutor, ExecutionRequest};
 use crate::strategies::strategy::{get_candlestick_strategy_by_name, CandlestickConfiguration, StrategyInputData};
@@ -112,6 +116,32 @@ fn cli() -> Command {
                     .default_value("50"))
         )
         .subcommand(
+            Command::new(constants::FILE)
+                .about("Various operations related to historical files")
+                .subcommand(
+                    Command::new(constants::TRANSFORM)
+                        .about("transform files from a type to another")
+                        .arg(arg!(-e --exchange <EXCHANGE> "Exchange where the ticker belongs to")
+                            .value_parser([constants::B3])
+                            .default_value(constants::B3)
+                            .num_args(0..=1))
+                        .arg(
+                            arg!(-m --market <MARKET> "Market where to send the order")
+                                .value_parser([constants::FUTURES, constants::SPOT])
+                                .num_args(0..=1)
+                                .required(true)
+                        )
+                        .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'").required(true))
+                        .arg(arg!(-i --input <INPUT> "Full path of the input file").required(true))
+                        .arg(arg!(-o --output <OUTPUT> "Full path of the output directory (if you dont provide an output folder the result will be saved to kate home folder)")
+                            .required(false))
+                        .arg(arg!(-r --result <RESULT> "resulting file type that will be generated from the provided input")
+                            .value_parser(["csv", "binary"])
+                            .default_value("binary")
+                            .num_args(0..=1))
+                )
+        )
+        .subcommand(
             Command::new(constants::CONNECTION)
                 .about("General connection information")
                 .subcommand(
@@ -119,6 +149,71 @@ fn cli() -> Command {
                         .about("evaluate the network connection with market connector (service responsible for processing orders and providing live market data")
                 )
         )
+}
+
+fn parse_file_command(sub_matches: &ArgMatches) {
+    let ticker = sub_matches.get_one::<String>("ticker").expect("required");
+    let market = Market::from_str(sub_matches
+        .get_one::<String>("market")
+        .expect("market is required")
+    ).unwrap();
+
+    let exchange = Exchange::from_str(sub_matches
+        .get_one::<String>("exchange")
+        .expect("exchange is required")
+    ).unwrap();
+
+    let input_file_path = sub_matches.get_one::<String>("input").expect("required");
+    let result = sub_matches.get_one::<String>("result").expect("required");
+
+    let output = sub_matches.get_one::<String>("output");
+
+    if !input_file_path.ends_with(".csv"){
+        println!("currently only .csv is supported as a input type");
+        return;
+    }
+    println!("loading trades from csv");
+    let trades_csv_load_result = trade::read_trades_from_csv(input_file_path, true);
+    if trades_csv_load_result.is_err() {
+        eprintln!("[ERROR] failed to load trades from file '{}'. {}", input_file_path, trades_csv_load_result.err().unwrap());
+        return;
+    }
+
+    if result != "binary" {
+        eprintln!("currently only output as binary is supported");
+        return;
+    }
+
+
+    let trades_list = trades_csv_load_result.unwrap();
+    let mut start_index: usize = 0;
+    let mut current_day = trades_list.first().unwrap().date;
+
+    let output_file_path = if output.is_some(){
+        output.unwrap().to_string()
+    }else{
+        configuration::kate_configuration_directory()
+            .join("history_trades")
+            .join(ticker).to_str().unwrap().to_string()
+    };
+
+    println!("saving trades into binary files");
+    let mut progress_bar = ProgressBar::default(trades_list.len() as u32, 100, false);
+
+    for (index,trade) in enumerate(&trades_list) {
+        if current_day != trade.date {
+            let file_name = format!("TRADE-{exchange}-{market}-{ticker}-{current_day}");
+            let full_output_file_path = PathBuf::from(output_file_path.as_str()).join(file_name);
+            println!("full_output_file_path");
+            trade::write_to_binary_file(&trades_list[start_index..index], full_output_file_path.to_str().unwrap())
+                .expect("should persist file correctly");
+            start_index = index;
+            current_day = trade.date;
+            println!("new file '{}' saved to local disk", full_output_file_path.to_str().unwrap());
+        }
+        progress_bar.update();
+    }
+    println!("finished reading trades from csv");
 }
 
 fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
@@ -384,6 +479,14 @@ fn main() {
             match sub_matches.subcommand() {
                 Some((constants::STATUS, _)) => {
                     process_connection_status_command(client);
+                }
+                _ => unreachable!(),
+            }
+        }
+        Some((constants::FILE, sub_matches)) => {
+            match sub_matches.subcommand() {
+                Some((constants::TRANSFORM, transform_match)) => {
+                    parse_file_command(transform_match);
                 }
                 _ => unreachable!(),
             }

@@ -3,9 +3,13 @@ use std::convert::TryInto;
 use anyhow;
 use anyhow::bail;
 use std::fs::{File};
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use lazy_static::lazy_static;
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
+use simple_bar::ProgressBar;
 use crate::constants;
+use crate::models::candlestick::Candlestick;
+
 const TRADES_CSV_HEADER_LINE: &str = "<ticker>,<date>,<time>,<trade_number>,<price>,<qty>,<vol>,<buy_agent>,<sell_agent>,<trade_type>,<aft>";
 
 /// Trade struct to match the Java data sent from market-connector
@@ -76,7 +80,7 @@ impl Trade {
     /// **ticker, date, time, trade_number, price, qty, vol, buy_agent, sell_agent, trade_type, aft**
     ///
     ///  WINFUT,20190102,090034,10,87800.00000000,2,40000.0000,Modal,XP,Auction,N
-    pub fn from_csv_row(csv_line: &mut String) -> Result<Self, anyhow::Error> {
+    pub fn from_csv_row(csv_line: &str) -> Result<Self, anyhow::Error> {
         let mut line = csv_line.split(",");
         line.next();
 
@@ -278,7 +282,7 @@ pub fn write_to_csv_file(
 }
 
 #[allow(unused)]
-pub fn write_to_binary_file(trades: Vec<Trade>, output_file_path: &str) -> Result<(), anyhow::Error> {
+pub fn write_to_binary_file(trades: &[Trade], output_file_path: &str) -> Result<(), anyhow::Error> {
     let mut binary_file = File::create(output_file_path)?;
     for trade in trades {
         let trade_binary_data = trade.to_bytes()?;
@@ -308,8 +312,9 @@ pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, anyho
     Ok(trades)
 }
 
-#[allow(unused)]
-pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
+
+pub fn read_trades_from_csv(file_path: &str, show_progress_bar: bool) -> Result<Vec<Trade>, anyhow::Error> {
+    let file = File::open(file_path)?;
     let mut file_reader = io::BufReader::new(File::open(file_path)?);
 
     let csv_header_line = &mut String::new();
@@ -330,10 +335,10 @@ pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, anyhow::Error
     ];
     for (index, header) in csv_header_line.split(",").enumerate() {
         if expected_headers[index] != header
-            && (index < 10 || expected_headers[index] != header.replace("\n", ""))
+            && (index < 10 || expected_headers[index] != header.replace("\n", "").replace("\r", ""))
         {
             return !bail!(format!(
-                "expected the header column {} in the {} position, but found {}",
+                "expected the header column '{}' in the {} position, but found '{}'",
                 expected_headers[index],
                 index,
                 header
@@ -341,10 +346,54 @@ pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, anyhow::Error
         }
     }
 
-    let mut trades: Vec<Trade> = Vec::new();
-    for line in file_reader.lines() {
-        trades.push(Trade::from_csv_row(&mut line?)?);
+    let mut trades: Vec<Vec<Trade>> = Vec::new();
+    let lines = file_reader.lines();
+
+    let file_size = file.metadata()?.len();
+    let estimated_bytes_per_line = 81;
+    let num_chunks = rayon::current_num_threads();
+    let chunk_size = (file_size / num_chunks as u64).max(estimated_bytes_per_line as u64);
+
+    let offset_to_avoid_frequent_io_draws: usize = 4000;
+    let estimated_item_count = file_size / estimated_bytes_per_line / offset_to_avoid_frequent_io_draws as u64;
+    //let mut progress_bar = ProgressBar::default(estimated_item_count as u32, 100, false);
+
+    (0..num_chunks).into_par_iter().map(|chunk_index| {
+        let start = chunk_index as u64 * chunk_size;
+        let end = if chunk_index == num_chunks - 1 {
+            file_size
+        } else {
+            (chunk_index as u64 + 1) * chunk_size
+        };
+        let chunk_trades: Vec<Trade> = read_chunk(file_path, start, end).unwrap();
+        chunk_trades
+    }).collect_into_vec(&mut trades);
+
+    let trades: Vec<Trade> = trades.into_iter().flatten().collect();
+    Ok(trades)
+}
+
+fn read_chunk(file_path: &str, start: u64, end: u64) -> Result<Vec<Trade>, anyhow::Error> {
+    let file = File::open(file_path)?;
+    let mut reader = BufReader::new(file);
+    reader.seek(SeekFrom::Start(start))?;
+
+    // If not at the beginning of a line, skip to the next newline
+    if start > 0 {
+        let mut temp_line = String::new();
+        reader.read_line(&mut temp_line)?; // Discard this partial line
     }
+
+    let mut trades = Vec::new();
+    let mut line = String::new();
+    let mut current_pos = start;
+
+    while current_pos < end && reader.read_line(&mut line)? > 0 {
+        trades.push(Trade::from_csv_row(line.trim_end())?);
+        current_pos += line.len() as u64;
+        line.clear();
+    }
+
     Ok(trades)
 }
 
@@ -462,7 +511,7 @@ mod tests {
             remove_file(test_binary_trades_file_path).unwrap();
         }
 
-        write_to_binary_file(trades, test_binary_trades_file_path).unwrap();
+        write_to_binary_file(trades.as_slice(), test_binary_trades_file_path).unwrap();
         assert!(Path::new(test_binary_trades_file_path).exists());
 
         remove_file(test_binary_trades_file_path).unwrap();

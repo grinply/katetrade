@@ -27,3 +27,6 @@ Options:
   -h, --help     Print help
   -V, --version  Print version
 ```
+
+
+cargo run -- file transform -i /home/victorfts/Downloads/WINFUT/2204607/WINFUT/2021/WINFUT_2021 -e B3 -m FUTURES -t WIN
