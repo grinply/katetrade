@@ -22,6 +22,7 @@ use crate::models::market::Market;
 const INITIAL_BALANCE: f64 = 10_000.0;
 const BASE_TRADE_QTY: u32 = 1;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
+const COMPULSORY_CLOSE_FEE: f64 = 25.0;
 
 #[allow(unused)]
 pub struct BacktestMetrics {
@@ -101,6 +102,7 @@ struct ExchangeEventHandler<'a> {
     current_candlestick: Option<&'a Candlestick>,
     total_contracts_executed_current_month: u64,
     current_month_year: i32,
+    last_candlestick: Option<&'a Candlestick>,
 }
 
 impl DataProvider {
@@ -130,6 +132,7 @@ impl<'a> ExchangeEventHandler<'a> {
             asset,
             current_position: None,
             current_candlestick: None,
+            last_candlestick: None,
             current_balance: INITIAL_BALANCE,
             base_qty_per_order: BASE_TRADE_QTY,
             slippage_multiplier: DEFAULT_SLIPPAGE_MULTIPLIER,
@@ -163,6 +166,7 @@ impl<'a> ExchangeEventHandler<'a> {
         for event in self.events {
             match event {
                 NewCandle(candlestick) => {
+                    self.last_candlestick = self.current_candlestick;
                     self.current_candlestick = Some(candlestick);
                     self.track_current_month();
                     self.check_compulsory_close_position(candlestick);
@@ -203,6 +207,18 @@ impl<'a> ExchangeEventHandler<'a> {
         if pnl_from_spikes >= self.current_balance {
             self.current_balance = 0.0;
         }
+
+        // we don't allow holding positions to the next trading day, this is a force close in case the position
+        // is still open when the trading day ends
+        let position = self.current_position.as_mut();
+        if position.is_some() && candlestick.date != self.last_candlestick.unwrap().date {
+            let position = position.unwrap();
+            let open_qty = position.open_qty;
+            let last_candle = *self.last_candlestick.as_ref().unwrap();
+            position.total_paid_in_fees+=COMPULSORY_CLOSE_FEE;
+            self.current_balance-=COMPULSORY_CLOSE_FEE;
+            self.decrease_position(last_candle.close, last_candle, open_qty);
+        }
     }
 
     #[allow(unused)]
@@ -238,7 +254,7 @@ impl<'a> ExchangeEventHandler<'a> {
                         Side::BUY
                     };
                     let entry_price = self.calculate_price_with_slippage(current_candle, oposit_direction);
-                    self.decrease_position(entry_price, current_candle);
+                    self.decrease_position(entry_price, current_candle, self.base_qty_per_order as i32);
                 }
             }
         }
@@ -274,19 +290,21 @@ impl<'a> ExchangeEventHandler<'a> {
         self.current_balance-=current_fee;
     }
 
-    fn decrease_position(&mut self, current_exit_price: f64, candlestick: &Candlestick){
+    //self.base_qty_per_order
+    fn decrease_position(&mut self, current_exit_price: f64, candlestick: &Candlestick, quantity_to_decrease: i32){
         assert!(self.current_position.is_some(), "sanity check, should not try to decrease a position that doesnt exit");
-        let current_fee = self.calculate_fees(self.base_qty_per_order as u64);
+        let current_fee = self.calculate_fees(quantity_to_decrease as u64);
         let position = self.current_position.as_mut().unwrap();
         assert!(position.open_qty > 0, "cant decrease a position that doesnt have any contract/shares left open");
+        assert!(quantity_to_decrease <= position.open_qty, "can´t decrease a position more contracts/shares than it has");
 
         let executed_qty = position.total_qty - position.open_qty;
-        position.avg_exit_price = ((position.avg_exit_price * executed_qty as f64) + (current_exit_price * self.base_qty_per_order as f64) )/ position.total_qty as f64;
-        position.open_qty -= self.base_qty_per_order as i32;
+        position.avg_exit_price = ((position.avg_exit_price * executed_qty as f64) + (current_exit_price * quantity_to_decrease as f64) )/ position.total_qty as f64;
+        position.open_qty -= quantity_to_decrease;
 
         position.total_paid_in_fees+= current_fee;
         self.current_balance-=current_fee;
-        self.total_contracts_executed_current_month+=self.base_qty_per_order as u64;
+        self.total_contracts_executed_current_month+=quantity_to_decrease as u64;
 
         if position.open_qty == 0 {
             self.close_position(candlestick);
