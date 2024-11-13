@@ -13,10 +13,11 @@ use clap::{arg, ArgMatches, Command};
 use models::exchange::Exchange;
 use std::str::FromStr;
 use std::string::ToString;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use itertools::enumerate;
 use rayon::iter::IntoParallelIterator;
 use simple_bar::ProgressBar;
+use rayon::iter::ParallelIterator;
 use crate::models::asset::Asset;
 use crate::models::candlestick::CandlestickType;
 use crate::models::market::Market;
@@ -115,6 +116,10 @@ fn cli() -> Command {
                     .num_args(0..=1))
                 .arg(arg!(--candle_configuration <END_DATE> "Input configuration for the type of candlestick selected (time range in minutes, ticks, total volume)")
                     .default_value("50"))
+                .arg(arg!(--force_sequential_download <FORCE_SEQUENTIAL_DOWNLOAD> "if there is aby need to download historical data, the download will be executed sequentially (not concurrently)")
+                    .default_value("false")
+                    .num_args(0..=1)
+                    .required(false))
         )
         .subcommand(
             Command::new(constants::FILE)
@@ -169,41 +174,52 @@ fn parse_file_command(sub_matches: &ArgMatches) {
 
     let output = sub_matches.get_one::<String>("output");
 
-    if !input_file_path.ends_with(".csv"){
+    if !input_file_path.ends_with(".csv") {
         println!("currently only .csv is supported as a input type");
         return;
     }
-
 
     if result != "binary" {
         eprintln!("currently only output as binary is supported");
         return;
     }
 
-    println!("evaluating trading days available on csv");
+    println!("evaluating how many trading days are available on the csv file");
     let trading_days_present_in_csv = trade::get_available_trading_days_from_csv(input_file_path).unwrap();
-    println!("available trading days: {:?}", trading_days_present_in_csv);
+    println!("{} trading days found in the csv, starting from {} and ending in {}",
+             trading_days_present_in_csv.len(),
+             trading_days_present_in_csv.first().unwrap(),
+             trading_days_present_in_csv.last().unwrap()
+    );
 
-    let output_file_path = if output.is_some(){
+    let output_file_path = if output.is_some() {
         output.unwrap().to_string()
-    }else{
+    } else {
         configuration::kate_configuration_directory()
             .join("history_trades")
             .join(ticker).to_str().unwrap().to_string()
     };
 
-    println!("saving trades into binary files");
-    let mut progress_bar = ProgressBar::default(trading_days_present_in_csv.len() as u32, 100, false);
+    println!("parsing trades and saving one binary file for each trading day inside the folder {}", output_file_path.as_str());
+    let mut bar = ProgressBar::default(trading_days_present_in_csv.len() as u32 + 1, 100, false);
+    bar.update();
 
-    trading_days_present_in_csv.into_par_iter().for_each(|trading_date|{
+    let download_files_bar = Arc::new(Mutex::new(bar));
+
+    let values_to_process: Vec<(i32, Arc<Mutex<ProgressBar>>)> = trading_days_present_in_csv.iter().map(|trading_date| {
+        (*trading_date, Arc::clone(&download_files_bar))
+    }).collect();
+
+    values_to_process.into_par_iter().for_each(|tuple| {
+        let trading_date = tuple.0;
+        let progress_bar = tuple.1;
         let trades = trade::read_trades_for_exact_day_from_csv(trading_date, input_file_path).unwrap();
         let file_name = format!("TRADE-{exchange}-{market}-{ticker}-{trading_date}");
         let full_output_file_path = PathBuf::from(output_file_path.as_str()).join(file_name);
-        println!("full_output_file_path");
         trade::write_to_binary_file(trades.as_slice(), full_output_file_path.to_str().unwrap())
             .expect("should persist file correctly");
-        println!("new file '{}' saved to local disk", full_output_file_path.to_str().unwrap());
-        progress_bar.update();
+        let mut download_progress_bar = progress_bar.lock().unwrap();
+        download_progress_bar.update();
     });
 }
 
@@ -217,6 +233,11 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
         .get_one::<String>("candle_type")
         .expect("candle_type is required")
     ).unwrap();
+
+    let force_sequential_download: bool = sub_matches
+        .get_one::<String>("force_sequential_download")
+        .expect("force_sequential_download is required")
+        .parse().expect("force_sequential_download should be a bool");
 
     let candle_input_parameter: u64 = sub_matches.get_one::<String>("candle_configuration")
         .expect("required")
@@ -235,7 +256,7 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
 
     let asset = Asset::get_asset(ticker, market, exchange);
 
-    if asset.is_none(){
+    if asset.is_none() {
         eprintln!("[ERROR] asset with ticker '{}' and market '{}' not found", ticker, market);
         return;
     }
@@ -253,19 +274,19 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
         &asset.unwrap(),
         begin,
         end,
-        CandlestickConfiguration{
+        CandlestickConfiguration {
             candle_type,
-            candle_input_parameter
+            candle_input_parameter,
         },
+        force_sequential_download,
     );
     let finish_load_data = start_load_data.elapsed();
-    print!("historical data loaded in {:.2?} | ", finish_load_data);
     if backtester_engine.is_err() {
         eprintln!("failed to initialize backtest engine. err: {}",
-                 backtester_engine.err().unwrap());
+                  backtester_engine.err().unwrap());
         return;
     }
-
+    print!("historical data loaded in {:.2?} | ", finish_load_data);
     let backtester = backtester_engine.unwrap();
     println!("{} trading days with {} candlesticks generated from {} trades",
              backtester.qty_history_trading_days,

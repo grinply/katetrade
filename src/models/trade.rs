@@ -4,13 +4,9 @@ use anyhow;
 use anyhow::bail;
 use std::fs::{File};
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::{process, thread};
-use itertools::Itertools;
 use lazy_static::lazy_static;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
-use simple_bar::ProgressBar;
 use crate::constants;
-use crate::models::candlestick::Candlestick;
 
 const ONE_HUNDRED_KB_IN_BYTES: u64 = 100_000;
 const TRADES_CSV_HEADER_LINE: &str = "<ticker>,<date>,<time>,<trade_number>,<price>,<qty>,<vol>,<buy_agent>,<sell_agent>,<trade_type>,<aft>";
@@ -29,6 +25,45 @@ pub struct Trade {
     pub price: f64,
     pub volume: f64,
 }
+pub struct TradeFile {
+    reader: BufReader<File>,
+    trades_read: usize,
+    total_trades: usize,
+}
+
+impl TradeFile {
+    pub fn new_from_binary_file(full_file_path: &str) -> Result<Self, anyhow::Error> {
+        let file = File::open(full_file_path)?;
+        file.sync_all()?;
+        let file_size_bytes = file.metadata()?.len();
+
+        Ok(
+            TradeFile {
+                reader: BufReader::new(file),
+                total_trades: (file_size_bytes / Trade::size_in_bytes() as u64) as usize,
+                trades_read: 0,
+            }
+        )
+    }
+}
+
+impl Iterator for TradeFile {
+    type Item = Trade;
+
+    fn next(&mut self) -> Option<Trade> {
+        if self.trades_read >= self.total_trades {
+            return None;
+        }
+        let mut buffer: [u8; Trade::size_in_bytes()] = [0; Trade::size_in_bytes()];
+        if self.reader.read_exact(&mut buffer).is_err() {
+            return None;
+        }
+        let current_trade = Trade::from_bytes(buffer.as_slice()).unwrap();
+        self.trades_read += 1;
+        Some(current_trade)
+    }
+}
+
 
 impl Trade {
     pub const fn size_in_bytes() -> usize {
@@ -294,6 +329,7 @@ pub fn write_to_binary_file(trades: &[Trade], output_file_path: &str) -> Result<
     Ok(())
 }
 
+#[allow(unused)]
 pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
     let file = File::open(file_path)?;
     file.sync_all()?;
@@ -317,7 +353,7 @@ pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, anyho
 
 pub fn get_available_trading_days_from_csv(file_path: &str) -> Result<Vec<i32>, anyhow::Error> {
     validate_trades_csv(file_path)?;
-    let mut file_reader = io::BufReader::new(File::open(file_path)?);
+    let file_reader = BufReader::new(File::open(file_path)?);
 
     let mut unique_trading_days = vec![];
     let mut current_day: i32 = -1;
@@ -339,7 +375,7 @@ pub fn get_available_trading_days_from_csv(file_path: &str) -> Result<Vec<i32>, 
 
 pub fn read_trades_for_exact_day_from_csv(date: i32, file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
     validate_trades_csv(file_path)?;
-    let mut file_reader = io::BufReader::new(File::open(file_path)?);
+    let file_reader = io::BufReader::new(File::open(file_path)?);
     let mut trades: Vec<Trade> = Vec::new();
 
     let mut lines_iterator = file_reader.lines();
@@ -360,10 +396,12 @@ pub fn read_trades_for_exact_day_from_csv(date: i32, file_path: &str) -> Result<
     Ok(trades)
 }
 
+
+#[allow(unused)]
 pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
     validate_trades_csv(file_path)?;
     let file = File::open(file_path)?;
-    let mut file_reader = io::BufReader::new(File::open(file_path)?);
+    let file_reader = io::BufReader::new(File::open(file_path)?);
 
     let mut trades: Vec<Vec<Trade>> = Vec::new();
     let file_size = file.metadata()?.len();
@@ -410,7 +448,6 @@ pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, anyhow::Error
 }
 
 fn validate_trades_csv(file_path: &str) -> Result<(), anyhow::Error>{
-    let file = File::open(file_path)?;
     let mut file_reader = io::BufReader::new(File::open(file_path)?);
 
     let csv_header_line = &mut String::new();
@@ -433,7 +470,7 @@ fn validate_trades_csv(file_path: &str) -> Result<(), anyhow::Error>{
         if expected_headers[index] != header
             && (index < 10 || expected_headers[index] != header.replace("\n", "").replace("\r", ""))
         {
-            return bail!(format!(
+            bail!(format!(
                 "expected the header column '{}' in the {} position, but found '{}'",
                 expected_headers[index],
                 index,
