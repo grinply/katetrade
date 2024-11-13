@@ -110,6 +110,11 @@ fn cli() -> Command {
                     .num_args(0..=1))
                 .arg(arg!(--candle_configuration <END_DATE> "Input configuration for the type of candlestick selected (time range in minutes, ticks, total volume)")
                     .default_value("50"))
+                .arg(arg!(--force_sequential_download <FORCE_SEQUENTIAL_DOWNLOAD> "if there is aby need to download historical data, the download will be executed sequentially (not concurrently)")
+                    .default_value("false")
+                    .num_args(0..=1)
+                    .required(false))
+
         )
         .subcommand(
             Command::new(constants::CONNECTION)
@@ -131,6 +136,11 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
         .get_one::<String>("candle_type")
         .expect("candle_type is required")
     ).unwrap();
+
+    let force_sequential_download: bool = sub_matches
+        .get_one::<String>("force_sequential_download")
+        .expect("force_sequential_download is required")
+        .parse().expect("force_sequential_download should be a bool");
 
     let candle_input_parameter: u64 = sub_matches.get_one::<String>("candle_configuration")
         .expect("required")
@@ -171,15 +181,15 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
             candle_type,
             candle_input_parameter
         },
+        force_sequential_download
     );
     let finish_load_data = start_load_data.elapsed();
-    print!("historical data loaded in {:.2?} | ", finish_load_data);
     if backtester_engine.is_err() {
         eprintln!("failed to initialize backtest engine. err: {}",
                  backtester_engine.err().unwrap());
         return;
     }
-
+    print!("historical data loaded in {:.2?} | ", finish_load_data);
     let backtester = backtester_engine.unwrap();
     println!("{} trading days with {} candlesticks generated from {} trades",
              backtester.qty_history_trading_days,
