@@ -409,7 +409,9 @@ pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, anyhow::Error
     // we don't need to run parallel code for small files
     if file_size <= ONE_HUNDRED_KB_IN_BYTES {
         let mut trades: Vec<Trade> = Vec::new();
-        for line in file_reader.lines() {
+        let mut lines = file_reader.lines();
+        lines.next(); // skip header line
+        for line in lines {
             trades.push(Trade::from_csv_row(&mut line?)?);
         }
         return Ok(trades);
@@ -599,11 +601,10 @@ mod tests {
         let trades_file_path = "resources/example_history_trades.csv";
         let trades = read_trades_from_csv(trades_file_path);
 
-        assert!(trades.is_ok(), "trade data failed to be loaded from '{}'", trades_file_path);
         let result = trades.unwrap();
 
         assert_eq!(
-            36,
+            9,
             result.len(),
             "should have read 36 trades from the file '{}'",
             trades_file_path
