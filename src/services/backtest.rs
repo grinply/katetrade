@@ -551,7 +551,8 @@ impl<'a> TradingBacktester<'a> {
 
         if files_to_download.len() > 0 {
             if !sequential_download {
-                println!("download in parallel missing files with historical data from aws s3");
+                let number_of_threads = rayon::current_num_threads();
+                println!("download in parallel missing files with historical data from aws s3 using {} threads", number_of_threads);
                 let mut bar =  ProgressBar::default(files_to_download.len() as u32 +1, 100, false);
                 bar.update();
                 let download_files_bar = Arc::new(Mutex::new(bar));
