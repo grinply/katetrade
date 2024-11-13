@@ -181,10 +181,8 @@ fn parse_file_command(sub_matches: &ArgMatches) {
     }
 
     println!("evaluating trading days available on csv");
-    let trading_days_present_in_csv = trade::get_available_trading_days_from_csv(input_file_path)?;
+    let trading_days_present_in_csv = trade::get_available_trading_days_from_csv(input_file_path).unwrap();
     println!("available trading days: {:?}", trading_days_present_in_csv);
-
-    let mut start_index: usize = 0;
 
     let output_file_path = if output.is_some(){
         output.unwrap().to_string()
