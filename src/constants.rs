@@ -1,3 +1,5 @@
+pub const FILE: &str = "file";
+pub const TRANSFORM: &str = "transform";
 pub const BACKTEST: &str = "backtest";
 pub const DETAILS: &str = "details";
 pub const SEND: &str = "send";
