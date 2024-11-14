@@ -120,6 +120,12 @@ fn cli() -> Command {
                     .default_value("false")
                     .num_args(0..=1)
                     .required(false))
+                .arg(arg!(-q --qty_to_trade <QUANTITY_TO_TRADE> "base traded quantity to trade on each order sent to the market")
+                    .default_value("1")
+                    .required(false))
+                .arg(arg!(--fixed_trade_qty <FIXED_TRADE_QTY> "defines if the quantity traded should increase and decrease as the current balance changes to keep the traded amount proportional")
+                    .default_value("true")
+                    .required(false))
         )
         .subcommand(
             Command::new(constants::FILE)
@@ -254,6 +260,20 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
         .expect("exchange is required")
     ).unwrap();
 
+    let qty_to_trade: u32 = if sub_matches.get_one::<String>("qty_to_trade").is_some() {
+        sub_matches.get_one::<String>("qty_to_trade").expect("required")
+            .parse().expect("should be a positive number")
+    }else{
+        1
+    };
+
+    let fixed_trade_qty: bool = if sub_matches.get_one::<String>("fixed_trade_qty").is_some() {
+        sub_matches.get_one::<String>("fixed_trade_qty").expect("required")
+            .parse().expect("should be a boolean value")
+    }else{
+        true
+    };
+
     let asset = Asset::get_asset(ticker, market, exchange);
 
     if asset.is_none() {
@@ -295,7 +315,7 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
     );
 
     let now = Instant::now();
-    let metrics = backtester.run_backtest(strategy.unwrap());
+    let metrics = backtester.run_backtest(strategy.unwrap(), qty_to_trade, fixed_trade_qty);
     let elapsed = now.elapsed();
     println!("backtest executed successfully in {:.2?}", elapsed);
     println!("{}", metrics);

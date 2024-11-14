@@ -89,7 +89,6 @@ impl Candlestick {
     }
 }
 
-
 impl CandlestickGenerator for TickCandlestickGenerator {
     fn new(input_configuration: u64) -> impl CandlestickGenerator {
         TickCandlestickGenerator {
@@ -117,6 +116,7 @@ impl CandlestickGenerator for TickCandlestickGenerator {
         }
 
         let existing_candle = self.last_candle.as_mut().unwrap();
+        existing_candle.close_time = new_trade.time;
 
         existing_candle.volume += new_trade.volume;
 
@@ -189,7 +189,10 @@ impl TimeCandlestickGenerator {
         if self.last_day != 0 && self.last_day != new_trade.date {
             self.last_day = new_trade.date;
             self.last_price = new_trade.price;
-            self.last_candle = Some(Candlestick::new(new_trade));
+            let mut new_candle = Candlestick::new(new_trade);
+            self.add_close_time_to_time_based_candlestick(&mut new_candle);
+            self.remove_seconds_from_start_time(&mut new_candle);
+            self.last_candle = Some(new_candle);
             return Some(self.last_candle.clone()?);
         }
 
@@ -197,7 +200,9 @@ impl TimeCandlestickGenerator {
 
         if self.last_candle.is_none() { // the very start when no trade was parsed yet
             self.last_price = new_trade.price;
-            let new_candle = Candlestick::new(new_trade);
+            let mut new_candle = Candlestick::new(new_trade);
+            self.remove_seconds_from_start_time(&mut new_candle);
+            self.add_close_time_to_time_based_candlestick(&mut new_candle);
             self.last_candle = Some(new_candle.clone());
 
             return if only_closed_candles {
@@ -258,7 +263,25 @@ impl TimeCandlestickGenerator {
         }
         Some(result_candle)
     }
+
+    fn remove_seconds_from_start_time(&self, candlestick: &mut Candlestick){
+        if candlestick.start_time < 99_99_99 {
+            candlestick.start_time = (candlestick.start_time / 100) * 100;
+        }else{
+            candlestick.start_time = (candlestick.start_time / 100000) * 100000;
+        }
+    }
+
+    fn add_close_time_to_time_based_candlestick(&self, candlestick: &mut Candlestick){
+        if candlestick.start_time < 99_99_99 {
+            candlestick.close_time = candlestick.start_time + self.period_minutes as i32 * 100;
+        }else{
+            candlestick.close_time = candlestick.start_time + self.period_minutes as i32 * 100000;
+        }
+    }
 }
+
+
 
 
 #[cfg(test)]
@@ -360,7 +383,7 @@ mod tests {
 
         // Verify that a new candle started after midnight
         assert_eq!(result_candlesticks[2].date, 2024_10_15);
-        assert_eq!(result_candlesticks[2].start_time, 00_00_05);
+        assert_eq!(result_candlesticks[2].start_time, 00_00_00);
     }
 
     #[test]
@@ -379,7 +402,8 @@ mod tests {
 
         // Verify if the trade at 09:01:00 starts a new candle
         assert!(result_candlesticks[1].is_closed);
-        assert_eq!(result_candlesticks[1].start_time, 09_00_59);
+        assert_eq!(result_candlesticks[1].start_time, 09_00_00);
+        assert_eq!(result_candlesticks[1].close_time, 09_01_00);
     }
 
     #[test]
