@@ -219,25 +219,21 @@ impl<'a> ExchangeEventHandler<'a> {
         }
     }
 
+
+    /// close an existing open existing position in the following cases:
+    /// 1) the day is change and the position is open ( we don't allow overnight positions to be open )
+    /// 2) the PNL of the position is negative and reached the minimum balance allowed
+    /// a compulsory close fee of 25$ is applied if any such cases occur
     fn check_compulsory_close_position(&mut self, candlestick: &Candlestick) {
         if self.current_position.is_none() {
             return;
         }
-        let position = self.current_position.as_ref().unwrap();
-        let price_diff = match position.side {
-            Side::BUY => candlestick.low - position.avg_entry_price,
-            Side::SELL => candlestick.high - position.avg_entry_price
-        };
-        let pnl_from_spikes = (price_diff / self.asset.min_variation) * position.open_qty as f64 * self.asset.value_per_variation;
-        if pnl_from_spikes >= self.current_balance {
-            self.current_balance = 0.0;
-        }
 
-        // we don't allow holding positions to the next trading day, this is a force close in case the position
-        // is still open when the trading day ends
-        let position = self.current_position.as_mut();
-        if position.is_some() && candlestick.date != self.last_candlestick.unwrap().date {
-            let position = position.unwrap();
+        let position = self.current_position.as_mut().unwrap();
+        let gross_pnl = Self::calculate_gross_open_pnl(position, self.asset);
+
+        if candlestick.date != self.last_candlestick.unwrap().date  ||
+            (gross_pnl < 0.0 && -1.0*gross_pnl >= MINIMUM_BALANCE ){
             let open_qty = position.open_qty;
             let last_candle = *self.last_candlestick.as_ref().unwrap();
             position.total_paid_in_fees+=COMPULSORY_CLOSE_FEE;
@@ -395,6 +391,14 @@ impl<'a> ExchangeEventHandler<'a> {
             Side::SELL => position.avg_entry_price - position.avg_exit_price
         };
         (price_diff / asset.min_variation) * (position.total_qty - position.open_qty) as f64 * asset.value_per_variation
+    }
+
+    fn calculate_gross_open_pnl(position: &Position, asset: &Asset) -> f64 {
+        let price_diff = match position.side {
+            Side::BUY => position.avg_exit_price - position.avg_entry_price,
+            Side::SELL => position.avg_entry_price - position.avg_exit_price
+        };
+        (price_diff / asset.min_variation) * position.open_qty as f64 * asset.value_per_variation
     }
 
     fn calculate_fees(&self, total_orders: u64) -> f64 {
