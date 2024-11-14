@@ -47,6 +47,7 @@ pub struct BacktestMetrics {
     pub avg_risk_reward: f32,
     pub max_win_streak: i32,
     pub max_lose_streak: i32,
+    pub max_draw_down_percentage: f64,
 }
 
 impl Display for BacktestMetrics {
@@ -56,6 +57,7 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <25} {1: <25.2?}", "Final Balance", self.final_balance)?;
         writeln!(f, "{0: <25} {1: <25.2?}", "Absolute Return", self.final_balance - INITIAL_BALANCE)?;
         writeln!(f, "{0: <25} {1: <25.2?}", "Total Return(%)", self.total_return_percentage)?;
+        writeln!(f, "{0: <25} {1: <25.2?}", "Max DrawDown(%)", self.max_draw_down_percentage)?;
         writeln!(f, "{0: <25} {1: <25.2?}", "Fees Paid", self.total_fees_paid)?;
         writeln!(f, "{0: <25} {1: <25.2?}", "Win Rate(%)", self.win_rate_percentage)?;
         writeln!(f, "{0: <25} {1: <25.2?}", "Total Wins", self.total_wins)?;
@@ -676,6 +678,10 @@ impl<'a> TradingBacktester<'a> {
         let mut max_lose_streak = 0;
         let mut current_win_lose_streak: i32 = 0;
 
+        let mut max_draw_down_percentage: f64 = 0.0;
+        let mut local_max_balance: f64 = INITIAL_BALANCE;
+        let mut local_min_balance_after_local_max = INITIAL_BALANCE;
+        let mut current_balance = INITIAL_BALANCE;
 
         let mut liquid_profit_per_day = vec![];
         let mut liquid_profit_current_day = 0.0;
@@ -728,6 +734,21 @@ impl<'a> TradingBacktester<'a> {
             if position.liquid_pnl < liquid_profit_worst_day {
                 liquid_profit_worst_day = position.liquid_pnl;
             }
+
+
+            current_balance += position.liquid_pnl;
+            if current_balance > local_max_balance {
+                local_max_balance = current_balance;
+                local_min_balance_after_local_max = current_balance;
+            }
+
+            if current_balance < local_min_balance_after_local_max {
+                local_min_balance_after_local_max = current_balance;
+                let current_draw_down = (local_max_balance - local_min_balance_after_local_max)/local_max_balance;
+                if max_draw_down_percentage < current_draw_down {
+                    max_draw_down_percentage = current_draw_down;
+                }
+            }
         }
 
         BacktestMetrics {
@@ -752,6 +773,7 @@ impl<'a> TradingBacktester<'a> {
             max_win_streak,
             max_lose_streak,
             total_trading_days,
+            max_draw_down_percentage: max_draw_down_percentage * 100.0
         }
     }
 }
