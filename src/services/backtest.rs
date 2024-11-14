@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::{cmp};
 use std::fmt::{Display, Formatter};
 use chrono::{Datelike, NaiveDate, Weekday};
+use itertools::enumerate;
 use crate::models::candlestick::{Candlestick, CandlestickGenerator};
 use crate::models::{candlestick};
 use crate::models::action::{OrderAction, TradeAction};
@@ -23,6 +24,9 @@ const INITIAL_BALANCE: f64 = 10_000.0;
 const MINIMUM_BALANCE: f64 = 800.0;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
+const TRADING_DAYS_IN_A_YEAR: u32 = 250;
+const YEARLY_RISK_FREE_RATE: f64 = 10.5; // Avg yield for the Brazillian Selic BOND from 2009 to 2024
+const DAILY_RISK_FREE_RATE: f64 = YEARLY_RISK_FREE_RATE/ TRADING_DAYS_IN_A_YEAR as f64;
 
 #[allow(unused)]
 pub struct BacktestMetrics {
@@ -36,9 +40,11 @@ pub struct BacktestMetrics {
     pub avg_daily_liquid_profit: f64,
     pub worse_day_liquid_profit: f64,
     pub best_day_liquid_profit: f64,
+    pub sharp_ratio: f64,
     pub median_day_liquid_profit: f64,
+    pub median_minutes_in_the_market_per_day: u64,
     pub total_fees_paid: f64,
-    pub minutes_in_the_market: f64,
+    pub minutes_in_the_market: u64,
     pub win_rate_percentage: f64,
     pub total_trades: u64,
     pub total_orders: u64,
@@ -52,23 +58,35 @@ pub struct BacktestMetrics {
 
 impl Display for BacktestMetrics {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{0: <25} {1: <25.2?}", "Trading Days", self.total_trading_days)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Start Balance", INITIAL_BALANCE)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Final Balance", self.final_balance)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Absolute Return", self.final_balance - INITIAL_BALANCE)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Total Return(%)", self.total_return_percentage)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Max DrawDown(%)", self.max_draw_down_percentage)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Fees Paid", self.total_fees_paid)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Win Rate(%)", self.win_rate_percentage)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Total Wins", self.total_wins)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Max Win Streak", self.max_win_streak)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Total Loses", self.total_loses)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Max Lose Streak", self.max_lose_streak)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Total Trades", self.total_trades)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Avg Trade Liquid PNL", self.avg_trade_liquid_pnl)
+        writeln!(f, "{0: <30} {1: <25.2?}", "Trading Days", self.total_trading_days)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Start Balance", INITIAL_BALANCE)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Final Balance", self.final_balance)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Absolute Return", self.final_balance - INITIAL_BALANCE)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Total Return(%)", self.total_return_percentage)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Sharp Ratio", self.sharp_ratio)?;
+        writeln!(f, "{0: <30} {1: <25}", "Sharp Ratio Description", evaluate_sharp_ratio(self.sharp_ratio))?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Max DrawDown(%)", self.max_draw_down_percentage)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Fees Paid", self.total_fees_paid)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Win Rate(%)", self.win_rate_percentage)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Total Wins", self.total_wins)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Max Win Streak", self.max_win_streak)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Total Loses", self.total_loses)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Max Lose Streak", self.max_lose_streak)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Total Trades", self.total_trades)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Trade Liquid PNL", self.avg_trade_liquid_pnl)
+    }
+}
+
+fn evaluate_sharp_ratio(sharp_ratio: f64) -> String {
+    match sharp_ratio {
+        (..1.0) => "Sub-optimal".to_string(),
+        (1.0..2.0) => "Acceptable".to_string(),
+        (2.0..3.0) => "Very Good".to_string(),
+        (3.0..) => "Excellent".to_string(),
+        _ => unreachable!()
     }
 }
 
@@ -683,8 +701,9 @@ impl<'a> TradingBacktester<'a> {
         let mut local_min_balance_after_local_max = INITIAL_BALANCE;
         let mut current_balance = INITIAL_BALANCE;
 
-        let mut liquid_profit_per_day = vec![];
-        let mut liquid_profit_current_day = 0.0;
+        let mut daily_start_balance: Vec<f64> = vec![INITIAL_BALANCE];
+
+        let mut liquid_profit_per_day = vec![0.0];
         let mut liquid_profit_best_day = 0.0;
         let mut liquid_profit_worst_day = 0.0;
         let mut current_day = if event_handler.positions.len() > 0 {
@@ -693,19 +712,23 @@ impl<'a> TradingBacktester<'a> {
             -1
         };
         let mut total_trading_days = 1;
+
         for position in &event_handler.positions {
             if position.date != current_day {
-                liquid_profit_per_day.push(liquid_profit_current_day);
-                liquid_profit_current_day = 0.0;
+                liquid_profit_per_day.push(0.0);
                 total_trading_days += 1;
+                daily_start_balance.push(current_balance);
             }
+
+            let index_liquid_profit = liquid_profit_per_day.len() -1;
+            let liquid_rolling_profit_current_day = *liquid_profit_per_day.last().unwrap() + position.liquid_pnl;
+            liquid_profit_per_day[index_liquid_profit] = liquid_rolling_profit_current_day;
 
             total_trades += 1;
             total_liquid_pnl += position.liquid_pnl;
             total_gross_pnl += position.gross_pnl;
             total_orders += position.quantity_of_orders as u64;
             total_fees_paid += position.total_paid_in_fees;
-            liquid_profit_current_day += position.liquid_pnl;
             current_day = position.date;
 
             if position.liquid_pnl > 0.0 {
@@ -751,6 +774,22 @@ impl<'a> TradingBacktester<'a> {
             }
         }
 
+        // calculate the sharp ratio
+        let mut sum_excess_return_percentage = 0.0;
+        let mut daily_excess_return_percentage_list: Vec<f64> = vec![];
+        for (index,daily_return) in enumerate(&liquid_profit_per_day) {
+            let balance_start_of_day = daily_start_balance.get(index).unwrap();
+            let daily_excess_return_percentage = (daily_return / balance_start_of_day) - DAILY_RISK_FREE_RATE;
+            sum_excess_return_percentage +=daily_excess_return_percentage;
+            daily_excess_return_percentage_list.push(daily_excess_return_percentage);
+        }
+        let avg_excess_return_percentage = sum_excess_return_percentage / liquid_profit_per_day.len() as f64;
+        let variance = daily_excess_return_percentage_list.iter()
+            .fold(0.0, |sum, daily_excess_return| sum + (daily_excess_return - avg_excess_return_percentage).powf(2.0))
+                / (daily_excess_return_percentage_list.len() -1) as f64;
+        let standard_deviation = avg_excess_return_percentage/ variance.sqrt();
+        let sharp_ratio = avg_excess_return_percentage / standard_deviation;
+
         BacktestMetrics {
             final_balance: event_handler.current_balance,
             initial_balance: INITIAL_BALANCE,
@@ -762,8 +801,9 @@ impl<'a> TradingBacktester<'a> {
             worse_day_liquid_profit: liquid_profit_worst_day,
             best_day_liquid_profit: liquid_profit_best_day,
             median_day_liquid_profit: 0.0,
+            median_minutes_in_the_market_per_day: 0,
             total_fees_paid,
-            minutes_in_the_market: 0.0,
+            minutes_in_the_market: 0,
             win_rate_percentage: total_wins as f64 / total_trades as f64,
             total_trades,
             total_orders,
@@ -773,7 +813,8 @@ impl<'a> TradingBacktester<'a> {
             max_win_streak,
             max_lose_streak,
             total_trading_days,
-            max_draw_down_percentage: max_draw_down_percentage * 100.0
+            max_draw_down_percentage: max_draw_down_percentage * 100.0,
+            sharp_ratio
         }
     }
 }
