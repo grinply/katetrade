@@ -20,6 +20,7 @@ use crate::models::market::Market;
 use crate::models::trade::TradeFile;
 
 const INITIAL_BALANCE: f64 = 10_000.0;
+const MINIMUM_BALANCE: f64 = 800.0;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
 
@@ -480,7 +481,7 @@ impl<'a> TradingBacktester<'a> {
             add_orders_event(&mut event_handler, trade_action);
             event_handler.process_events();
 
-            if event_handler.current_balance <= 0.0 {
+            if event_handler.current_balance <= MINIMUM_BALANCE {
                 break;
             }
         }
