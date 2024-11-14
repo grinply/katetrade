@@ -3,7 +3,7 @@ use std::convert::TryInto;
 use anyhow;
 use anyhow::bail;
 use std::fs::{File};
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use lazy_static::lazy_static;
 use crate::constants;
 const TRADES_CSV_HEADER_LINE: &str = "<ticker>,<date>,<time>,<trade_number>,<price>,<qty>,<vol>,<buy_agent>,<sell_agent>,<trade_type>,<aft>";
@@ -22,6 +22,45 @@ pub struct Trade {
     pub price: f64,
     pub volume: f64,
 }
+pub struct TradeFile {
+    reader: BufReader<File>,
+    trades_read: usize,
+    total_trades: usize,
+}
+
+impl TradeFile {
+    pub fn new_from_binary_file(full_file_path: &str) -> Result<Self, anyhow::Error> {
+        let file = File::open(full_file_path)?;
+        file.sync_all()?;
+        let file_size_bytes = file.metadata()?.len();
+
+        Ok(
+            TradeFile {
+                reader: BufReader::new(file),
+                total_trades: (file_size_bytes / Trade::size_in_bytes() as u64) as usize,
+                trades_read: 0,
+            }
+        )
+    }
+}
+
+impl Iterator for TradeFile {
+    type Item = Trade;
+
+    fn next(&mut self) -> Option<Trade> {
+        if self.trades_read >= self.total_trades {
+            return None;
+        }
+        let mut buffer: [u8; Trade::size_in_bytes()] = [0; Trade::size_in_bytes()];
+        if self.reader.read_exact(&mut buffer).is_err() {
+            return None;
+        }
+        let current_trade = Trade::from_bytes(buffer.as_slice()).unwrap();
+        self.trades_read += 1;
+        Some(current_trade)
+    }
+}
+
 
 impl Trade {
     pub const fn size_in_bytes() -> usize {
@@ -287,6 +326,7 @@ pub fn write_to_binary_file(trades: Vec<Trade>, output_file_path: &str) -> Resul
     Ok(())
 }
 
+#[allow(unused)]
 pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
     let file = File::open(file_path)?;
     file.sync_all()?;
@@ -307,6 +347,7 @@ pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, anyho
 
     Ok(trades)
 }
+
 
 #[allow(unused)]
 pub fn read_trades_from_csv(file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
