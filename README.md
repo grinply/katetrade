@@ -20,6 +20,7 @@ Commands:
   run         Start trading one or more trading strategies in the real capital markets
   order       Operations related to orders
   backtest    Backtest a trading strategy using historical data
+  file        Various operations related to historical files
   connection  General connection information
   help        Print this message or the help of the given subcommand(s)
 

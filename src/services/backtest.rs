@@ -1,11 +1,10 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::{cmp, thread};
+use std::{cmp};
 use std::fmt::{Display, Formatter};
-use std::thread::{JoinHandle};
 use chrono::{Datelike, NaiveDate, Weekday};
 use crate::models::candlestick::{Candlestick, CandlestickGenerator};
-use crate::models::{candlestick, trade};
+use crate::models::{candlestick};
 use crate::models::action::{OrderAction, TradeAction};
 use crate::models::asset::Asset;
 use crate::models::pnl::Position;
@@ -18,6 +17,7 @@ use simple_bar::ProgressBar;
 use crate::models::side::Side;
 use rayon::prelude::*;
 use crate::models::market::Market;
+use crate::models::trade::TradeFile;
 
 const INITIAL_BALANCE: f64 = 10_000.0;
 const BASE_TRADE_QTY: u32 = 1;
@@ -181,7 +181,7 @@ impl<'a> ExchangeEventHandler<'a> {
                 TradeEvent::ZeroPosition => {
                     self.zero_current_position();
                 }
-                TradeEvent::ScheduleOrderLong(_) | TradeEvent::ScheduleOrderShort(_)  => {
+                TradeEvent::ScheduleOrderLong(_) | TradeEvent::ScheduleOrderShort(_) => {
                     panic!("operation not allowed");
                     // self.scheduled_orders.push(event);
                 }
@@ -203,7 +203,7 @@ impl<'a> ExchangeEventHandler<'a> {
             Side::BUY => candlestick.low - position.avg_entry_price,
             Side::SELL => candlestick.high - position.avg_entry_price
         };
-        let pnl_from_spikes = (price_diff/self.asset.min_variation) * position.open_qty as f64 * self.asset.value_per_variation;
+        let pnl_from_spikes = (price_diff / self.asset.min_variation) * position.open_qty as f64 * self.asset.value_per_variation;
         if pnl_from_spikes >= self.current_balance {
             self.current_balance = 0.0;
         }
@@ -247,10 +247,10 @@ impl<'a> ExchangeEventHandler<'a> {
                 if position.side == direction {
                     let entry_price = self.calculate_price_with_slippage(current_candle, direction);
                     self.increase_position(entry_price);
-                }else{
+                } else {
                     let oposit_direction = if direction == Side::BUY {
                         Side::SELL
-                    }else{
+                    } else {
                         Side::BUY
                     };
                     let entry_price = self.calculate_price_with_slippage(current_candle, oposit_direction);
@@ -275,19 +275,19 @@ impl<'a> ExchangeEventHandler<'a> {
         }
     }
 
-    fn increase_position(&mut self, current_entry_price: f64){
+    fn increase_position(&mut self, current_entry_price: f64) {
         assert!(self.current_position.is_some(), "sanity check, should not try to increase a position that doesnt exit");
 
         let current_fee = &self.calculate_fees(self.base_qty_per_order as u64);
         let position = self.current_position.as_mut().unwrap();
         let new_total = position.total_qty + self.base_qty_per_order as i32;
-        position.avg_entry_price = ((position.avg_entry_price * position.total_qty as f64) + (current_entry_price * self.base_qty_per_order as f64) )/ new_total as f64;
+        position.avg_entry_price = ((position.avg_entry_price * position.total_qty as f64) + (current_entry_price * self.base_qty_per_order as f64)) / new_total as f64;
         position.total_qty = new_total;
-        position.open_qty+= new_total;
+        position.open_qty += new_total;
 
-        position.total_paid_in_fees+= current_fee;
-        self.total_contracts_executed_current_month+=self.base_qty_per_order as u64;
-        self.current_balance-=current_fee;
+        position.total_paid_in_fees += current_fee;
+        self.total_contracts_executed_current_month += self.base_qty_per_order as u64;
+        self.current_balance -= current_fee;
     }
 
     //self.base_qty_per_order
@@ -311,7 +311,7 @@ impl<'a> ExchangeEventHandler<'a> {
         }
     }
 
-    fn track_current_month(&mut self){
+    fn track_current_month(&mut self) {
         let current_month_year = self.current_candlestick.as_ref().unwrap().date / 100;
         if self.current_month_year == -1 {
             self.current_month_year = current_month_year;
@@ -323,7 +323,7 @@ impl<'a> ExchangeEventHandler<'a> {
         }
     }
 
-    fn open_new_position(&mut self, entry_price: f64, side: Side, candlestick: &Candlestick){
+    fn open_new_position(&mut self, entry_price: f64, side: Side, candlestick: &Candlestick) {
         assert!(self.current_position.is_none(), "sanity check, should not try open a position without closing the existing one");
         let fee_open_position = self.calculate_fees(self.base_qty_per_order as u64);
         let new_position = Position {
@@ -344,11 +344,11 @@ impl<'a> ExchangeEventHandler<'a> {
             is_closed: false,
         };
         self.current_position = Some(new_position);
-        self.current_balance-=fee_open_position;
-        self.total_contracts_executed_current_month+=self.base_qty_per_order as u64;
+        self.current_balance -= fee_open_position;
+        self.total_contracts_executed_current_month += self.base_qty_per_order as u64;
     }
 
-    fn close_position(&mut self, candlestick: &Candlestick){
+    fn close_position(&mut self, candlestick: &Candlestick) {
         assert!(self.current_position.is_some(), "sanity check, should not try to close a position that doesnt exit");
         let mut closed_position = self.current_position.as_ref().unwrap().clone();
         assert_eq!(0, closed_position.open_qty, "cant close a position that has open contracts/shares in the market");
@@ -360,20 +360,20 @@ impl<'a> ExchangeEventHandler<'a> {
         closed_position.end_datapoint_number = self.total_candlesticks_processed as i32;
         closed_position.open_qty = 0;
 
-        self.current_balance+= closed_position.gross_pnl;
+        self.current_balance += closed_position.gross_pnl;
         self.positions.push(closed_position);
         self.current_position = None;
     }
 
-    fn calculate_gross_realized_pnl(position: &Position, asset: &Asset) -> f64{
+    fn calculate_gross_realized_pnl(position: &Position, asset: &Asset) -> f64 {
         let price_diff = match position.side {
             Side::BUY => position.avg_exit_price - position.avg_entry_price,
             Side::SELL => position.avg_entry_price - position.avg_exit_price
         };
-        (price_diff/asset.min_variation) * (position.total_qty - position.open_qty) as f64 * asset.value_per_variation
+        (price_diff / asset.min_variation) * (position.total_qty - position.open_qty) as f64 * asset.value_per_variation
     }
 
-    fn calculate_fees(&self, total_orders: u64) -> f64{
+    fn calculate_fees(&self, total_orders: u64) -> f64 {
         let asset = self.asset;
         let brokerage = if asset.market == Market::FUTURES && asset.ticker == "WIN" || asset.ticker == "WDO" {
             match self.total_contracts_executed_current_month {
@@ -386,7 +386,7 @@ impl<'a> ExchangeEventHandler<'a> {
                 5001_u64..=15000_u64 => 0.12,
                 15001u64.. => 0.05
             }
-        }else{
+        } else {
             panic!("no brokerage rate defined for asset with ticker {}", asset.ticker);
         };
 
@@ -394,17 +394,17 @@ impl<'a> ExchangeEventHandler<'a> {
         let iss_amount = iss_percentage * brokerage * total_orders as f64;
         let exchange_registration_fees = if asset.ticker == "WIN" {
             0.16 * total_orders as f64
-        }else if asset.ticker == "WDO" {
+        } else if asset.ticker == "WDO" {
             0.75 * total_orders as f64
-        }else{
+        } else {
             panic!("no exchange registration fee defined for asset with ticker {}", asset.ticker);
         };
 
         let exchange_emolument_fees = if asset.ticker == "WIN" {
             0.09 * total_orders as f64
-        }else if asset.ticker == "WDO" {
+        } else if asset.ticker == "WDO" {
             0.40 * total_orders as f64
-        }else{
+        } else {
             panic!("no exchange registration fee defined for asset with ticker {}", asset.ticker);
         };
 
@@ -439,7 +439,7 @@ impl<'a> TradingBacktester<'a> {
         for (index, initialization_candle) in self.data_provider.candlesticks.iter().enumerate() {
             if initialization_candle.date != current_day {
                 current_day = initialization_candle.date;
-                days_of_context-=1;
+                days_of_context -= 1;
                 if days_of_context == 0 {
                     index_initial_candle_to_trade = index;
                     break;
@@ -473,6 +473,7 @@ impl<'a> TradingBacktester<'a> {
         start_date: u32,
         end_date: u32,
         candlestick_configuration: CandlestickConfiguration,
+        sequential_download: bool,
     ) -> Result<TradingBacktester, anyhow::Error> {
         let start_date = date::convert_to_naive_date(start_date)?;
         let end_date = date::convert_to_naive_date(end_date)?;
@@ -499,6 +500,7 @@ impl<'a> TradingBacktester<'a> {
         let uppercase_ticker = asset.ticker.to_ascii_uppercase();
         let mut files_to_download: Vec<String> = vec![];
 
+        println!("checking for missing trade files on local disk between {} and {}", start_date, end_date);
         for year in start_date.year()..=end_date.year() {
             let begin_month = if year == start_date.year() {
                 start_date.month()
@@ -566,30 +568,41 @@ impl<'a> TradingBacktester<'a> {
         }
 
         if files_to_download.len() > 0 {
-            println!("download missing files with historical data from aws s3");
-            let download_files_bar = Arc::new(Mutex::new(ProgressBar::default(files_to_download.len() as u32, 100, false)));
-            let mut threads_handle_download_history_files: Vec<JoinHandle<Result<(), anyhow::Error>>> = vec![];
-            for file_to_download in files_to_download {
-                let thread_handle = download_binary_trades_file(
-                    aws_client.clone(),
-                    Arc::clone(&download_files_bar),
-                    format!("trades/{}/{}", uppercase_ticker, file_to_download),
-                    history_trades_folder_path.to_str().unwrap().to_string(),
-                    file_to_download,
-                );
-                threads_handle_download_history_files.push(thread_handle);
-            }
+            if !sequential_download {
+                let number_of_threads = rayon::current_num_threads();
+                println!("download in parallel missing files with historical data from aws s3 using {} threads", number_of_threads);
+                let mut bar =  ProgressBar::default(files_to_download.len() as u32 +1, 100, false);
+                bar.update();
+                let download_files_bar = Arc::new(Mutex::new(bar));
+                let values_to_process: Vec<(&String, Arc<Mutex<ProgressBar>>)> = files_to_download.iter().map(|files_to_download| {
+                    (files_to_download, Arc::clone(&download_files_bar))
+                }).collect();
 
-            for thread_handle in threads_handle_download_history_files {
-                match thread_handle.join() {
-                    Ok(result) => {
-                        if result.is_err() {
-                            panic!("failed to download history file from aws s3. {}", result.err().unwrap());
-                        }
-                    }
-                    Err(_) => {
-                        panic!("thread failed to complete successfully.");
-                    }
+                values_to_process.into_par_iter().for_each(|tuple| {
+                    let file_to_download = tuple.0;
+                    let progress_bar = tuple.1;
+                    download_binary_trades_file(
+                        aws_client.clone(),
+                        format!("trades/{}/{}", uppercase_ticker, file_to_download),
+                        history_trades_folder_path.to_str().unwrap().to_string(),
+                        file_to_download.as_str(),
+                    ).expect(format!("failed to download file {}", file_to_download).as_str());
+
+                    let mut download_progress_bar = progress_bar.lock().unwrap();
+                    download_progress_bar.update();
+                })
+            } else {
+                println!("download sequentially missing files with historical data from aws s3");
+                let mut download_progress_bar = ProgressBar::default(files_to_download.len() as u32 + 1, 100, false);
+                download_progress_bar.update();
+                for file_to_download in files_to_download {
+                    download_binary_trades_file(
+                        aws_client.clone(),
+                        format!("trades/{}/{}", uppercase_ticker, file_to_download),
+                        history_trades_folder_path.to_str().unwrap().to_string(),
+                        file_to_download.as_str(),
+                    ).expect(format!("failed to download file {}", file_to_download).as_str());
+                    download_progress_bar.update();
                 }
             }
         }
@@ -623,7 +636,7 @@ impl<'a> TradingBacktester<'a> {
         })
     }
 
-    fn calculate_backtest_results(&self, event_handler: &ExchangeEventHandler) -> BacktestMetrics{
+    fn calculate_backtest_results(&self, event_handler: &ExchangeEventHandler) -> BacktestMetrics {
         let mut total_trades = 0;
         let mut total_orders: u64 = 0;
         let mut total_fees_paid = 0.0;
@@ -641,43 +654,43 @@ impl<'a> TradingBacktester<'a> {
         let mut liquid_profit_current_day = 0.0;
         let mut liquid_profit_best_day = 0.0;
         let mut liquid_profit_worst_day = 0.0;
-        let mut current_day = if event_handler.positions.len() > 0{
+        let mut current_day = if event_handler.positions.len() > 0 {
             event_handler.positions.first().unwrap().date
-        }else{
+        } else {
             -1
         };
         let mut total_trading_days = 1;
         for position in &event_handler.positions {
-            if position.date != current_day{
+            if position.date != current_day {
                 liquid_profit_per_day.push(liquid_profit_current_day);
                 liquid_profit_current_day = 0.0;
-                total_trading_days+=1;
+                total_trading_days += 1;
             }
 
-            total_trades +=1;
-            total_liquid_pnl+=position.liquid_pnl;
-            total_gross_pnl+=position.gross_pnl;
+            total_trades += 1;
+            total_liquid_pnl += position.liquid_pnl;
+            total_gross_pnl += position.gross_pnl;
             total_orders += position.quantity_of_orders as u64;
             total_fees_paid += position.total_paid_in_fees;
-            liquid_profit_current_day+=position.liquid_pnl;
+            liquid_profit_current_day += position.liquid_pnl;
             current_day = position.date;
 
             if position.liquid_pnl > 0.0 {
-                total_wins+=1;
+                total_wins += 1;
                 if current_win_lose_streak < 0 {
                     max_lose_streak = cmp::max(max_lose_streak, -current_win_lose_streak);
                     current_win_lose_streak = 1;
-                }else{
-                    current_win_lose_streak+=1;
+                } else {
+                    current_win_lose_streak += 1;
                     max_win_streak = cmp::max(max_win_streak, current_win_lose_streak);
                 }
-            }else{
-                total_loses+=1;
+            } else {
+                total_loses += 1;
                 if current_win_lose_streak > 0 {
                     max_win_streak = cmp::max(max_win_streak, current_win_lose_streak);
                     current_win_lose_streak = -1;
-                }else{
-                    current_win_lose_streak-=1;
+                } else {
+                    current_win_lose_streak -= 1;
                     max_lose_streak = cmp::max(max_lose_streak, -current_win_lose_streak);
                 }
             }
@@ -693,17 +706,17 @@ impl<'a> TradingBacktester<'a> {
         BacktestMetrics {
             final_balance: event_handler.current_balance,
             initial_balance: INITIAL_BALANCE,
-            total_return_percentage: ((event_handler.current_balance-INITIAL_BALANCE)/INITIAL_BALANCE)*100.0,
+            total_return_percentage: ((event_handler.current_balance - INITIAL_BALANCE) / INITIAL_BALANCE) * 100.0,
             total_gross_profit: total_gross_pnl,
             total_liquid_profit: total_liquid_pnl,
-            avg_trade_liquid_pnl: total_liquid_pnl/total_trades as f64,
+            avg_trade_liquid_pnl: total_liquid_pnl / total_trades as f64,
             avg_daily_liquid_profit: total_liquid_pnl / total_trading_days as f64,
             worse_day_liquid_profit: liquid_profit_worst_day,
             best_day_liquid_profit: liquid_profit_best_day,
             median_day_liquid_profit: 0.0,
             total_fees_paid,
             minutes_in_the_market: 0.0,
-            win_rate_percentage: total_wins as f64/total_trades as f64,
+            win_rate_percentage: total_wins as f64 / total_trades as f64,
             total_trades,
             total_orders,
             total_wins,
@@ -711,7 +724,7 @@ impl<'a> TradingBacktester<'a> {
             avg_risk_reward: 0.0,
             max_win_streak,
             max_lose_streak,
-            total_trading_days
+            total_trading_days,
         }
     }
 }
@@ -719,27 +732,19 @@ impl<'a> TradingBacktester<'a> {
 
 fn download_binary_trades_file(
     aws_client: Arc<AwsClient>,
-    progress_bar: Arc<Mutex<ProgressBar>>,
     file_path_on_s3: String,
     output_folder_on_disk: String,
-    file_name: String,
-) -> JoinHandle<Result<(), anyhow::Error>> {
-    let bar = Arc::clone(&progress_bar);
-    thread::spawn(move || {
-        let file_output_path_on_disk = format!("{}/{}",
-                                               output_folder_on_disk,
-                                               file_name.as_str()
-        );
-        let file_download_result = aws_client.download_file_from_s3(S3_BUCKET_HISTORICAL_DATA,
-                                                                    file_path_on_s3.as_str(),
-                                                                    file_output_path_on_disk.as_str(),
-        );
-
-        let mut download_progress_bar = bar.lock().unwrap();
-        download_progress_bar.update();
-
-        file_download_result
-    })
+    file_name: &str,
+) -> Result<(), anyhow::Error> {
+    let file_output_path_on_disk = format!("{}/{}",
+                                           output_folder_on_disk,
+                                           file_name
+    );
+    let file_download_result = aws_client.download_file_from_s3(S3_BUCKET_HISTORICAL_DATA,
+                                                                file_path_on_s3.as_str(),
+                                                                file_output_path_on_disk.as_str(),
+    );
+    file_download_result
 }
 
 
@@ -747,25 +752,19 @@ fn parse_candles_from_file(
     binary_trades_file_full_path: String,
     candlestick_configuration: CandlestickConfiguration,
 ) -> Result<Vec<Candlestick>, anyhow::Error> {
-    let binary_trades_file_full_path = PathBuf::from(binary_trades_file_full_path);
+    let binary_trades_path = PathBuf::from(binary_trades_file_full_path.clone());
 
-    if !binary_trades_file_full_path.exists() {
+    if !binary_trades_path.exists() {
         anyhow::bail!("binary trades file {} doesnt exist on disk",
-            binary_trades_file_full_path.to_str().unwrap());
+            binary_trades_path.to_str().unwrap());
     }
 
-    let trades = trade::read_trades_from_binary_file(
-        binary_trades_file_full_path.to_str().unwrap());
-
-    if trades.is_err() {
-        anyhow::bail!("failed to read trades from local file {}. err: {}",
-            binary_trades_file_full_path.to_str().unwrap(), trades.err().unwrap());
-    }
+    let trades_file = TradeFile::new_from_binary_file(binary_trades_file_full_path.as_str())?;
 
     let mut candlestick_parser = candlestick::select_candlestick_generator(candlestick_configuration);
     let mut candlesticks: Vec<Candlestick> = vec![];
 
-    for trade in trades? {
+    for trade in trades_file {
         if let Some(candle) = candlestick_parser.parse_only_closed_candles(&trade) {
             candlesticks.push(candle);
         }
