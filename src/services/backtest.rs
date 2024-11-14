@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::{cmp};
 use std::fmt::{Display, Formatter};
 use chrono::{Datelike, NaiveDate, Weekday};
+use itertools::enumerate;
 use crate::models::candlestick::{Candlestick, CandlestickGenerator};
 use crate::models::{candlestick};
 use crate::models::action::{OrderAction, TradeAction};
@@ -20,9 +21,12 @@ use crate::models::market::Market;
 use crate::models::trade::TradeFile;
 
 const INITIAL_BALANCE: f64 = 10_000.0;
-const BASE_TRADE_QTY: u32 = 1;
+const MINIMUM_BALANCE: f64 = 800.0;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
+const TRADING_DAYS_IN_A_YEAR: u32 = 250;
+const YEARLY_RISK_FREE_RATE: f64 = 10.5; // Avg yield for the Brazillian Selic BOND from 2009 to 2024
+const DAILY_RISK_FREE_RATE: f64 = YEARLY_RISK_FREE_RATE/ TRADING_DAYS_IN_A_YEAR as f64;
 
 #[allow(unused)]
 pub struct BacktestMetrics {
@@ -36,9 +40,11 @@ pub struct BacktestMetrics {
     pub avg_daily_liquid_profit: f64,
     pub worse_day_liquid_profit: f64,
     pub best_day_liquid_profit: f64,
+    pub sharp_ratio: f64,
     pub median_day_liquid_profit: f64,
+    pub median_minutes_in_the_market_per_day: u64,
     pub total_fees_paid: f64,
-    pub minutes_in_the_market: f64,
+    pub minutes_in_the_market: u64,
     pub win_rate_percentage: f64,
     pub total_trades: u64,
     pub total_orders: u64,
@@ -47,26 +53,40 @@ pub struct BacktestMetrics {
     pub avg_risk_reward: f32,
     pub max_win_streak: i32,
     pub max_lose_streak: i32,
+    pub max_draw_down_percentage: f64,
 }
 
 impl Display for BacktestMetrics {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{0: <25} {1: <25.2?}", "Trading Days", self.total_trading_days)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Start Balance", INITIAL_BALANCE)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Final Balance", self.final_balance)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Absolute Return", self.final_balance - INITIAL_BALANCE)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Total Return(%)", self.total_return_percentage)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Fees Paid", self.total_fees_paid)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Win Rate(%)", self.win_rate_percentage)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Total Wins", self.total_wins)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Max Win Streak", self.max_win_streak)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Total Loses", self.total_loses)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Max Lose Streak", self.max_lose_streak)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Total Trades", self.total_trades)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
-        writeln!(f, "{0: <25} {1: <25.2?}", "Avg Trade Liquid PNL", self.avg_trade_liquid_pnl)
+        writeln!(f, "{0: <30} {1: <25.2?}", "Trading Days", self.total_trading_days)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Start Balance", INITIAL_BALANCE)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Final Balance", self.final_balance)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Absolute Return", self.final_balance - INITIAL_BALANCE)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Total Return(%)", self.total_return_percentage)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Sharp Ratio", self.sharp_ratio)?;
+        writeln!(f, "{0: <30} {1: <25}", "Sharp Ratio Description", evaluate_sharp_ratio(self.sharp_ratio))?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Max DrawDown(%)", self.max_draw_down_percentage)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Fees Paid", self.total_fees_paid)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Win Rate(%)", self.win_rate_percentage)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Total Wins", self.total_wins)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Max Win Streak", self.max_win_streak)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Total Loses", self.total_loses)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Max Lose Streak", self.max_lose_streak)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Total Trades", self.total_trades)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Trade Liquid PNL", self.avg_trade_liquid_pnl)
+    }
+}
+
+fn evaluate_sharp_ratio(sharp_ratio: f64) -> String {
+    match sharp_ratio {
+        (..1.0) => "Sub-optimal".to_string(),
+        (1.0..2.0) => "Acceptable".to_string(),
+        (2.0..3.0) => "Very Good".to_string(),
+        (3.0..) => "Excellent".to_string(),
+        _ => unreachable!()
     }
 }
 
@@ -92,6 +112,7 @@ struct ExchangeEventHandler<'a> {
     asset: &'a Asset,
     current_balance: f64,
     slippage_multiplier: f64, // defaults to 0.0001
+    initial_qty_per_order: u32,
     base_qty_per_order: u32,
     total_candlesticks_processed: u64,
     current_position: Option<Position>,
@@ -103,6 +124,7 @@ struct ExchangeEventHandler<'a> {
     total_contracts_executed_current_month: u64,
     current_month_year: i32,
     last_candlestick: Option<&'a Candlestick>,
+    fixed_traded_qty: bool,
 }
 
 impl DataProvider {
@@ -127,14 +149,15 @@ enum TradeEvent<'a> {
 }
 
 impl<'a> ExchangeEventHandler<'a> {
-    fn new(asset: &'a Asset) -> Self {
+    fn new(asset: &'a Asset, base_qty_to_trade: u32, fixed_traded_qty: bool) -> Self {
         ExchangeEventHandler {
             asset,
             current_position: None,
             current_candlestick: None,
             last_candlestick: None,
             current_balance: INITIAL_BALANCE,
-            base_qty_per_order: BASE_TRADE_QTY,
+            base_qty_per_order: base_qty_to_trade,
+            initial_qty_per_order: base_qty_to_trade,
             slippage_multiplier: DEFAULT_SLIPPAGE_MULTIPLIER,
             total_candlesticks_processed: 0,
             events: [TradeEvent::None; 4],
@@ -143,6 +166,7 @@ impl<'a> ExchangeEventHandler<'a> {
             scheduled_orders: vec![],
             total_contracts_executed_current_month: 0,
             current_month_year: -1,
+            fixed_traded_qty,
         }
     }
 
@@ -169,6 +193,7 @@ impl<'a> ExchangeEventHandler<'a> {
                     self.last_candlestick = self.current_candlestick;
                     self.current_candlestick = Some(candlestick);
                     self.track_current_month();
+                    self.should_updated_traded_qty(candlestick);
                     self.check_compulsory_close_position(candlestick);
                     self.check_scheduled_order_trigger(candlestick);
                 }
@@ -194,25 +219,41 @@ impl<'a> ExchangeEventHandler<'a> {
         self.event_index = 0;
     }
 
+    fn should_updated_traded_qty(&mut self, candlestick: &Candlestick){
+        if self.fixed_traded_qty {
+            return;
+        }
+
+        // we may adjust the traded qty in each new trading day
+        // the amount traded is proportional to the initial balance
+        // if the initial_qty_per_order is 5 contracts and given the initial balance of 10.000
+        // if on the next trading day the current balance is 20.000 the traded qty will be 10 contracts
+        // keeping the proportion as the balance changes
+        if self.last_candlestick.is_some() && candlestick.date != self.last_candlestick.unwrap().date {
+            self.base_qty_per_order = ( self.current_balance as u32 * self.initial_qty_per_order ) / INITIAL_BALANCE as u32;
+
+            // this is the minimum quantity to trade we will never trade less than this amount
+            if self.base_qty_per_order < self.initial_qty_per_order {
+                self.base_qty_per_order = self.initial_qty_per_order;
+            }
+        }
+    }
+
+
+    /// close an existing open existing position in the following cases:
+    /// 1) the day is change and the position is open ( we don't allow overnight positions to be open )
+    /// 2) the PNL of the position is negative and reached the minimum balance allowed
+    /// a compulsory close fee of 25$ is applied if any such cases occur
     fn check_compulsory_close_position(&mut self, candlestick: &Candlestick) {
         if self.current_position.is_none() {
             return;
         }
-        let position = self.current_position.as_ref().unwrap();
-        let price_diff = match position.side {
-            Side::BUY => candlestick.low - position.avg_entry_price,
-            Side::SELL => candlestick.high - position.avg_entry_price
-        };
-        let pnl_from_spikes = (price_diff / self.asset.min_variation) * position.open_qty as f64 * self.asset.value_per_variation;
-        if pnl_from_spikes >= self.current_balance {
-            self.current_balance = 0.0;
-        }
 
-        // we don't allow holding positions to the next trading day, this is a force close in case the position
-        // is still open when the trading day ends
-        let position = self.current_position.as_mut();
-        if position.is_some() && candlestick.date != self.last_candlestick.unwrap().date {
-            let position = position.unwrap();
+        let position = self.current_position.as_mut().unwrap();
+        let gross_pnl = Self::calculate_gross_open_pnl(position, self.asset);
+
+        if candlestick.date != self.last_candlestick.unwrap().date  ||
+            (gross_pnl < 0.0 && -1.0*gross_pnl >= MINIMUM_BALANCE ){
             let open_qty = position.open_qty;
             let last_candle = *self.last_candlestick.as_ref().unwrap();
             position.total_paid_in_fees+=COMPULSORY_CLOSE_FEE;
@@ -290,7 +331,6 @@ impl<'a> ExchangeEventHandler<'a> {
         self.current_balance -= current_fee;
     }
 
-    //self.base_qty_per_order
     fn decrease_position(&mut self, current_exit_price: f64, candlestick: &Candlestick, quantity_to_decrease: i32){
         assert!(self.current_position.is_some(), "sanity check, should not try to decrease a position that doesnt exit");
         let current_fee = self.calculate_fees(quantity_to_decrease as u64);
@@ -373,6 +413,14 @@ impl<'a> ExchangeEventHandler<'a> {
         (price_diff / asset.min_variation) * (position.total_qty - position.open_qty) as f64 * asset.value_per_variation
     }
 
+    fn calculate_gross_open_pnl(position: &Position, asset: &Asset) -> f64 {
+        let price_diff = match position.side {
+            Side::BUY => position.avg_exit_price - position.avg_entry_price,
+            Side::SELL => position.avg_entry_price - position.avg_exit_price
+        };
+        (price_diff / asset.min_variation) * position.open_qty as f64 * asset.value_per_variation
+    }
+
     fn calculate_fees(&self, total_orders: u64) -> f64 {
         let asset = self.asset;
         let brokerage = if asset.market == Market::FUTURES && asset.ticker == "WIN" || asset.ticker == "WDO" {
@@ -427,9 +475,8 @@ fn add_orders_event(event_handler: &mut ExchangeEventHandler, action: TradeActio
 }
 
 impl<'a> TradingBacktester<'a> {
-    pub fn run_backtest(&self, mut strategy: impl CandlestickTradingStrategy) -> BacktestMetrics {
-        let mut event_handler = ExchangeEventHandler::new(self.asset);
-
+    pub fn run_backtest(&self, mut strategy: impl CandlestickTradingStrategy, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
+        let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
 
         let mut days_of_context = strategy.days_of_context();
         let mut current_day = self.data_provider.candlesticks.first().unwrap().date;
@@ -458,7 +505,7 @@ impl<'a> TradingBacktester<'a> {
             add_orders_event(&mut event_handler, trade_action);
             event_handler.process_events();
 
-            if event_handler.current_balance <= 0.0 {
+            if event_handler.current_balance <= MINIMUM_BALANCE {
                 break;
             }
         }
@@ -649,9 +696,14 @@ impl<'a> TradingBacktester<'a> {
         let mut max_lose_streak = 0;
         let mut current_win_lose_streak: i32 = 0;
 
+        let mut max_draw_down_percentage: f64 = 0.0;
+        let mut local_max_balance: f64 = INITIAL_BALANCE;
+        let mut local_min_balance_after_local_max = INITIAL_BALANCE;
+        let mut current_balance = INITIAL_BALANCE;
 
-        let mut liquid_profit_per_day = vec![];
-        let mut liquid_profit_current_day = 0.0;
+        let mut daily_start_balance: Vec<f64> = vec![INITIAL_BALANCE];
+
+        let mut liquid_profit_per_day = vec![0.0];
         let mut liquid_profit_best_day = 0.0;
         let mut liquid_profit_worst_day = 0.0;
         let mut current_day = if event_handler.positions.len() > 0 {
@@ -660,19 +712,23 @@ impl<'a> TradingBacktester<'a> {
             -1
         };
         let mut total_trading_days = 1;
+
         for position in &event_handler.positions {
             if position.date != current_day {
-                liquid_profit_per_day.push(liquid_profit_current_day);
-                liquid_profit_current_day = 0.0;
+                liquid_profit_per_day.push(0.0);
                 total_trading_days += 1;
+                daily_start_balance.push(current_balance);
             }
+
+            let index_liquid_profit = liquid_profit_per_day.len() -1;
+            let liquid_rolling_profit_current_day = *liquid_profit_per_day.last().unwrap() + position.liquid_pnl;
+            liquid_profit_per_day[index_liquid_profit] = liquid_rolling_profit_current_day;
 
             total_trades += 1;
             total_liquid_pnl += position.liquid_pnl;
             total_gross_pnl += position.gross_pnl;
             total_orders += position.quantity_of_orders as u64;
             total_fees_paid += position.total_paid_in_fees;
-            liquid_profit_current_day += position.liquid_pnl;
             current_day = position.date;
 
             if position.liquid_pnl > 0.0 {
@@ -701,7 +757,38 @@ impl<'a> TradingBacktester<'a> {
             if position.liquid_pnl < liquid_profit_worst_day {
                 liquid_profit_worst_day = position.liquid_pnl;
             }
+
+
+            current_balance += position.liquid_pnl;
+            if current_balance > local_max_balance {
+                local_max_balance = current_balance;
+                local_min_balance_after_local_max = current_balance;
+            }
+
+            if current_balance < local_min_balance_after_local_max {
+                local_min_balance_after_local_max = current_balance;
+                let current_draw_down = (local_max_balance - local_min_balance_after_local_max)/local_max_balance;
+                if max_draw_down_percentage < current_draw_down {
+                    max_draw_down_percentage = current_draw_down;
+                }
+            }
         }
+
+        // calculate the sharp ratio
+        let mut sum_excess_return_percentage = 0.0;
+        let mut daily_excess_return_percentage_list: Vec<f64> = vec![];
+        for (index,daily_return) in enumerate(&liquid_profit_per_day) {
+            let balance_start_of_day = daily_start_balance.get(index).unwrap();
+            let daily_excess_return_percentage = (daily_return / balance_start_of_day) - DAILY_RISK_FREE_RATE;
+            sum_excess_return_percentage +=daily_excess_return_percentage;
+            daily_excess_return_percentage_list.push(daily_excess_return_percentage);
+        }
+        let avg_excess_return_percentage = sum_excess_return_percentage / liquid_profit_per_day.len() as f64;
+        let variance = daily_excess_return_percentage_list.iter()
+            .fold(0.0, |sum, daily_excess_return| sum + (daily_excess_return - avg_excess_return_percentage).powf(2.0))
+                / (daily_excess_return_percentage_list.len() -1) as f64;
+        let standard_deviation = avg_excess_return_percentage/ variance.sqrt();
+        let sharp_ratio = avg_excess_return_percentage / standard_deviation;
 
         BacktestMetrics {
             final_balance: event_handler.current_balance,
@@ -714,8 +801,9 @@ impl<'a> TradingBacktester<'a> {
             worse_day_liquid_profit: liquid_profit_worst_day,
             best_day_liquid_profit: liquid_profit_best_day,
             median_day_liquid_profit: 0.0,
+            median_minutes_in_the_market_per_day: 0,
             total_fees_paid,
-            minutes_in_the_market: 0.0,
+            minutes_in_the_market: 0,
             win_rate_percentage: total_wins as f64 / total_trades as f64,
             total_trades,
             total_orders,
@@ -725,6 +813,8 @@ impl<'a> TradingBacktester<'a> {
             max_win_streak,
             max_lose_streak,
             total_trading_days,
+            max_draw_down_percentage: max_draw_down_percentage * 100.0,
+            sharp_ratio
         }
     }
 }
