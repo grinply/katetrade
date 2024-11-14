@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::{cmp};
 use std::fmt::{Display, Formatter};
 use chrono::{Datelike, NaiveDate, Weekday};
-use itertools::enumerate;
+use itertools::{enumerate, Itertools};
 use crate::models::candlestick::{Candlestick, CandlestickGenerator};
 use crate::models::{candlestick};
 use crate::models::action::{OrderAction, TradeAction};
@@ -480,13 +480,17 @@ impl<'a> TradingBacktester<'a> {
 
         let mut days_of_context = strategy.days_of_context();
         let mut current_day = self.data_provider.candlesticks.first().unwrap().date;
+        let mut index_start_day = vec![0];
+        let mut days_passed = 0;
 
         // separate the first day of data to initialize the strategy
         let mut index_initial_candle_to_trade = 0;
         for (index, initialization_candle) in self.data_provider.candlesticks.iter().enumerate() {
             if initialization_candle.date != current_day {
+                index_start_day.push(index);
                 current_day = initialization_candle.date;
                 days_of_context -= 1;
+                days_passed+=1;
                 if days_of_context == 0 {
                     index_initial_candle_to_trade = index;
                     break;
@@ -499,7 +503,21 @@ impl<'a> TradingBacktester<'a> {
             &self.data_provider.candlesticks[0..index_initial_candle_to_trade],
         );
 
-        for candlestick in self.data_provider.candlesticks.iter().skip(index_initial_candle_to_trade) {
+        let mut current_day = self.data_provider.candlesticks.get(index_initial_candle_to_trade).unwrap().date;
+
+        for (index, candlestick) in enumerate(self.data_provider.candlesticks.iter().skip(index_initial_candle_to_trade)){
+            if current_day != candlestick.date {
+                current_day = candlestick.date;
+                index_start_day.push(index);
+
+                let context_size: usize = strategy.days_of_context() as usize;
+                let start_index: usize = *index_start_day.get(days_passed  as usize - context_size).unwrap();
+                strategy.init_trading_day(
+                    self.asset,
+                    &self.data_provider.candlesticks[start_index..index],
+                );
+            }
+
             let trade_action = strategy.process_closed_candlestick(candlestick);
             event_handler.add_candlestick_event(&candlestick);
             add_orders_event(&mut event_handler, trade_action);
