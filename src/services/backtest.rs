@@ -20,7 +20,6 @@ use crate::models::market::Market;
 use crate::models::trade::TradeFile;
 
 const INITIAL_BALANCE: f64 = 10_000.0;
-const BASE_TRADE_QTY: u32 = 1;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
 
@@ -92,6 +91,7 @@ struct ExchangeEventHandler<'a> {
     asset: &'a Asset,
     current_balance: f64,
     slippage_multiplier: f64, // defaults to 0.0001
+    initial_qty_per_order: u32,
     base_qty_per_order: u32,
     total_candlesticks_processed: u64,
     current_position: Option<Position>,
@@ -103,6 +103,7 @@ struct ExchangeEventHandler<'a> {
     total_contracts_executed_current_month: u64,
     current_month_year: i32,
     last_candlestick: Option<&'a Candlestick>,
+    fixed_traded_qty: bool,
 }
 
 impl DataProvider {
@@ -127,14 +128,15 @@ enum TradeEvent<'a> {
 }
 
 impl<'a> ExchangeEventHandler<'a> {
-    fn new(asset: &'a Asset) -> Self {
+    fn new(asset: &'a Asset, base_qty_to_trade: u32, fixed_traded_qty: bool) -> Self {
         ExchangeEventHandler {
             asset,
             current_position: None,
             current_candlestick: None,
             last_candlestick: None,
             current_balance: INITIAL_BALANCE,
-            base_qty_per_order: BASE_TRADE_QTY,
+            base_qty_per_order: base_qty_to_trade,
+            initial_qty_per_order: base_qty_to_trade,
             slippage_multiplier: DEFAULT_SLIPPAGE_MULTIPLIER,
             total_candlesticks_processed: 0,
             events: [TradeEvent::None; 4],
@@ -143,6 +145,7 @@ impl<'a> ExchangeEventHandler<'a> {
             scheduled_orders: vec![],
             total_contracts_executed_current_month: 0,
             current_month_year: -1,
+            fixed_traded_qty,
         }
     }
 
@@ -169,6 +172,7 @@ impl<'a> ExchangeEventHandler<'a> {
                     self.last_candlestick = self.current_candlestick;
                     self.current_candlestick = Some(candlestick);
                     self.track_current_month();
+                    self.should_updated_traded_qty(candlestick);
                     self.check_compulsory_close_position(candlestick);
                     self.check_scheduled_order_trigger(candlestick);
                 }
@@ -192,6 +196,26 @@ impl<'a> ExchangeEventHandler<'a> {
             self.events[index] = TradeEvent::None;
         }
         self.event_index = 0;
+    }
+
+    fn should_updated_traded_qty(&mut self, candlestick: &Candlestick){
+        if self.fixed_traded_qty {
+            return;
+        }
+
+        // we may adjust the traded qty in each new trading day
+        // the amount traded is proportional to the initial balance
+        // if the initial_qty_per_order is 5 contracts and given the initial balance of 10.000
+        // if on the next trading day the current balance is 20.000 the traded qty will be 10 contracts
+        // keeping the proportion as the balance changes
+        if self.last_candlestick.is_some() && candlestick.date != self.last_candlestick.unwrap().date {
+            self.base_qty_per_order = ( self.current_balance as u32 * self.initial_qty_per_order ) / INITIAL_BALANCE as u32;
+
+            // this is the minimum quantity to trade we will never trade less than this amount
+            if self.base_qty_per_order < self.initial_qty_per_order {
+                self.base_qty_per_order = self.initial_qty_per_order;
+            }
+        }
     }
 
     fn check_compulsory_close_position(&mut self, candlestick: &Candlestick) {
@@ -290,7 +314,6 @@ impl<'a> ExchangeEventHandler<'a> {
         self.current_balance -= current_fee;
     }
 
-    //self.base_qty_per_order
     fn decrease_position(&mut self, current_exit_price: f64, candlestick: &Candlestick, quantity_to_decrease: i32){
         assert!(self.current_position.is_some(), "sanity check, should not try to decrease a position that doesnt exit");
         let current_fee = self.calculate_fees(quantity_to_decrease as u64);
@@ -427,9 +450,8 @@ fn add_orders_event(event_handler: &mut ExchangeEventHandler, action: TradeActio
 }
 
 impl<'a> TradingBacktester<'a> {
-    pub fn run_backtest(&self, mut strategy: impl CandlestickTradingStrategy) -> BacktestMetrics {
-        let mut event_handler = ExchangeEventHandler::new(self.asset);
-
+    pub fn run_backtest(&self, mut strategy: impl CandlestickTradingStrategy, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
+        let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
 
         let mut days_of_context = strategy.days_of_context();
         let mut current_day = self.data_provider.candlesticks.first().unwrap().date;
