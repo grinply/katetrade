@@ -821,11 +821,12 @@ impl<'a> TradingBacktester<'a> {
         let mut daily_excess_return_percentage_list: Vec<f64> = vec![];
         for (index, daily_return) in enumerate(&liquid_profit_per_day) {
             let balance_start_of_day = daily_start_balance.get(index).unwrap();
-            let daily_excess_return_percentage = (daily_return / balance_start_of_day) - DAILY_RISK_FREE_RATE;
+            let daily_excess_return_percentage = 100.0* (daily_return / balance_start_of_day) - DAILY_RISK_FREE_RATE;
             sum_excess_return_percentage += daily_excess_return_percentage;
             daily_excess_return_percentage_list.push(daily_excess_return_percentage);
         }
         let avg_excess_return_percentage = sum_excess_return_percentage / liquid_profit_per_day.len() as f64;
+        println!("avg excess return percentage: {}", avg_excess_return_percentage);
         let variance = daily_excess_return_percentage_list.iter()
             .fold(0.0, |sum, daily_excess_return| sum + (daily_excess_return - avg_excess_return_percentage).powf(2.0))
             / (daily_excess_return_percentage_list.len() - 1) as f64;
