@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::{cmp};
 use std::fmt::{Display, Formatter};
 use chrono::{Datelike, NaiveDate, Weekday};
-use itertools::enumerate;
+use itertools::{enumerate};
 use crate::models::candlestick::{Candlestick, CandlestickGenerator};
 use crate::models::{candlestick};
 use crate::models::action::{OrderAction, TradeAction};
@@ -47,7 +47,7 @@ pub struct BacktestMetrics {
     pub minutes_in_the_market: u64,
     pub win_rate_percentage: f64,
     pub total_trades: u64,
-    pub total_orders: u64,
+    pub quantity_of_contracts: u64,
     pub total_wins: u64,
     pub total_loses: u64,
     pub avg_risk_reward: f32,
@@ -73,6 +73,7 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Loses", self.total_loses)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Max Lose Streak", self.max_lose_streak)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Trades", self.total_trades)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Total Contracts Executed", self.quantity_of_contracts)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
@@ -250,7 +251,9 @@ impl<'a> ExchangeEventHandler<'a> {
         }
 
         let position = self.current_position.as_mut().unwrap();
-        let gross_pnl = Self::calculate_gross_open_pnl(position, self.asset);
+
+        // use high or low instead of close
+        let gross_pnl = Self::calculate_gross_open_pnl(position, self.asset, candlestick.close);
 
         if candlestick.date != self.last_candlestick.unwrap().date  ||
             (gross_pnl < 0.0 && -1.0*gross_pnl >= MINIMUM_BALANCE ){
@@ -326,6 +329,7 @@ impl<'a> ExchangeEventHandler<'a> {
         position.total_qty = new_total;
         position.open_qty += new_total;
 
+        position.quantity_of_contracts +=self.base_qty_per_order;
         position.total_paid_in_fees += current_fee;
         self.total_contracts_executed_current_month += self.base_qty_per_order as u64;
         self.current_balance -= current_fee;
@@ -342,6 +346,7 @@ impl<'a> ExchangeEventHandler<'a> {
         position.avg_exit_price = ((position.avg_exit_price * executed_qty as f64) + (current_exit_price * quantity_to_decrease as f64) )/ position.total_qty as f64;
         position.open_qty -= quantity_to_decrease;
 
+        position.quantity_of_contracts +=self.base_qty_per_order;
         position.total_paid_in_fees+= current_fee;
         self.current_balance-=current_fee;
         self.total_contracts_executed_current_month+=quantity_to_decrease as u64;
@@ -380,7 +385,7 @@ impl<'a> ExchangeEventHandler<'a> {
             gross_pnl: 0.0,
             liquid_pnl: 0.0,
             total_paid_in_fees: fee_open_position,
-            quantity_of_orders: self.base_qty_per_order,
+            quantity_of_contracts: self.base_qty_per_order,
             is_closed: false,
         };
         self.current_position = Some(new_position);
@@ -413,10 +418,10 @@ impl<'a> ExchangeEventHandler<'a> {
         (price_diff / asset.min_variation) * (position.total_qty - position.open_qty) as f64 * asset.value_per_variation
     }
 
-    fn calculate_gross_open_pnl(position: &Position, asset: &Asset) -> f64 {
+    fn calculate_gross_open_pnl(position: &Position, asset: &Asset, current_price: f64) -> f64 {
         let price_diff = match position.side {
-            Side::BUY => position.avg_exit_price - position.avg_entry_price,
-            Side::SELL => position.avg_entry_price - position.avg_exit_price
+            Side::BUY => current_price - position.avg_entry_price,
+            Side::SELL => position.avg_entry_price - current_price
         };
         (price_diff / asset.min_variation) * position.open_qty as f64 * asset.value_per_variation
     }
@@ -480,11 +485,13 @@ impl<'a> TradingBacktester<'a> {
 
         let mut days_of_context = strategy.days_of_context();
         let mut current_day = self.data_provider.candlesticks.first().unwrap().date;
+        let mut index_start_day = vec![0];
 
         // separate the first day of data to initialize the strategy
         let mut index_initial_candle_to_trade = 0;
         for (index, initialization_candle) in self.data_provider.candlesticks.iter().enumerate() {
             if initialization_candle.date != current_day {
+                index_start_day.push(index);
                 current_day = initialization_candle.date;
                 days_of_context -= 1;
                 if days_of_context == 0 {
@@ -499,7 +506,24 @@ impl<'a> TradingBacktester<'a> {
             &self.data_provider.candlesticks[0..index_initial_candle_to_trade],
         );
 
-        for candlestick in self.data_provider.candlesticks.iter().skip(index_initial_candle_to_trade) {
+        let mut current_day = self.data_provider.candlesticks.get(index_initial_candle_to_trade).unwrap().date;
+
+        for (index, candlestick) in enumerate(self.data_provider.candlesticks.iter().skip(index_initial_candle_to_trade)){
+            if current_day != candlestick.date {
+                let index_current_day = index + index_initial_candle_to_trade;
+                current_day = candlestick.date;
+                index_start_day.push(index_current_day);
+
+                let context_size: usize = strategy.days_of_context() as usize;
+                let start_index: usize = *index_start_day.get((index_start_day.len() - context_size) -1).unwrap();
+                let end_index: usize = index_current_day;
+
+                strategy.init_trading_day(
+                    self.asset,
+                    &self.data_provider.candlesticks[start_index..end_index],
+                );
+            }
+
             let trade_action = strategy.process_closed_candlestick(candlestick);
             event_handler.add_candlestick_event(&candlestick);
             add_orders_event(&mut event_handler, trade_action);
@@ -727,7 +751,7 @@ impl<'a> TradingBacktester<'a> {
             total_trades += 1;
             total_liquid_pnl += position.liquid_pnl;
             total_gross_pnl += position.gross_pnl;
-            total_orders += position.quantity_of_orders as u64;
+            total_orders += position.quantity_of_contracts as u64;
             total_fees_paid += position.total_paid_in_fees;
             current_day = position.date;
 
@@ -806,7 +830,7 @@ impl<'a> TradingBacktester<'a> {
             minutes_in_the_market: 0,
             win_rate_percentage: total_wins as f64 / total_trades as f64,
             total_trades,
-            total_orders,
+            quantity_of_contracts: total_orders,
             total_wins,
             total_loses,
             avg_risk_reward: 0.0,

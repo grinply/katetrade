@@ -164,7 +164,7 @@ mod tests {
             gross_pnl: 21.4,
             liquid_pnl: 0.0,
             total_paid_in_fees: 0.0,
-            quantity_of_orders: 0,
+            quantity_of_contracts: 0,
             is_closed: false,
         });
 
@@ -182,7 +182,7 @@ mod tests {
             gross_pnl: 10.5,
             liquid_pnl: 0.0,
             total_paid_in_fees: 0.0,
-            quantity_of_orders: 0,
+            quantity_of_contracts: 0,
             is_closed: false,
         });
 
@@ -200,7 +200,7 @@ mod tests {
             gross_pnl: -40.5,
             liquid_pnl: 0.0,
             total_paid_in_fees: 0.0,
-            quantity_of_orders: 0,
+            quantity_of_contracts: 0,
             is_closed: false,
         });
 
@@ -218,7 +218,7 @@ mod tests {
             gross_pnl: 22.5,
             liquid_pnl: 0.0,
             total_paid_in_fees: 0.0,
-            quantity_of_orders: 0,
+            quantity_of_contracts: 0,
             is_closed: false,
         });
 

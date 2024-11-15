@@ -16,7 +16,7 @@ pub struct Position {
     pub gross_pnl: f64,
     pub liquid_pnl: f64,
     pub total_paid_in_fees: f64,
-    pub quantity_of_orders: u32,
+    pub quantity_of_contracts: u32,
     pub is_closed: bool,
 }
 
