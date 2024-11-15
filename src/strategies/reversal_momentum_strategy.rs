@@ -164,12 +164,8 @@ fn aggregate_daily_candles(context_candles: &[Candlestick]) -> Vec<Candlestick> 
         }
     }
 
-    // Coletar candles agregados em um vetor
     let mut aggregated_candles: Vec<Candlestick> = daily_map.into_values().collect();
-
     assert_eq!(aggregated_candles.len(), 2, "Trading init days should be exactly two days");
-
-    // Ordenar por data se necessário
     aggregated_candles.sort_by(|a, b| a.date.cmp(&b.date));
 
     aggregated_candles
