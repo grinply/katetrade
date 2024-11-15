@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::models::action::OrderAction::{LimitLong, LimitShort, MarketLong, MarketShort};
+use crate::models::action::OrderAction::{MarketLong, MarketShort};
 use crate::models::action::{TradeAction};
 use crate::models::asset::Asset;
 use crate::models::candlestick::{Candlestick, CandlestickType};
@@ -14,6 +14,7 @@ enum Signal {
 
 
 #[derive(Debug)]
+#[allow(unused)]
 pub struct ReversalMomentumCandlestickStrategy {
     signal: Option<Signal>,
     entry_price: f64,
