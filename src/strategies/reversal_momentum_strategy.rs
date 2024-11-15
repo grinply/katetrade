@@ -17,12 +17,14 @@ enum Signal {
 pub struct ReversalMomentumCandlestickStrategy {
     signal: Option<Signal>,
     entry_price: f64,
-    order_active: bool
+    order_active: bool,
+    is_order_sent: bool,
+    day_last_order: i32,
 }
 
 impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
     fn new() -> Self {
-        ReversalMomentumCandlestickStrategy{ signal: None, entry_price: 0.0, order_active: false }
+        ReversalMomentumCandlestickStrategy{ signal: None, entry_price: 0.0, order_active: false, is_order_sent: false, day_last_order: -1 }
     }
 
     fn name(&self) -> &str {
@@ -53,53 +55,70 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
     }
 
     fn process_closed_candlestick(&mut self, closed_candle: &Candlestick) -> TradeAction {
+        // if self.day_last_order != closed_candle.date {
+        //     self.is_order_sent = false;
+        //     self.day_last_order = closed_candle.date;
+        // }
+        //
+        // if self.is_order_sent {
+        //     return TradeAction::do_nothing();
+        // }
+
         // Starting Day
         match self.signal {
             None => {
                 return TradeAction::do_nothing()
             }
             Some(Signal::LONG) => {
-                println!("Signal Long Found");
                 assert_ne!(self.entry_price, 0.0);
-                if !self.order_active {
+
+                if !self.order_active && closed_candle.close >=  self.entry_price{
                     self.order_active = true;
-                    return TradeAction::send_order(LimitLong(self.entry_price))
+                    self.is_order_sent = true;
+                    return TradeAction::send_order(MarketLong)
                 }
             }
             Some(Signal::SHORT) => {
-                println!("Signal Short Found");
                 assert_ne!(self.entry_price, 0.0);
-                if !self.order_active {
+                if !self.order_active  && closed_candle.close <=  self.entry_price{
                     self.order_active = true;
-                    return TradeAction::send_order(LimitShort(self.entry_price))
+                    self.is_order_sent = true;
+                    return TradeAction::send_order(MarketShort)
                 }
             }
         }
 
         // Exiting Day
-        if (closed_candle.close_time > 170000) && (closed_candle.close_time <= 175000) {
-            match self.signal.as_ref().unwrap() {
-                Signal::LONG => {
-                    if self.entry_price < closed_candle.close {
-                        return TradeAction::send_order(MarketShort)
-                    }
-                },
-                Signal::SHORT => {
-                    if self.entry_price > closed_candle.close {
-                        return TradeAction::send_order(MarketShort)
+        if self.order_active {
+            if (closed_candle.close_time > 17_00_00) && (closed_candle.close_time <= 17_50_00) {
+                match self.signal.as_ref().unwrap() {
+                    Signal::LONG => {
+                        if self.entry_price < closed_candle.close {
+                            self.order_active = false;
+                            return TradeAction::send_order(MarketShort)
+                        }
+                    },
+                    Signal::SHORT => {
+                        if self.entry_price > closed_candle.close {
+                            self.order_active = false;
+                            return TradeAction::send_order(MarketLong)
+                        }
                     }
                 }
-            }
-        } else if closed_candle.close_time > 17500 {
-            return match self.signal.as_ref().unwrap() {
-                Signal::LONG => {
-                    TradeAction::send_order(MarketShort)
-                },
-                Signal::SHORT => {
-                    TradeAction::send_order(MarketLong)
+            } else if closed_candle.close_time > 17_50_00 {
+                return match self.signal.as_ref().unwrap() {
+                    Signal::LONG => {
+                        self.order_active = false;
+                        TradeAction::send_order(MarketShort)
+                    },
+                    Signal::SHORT => {
+                        self.order_active = false;
+                        TradeAction::send_order(MarketLong)
+                    }
                 }
             }
         }
+
 
         TradeAction::do_nothing()
     }
