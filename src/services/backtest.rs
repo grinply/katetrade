@@ -826,7 +826,6 @@ impl<'a> TradingBacktester<'a> {
             daily_excess_return_percentage_list.push(daily_excess_return_percentage);
         }
         let avg_excess_return_percentage = sum_excess_return_percentage / liquid_profit_per_day.len() as f64;
-        println!("avg excess return percentage: {}", avg_excess_return_percentage);
         let variance = daily_excess_return_percentage_list.iter()
             .fold(0.0, |sum, daily_excess_return| sum + (daily_excess_return - avg_excess_return_percentage).powf(2.0))
             / (daily_excess_return_percentage_list.len() - 1) as f64;
