@@ -26,7 +26,7 @@ const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
 const TRADING_DAYS_IN_A_YEAR: u32 = 250;
 const YEARLY_RISK_FREE_RATE: f64 = 10.5; // Avg yield for the Brazillian Selic BOND from 2009 to 2024
-const DAILY_RISK_FREE_RATE: f64 = YEARLY_RISK_FREE_RATE/ TRADING_DAYS_IN_A_YEAR as f64;
+const DAILY_RISK_FREE_RATE: f64 = YEARLY_RISK_FREE_RATE / TRADING_DAYS_IN_A_YEAR as f64;
 
 #[allow(unused)]
 pub struct BacktestMetrics {
@@ -126,6 +126,7 @@ struct ExchangeEventHandler<'a> {
     current_month_year: i32,
     last_candlestick: Option<&'a Candlestick>,
     fixed_traded_qty: bool,
+    removed_for_lack_of_margin: bool,
 }
 
 impl DataProvider {
@@ -168,6 +169,7 @@ impl<'a> ExchangeEventHandler<'a> {
             total_contracts_executed_current_month: 0,
             current_month_year: -1,
             fixed_traded_qty,
+            removed_for_lack_of_margin: false,
         }
     }
 
@@ -220,7 +222,7 @@ impl<'a> ExchangeEventHandler<'a> {
         self.event_index = 0;
     }
 
-    fn should_updated_traded_qty(&mut self, candlestick: &Candlestick){
+    fn should_updated_traded_qty(&mut self, candlestick: &Candlestick) {
         if self.fixed_traded_qty {
             return;
         }
@@ -231,7 +233,7 @@ impl<'a> ExchangeEventHandler<'a> {
         // if on the next trading day the current balance is 20.000 the traded qty will be 10 contracts
         // keeping the proportion as the balance changes
         if self.last_candlestick.is_some() && candlestick.date != self.last_candlestick.unwrap().date {
-            self.base_qty_per_order = ( self.current_balance as u32 * self.initial_qty_per_order ) / INITIAL_BALANCE as u32;
+            self.base_qty_per_order = (self.current_balance as u32 * self.initial_qty_per_order) / INITIAL_BALANCE as u32;
 
             // this is the minimum quantity to trade we will never trade less than this amount
             if self.base_qty_per_order < self.initial_qty_per_order {
@@ -255,12 +257,12 @@ impl<'a> ExchangeEventHandler<'a> {
         // use high or low instead of close
         let gross_pnl = Self::calculate_gross_open_pnl(position, self.asset, candlestick.close);
 
-        if candlestick.date != self.last_candlestick.unwrap().date  ||
-            (gross_pnl < 0.0 && -1.0*gross_pnl >= MINIMUM_BALANCE ){
+        if candlestick.date != self.last_candlestick.unwrap().date ||
+            (gross_pnl < 0.0 && -1.0 * gross_pnl >= MINIMUM_BALANCE) {
             let open_qty = position.open_qty;
             let last_candle = *self.last_candlestick.as_ref().unwrap();
-            position.total_paid_in_fees+=COMPULSORY_CLOSE_FEE;
-            self.current_balance-=COMPULSORY_CLOSE_FEE;
+            position.total_paid_in_fees += COMPULSORY_CLOSE_FEE;
+            self.current_balance -= COMPULSORY_CLOSE_FEE;
             self.decrease_position(last_candle.close, last_candle, open_qty);
         }
     }
@@ -321,6 +323,10 @@ impl<'a> ExchangeEventHandler<'a> {
 
     fn increase_position(&mut self, current_entry_price: f64) {
         assert!(self.current_position.is_some(), "sanity check, should not try to increase a position that doesnt exit");
+        if !self.has_margin_execute_order() {
+            self.removed_for_lack_of_margin = true;
+            return;
+        }
 
         let current_fee = &self.calculate_fees(self.base_qty_per_order as u64);
         let position = self.current_position.as_mut().unwrap();
@@ -329,13 +335,21 @@ impl<'a> ExchangeEventHandler<'a> {
         position.total_qty = new_total;
         position.open_qty += new_total;
 
-        position.quantity_of_contracts +=self.base_qty_per_order;
+        position.quantity_of_contracts += self.base_qty_per_order;
         position.total_paid_in_fees += current_fee;
         self.total_contracts_executed_current_month += self.base_qty_per_order as u64;
         self.current_balance -= current_fee;
     }
 
-    fn decrease_position(&mut self, current_exit_price: f64, candlestick: &Candlestick, quantity_to_decrease: i32){
+    fn has_margin_execute_order(&self) -> bool {
+        self.asset.margin_per_contract * (self.base_qty_per_order as f64) < self.current_balance
+    }
+
+    fn decrease_position(&mut self, current_exit_price: f64, candlestick: &Candlestick, quantity_to_decrease: i32) {
+        if !self.has_margin_execute_order() {
+            self.removed_for_lack_of_margin = true;
+            return;
+        }
         assert!(self.current_position.is_some(), "sanity check, should not try to decrease a position that doesnt exit");
         let current_fee = self.calculate_fees(quantity_to_decrease as u64);
         let position = self.current_position.as_mut().unwrap();
@@ -343,13 +357,13 @@ impl<'a> ExchangeEventHandler<'a> {
         assert!(quantity_to_decrease <= position.open_qty, "can´t decrease a position more contracts/shares than it has");
 
         let executed_qty = position.total_qty - position.open_qty;
-        position.avg_exit_price = ((position.avg_exit_price * executed_qty as f64) + (current_exit_price * quantity_to_decrease as f64) )/ position.total_qty as f64;
+        position.avg_exit_price = ((position.avg_exit_price * executed_qty as f64) + (current_exit_price * quantity_to_decrease as f64)) / position.total_qty as f64;
         position.open_qty -= quantity_to_decrease;
 
-        position.quantity_of_contracts +=self.base_qty_per_order;
-        position.total_paid_in_fees+= current_fee;
-        self.current_balance-=current_fee;
-        self.total_contracts_executed_current_month+=quantity_to_decrease as u64;
+        position.quantity_of_contracts += self.base_qty_per_order;
+        position.total_paid_in_fees += current_fee;
+        self.current_balance -= current_fee;
+        self.total_contracts_executed_current_month += quantity_to_decrease as u64;
 
         if position.open_qty == 0 {
             self.close_position(candlestick);
@@ -483,45 +497,20 @@ impl<'a> TradingBacktester<'a> {
     pub fn run_backtest(&self, mut strategy: impl CandlestickTradingStrategy, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
         let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
 
-        let mut days_of_context = strategy.days_of_context();
-        let mut current_day = self.data_provider.candlesticks.first().unwrap().date;
-        let mut index_start_day = vec![0];
+        let mut index_list_each_start_trading_day = vec![];
+        self.add_context_to_strategy(&mut strategy, &mut index_list_each_start_trading_day, 0);
 
-        // separate the first day of data to initialize the strategy
-        let mut index_initial_candle_to_trade = 0;
-        for (index, initialization_candle) in self.data_provider.candlesticks.iter().enumerate() {
-            if initialization_candle.date != current_day {
-                index_start_day.push(index);
-                current_day = initialization_candle.date;
-                days_of_context -= 1;
-                if days_of_context == 0 {
-                    index_initial_candle_to_trade = index;
-                    break;
-                }
-            }
-        }
+        let index_first_actual_trading_day = *index_list_each_start_trading_day.last().unwrap();
+        let mut current_day = self.data_provider.candlesticks.get(index_first_actual_trading_day).unwrap().date;
 
-        strategy.init_trading_day(
-            self.asset,
-            &self.data_provider.candlesticks[0..index_initial_candle_to_trade],
-        );
-
-        let mut current_day = self.data_provider.candlesticks.get(index_initial_candle_to_trade).unwrap().date;
-
-        for (index, candlestick) in enumerate(self.data_provider.candlesticks.iter().skip(index_initial_candle_to_trade)){
+        for (index, candlestick) in enumerate(self.data_provider.candlesticks.iter().skip(index_first_actual_trading_day)) {
             if current_day != candlestick.date {
-                let index_current_day = index + index_initial_candle_to_trade;
-                current_day = candlestick.date;
-                index_start_day.push(index_current_day);
-
-                let context_size: usize = strategy.days_of_context() as usize;
-                let start_index: usize = *index_start_day.get((index_start_day.len() - context_size) -1).unwrap();
-                let end_index: usize = index_current_day;
-
-                strategy.init_trading_day(
-                    self.asset,
-                    &self.data_provider.candlesticks[start_index..end_index],
+                self.add_context_to_strategy(
+                    &mut strategy,
+                    &mut index_list_each_start_trading_day,
+                    index_first_actual_trading_day + index,
                 );
+                current_day = candlestick.date;
             }
 
             let trade_action = strategy.process_closed_candlestick(candlestick);
@@ -529,7 +518,8 @@ impl<'a> TradingBacktester<'a> {
             add_orders_event(&mut event_handler, trade_action);
             event_handler.process_events();
 
-            if event_handler.current_balance <= MINIMUM_BALANCE {
+            if event_handler.current_balance <= MINIMUM_BALANCE || event_handler.removed_for_lack_of_margin {
+                event_handler.removed_for_lack_of_margin = true;
                 break;
             }
         }
@@ -642,7 +632,7 @@ impl<'a> TradingBacktester<'a> {
             if !sequential_download {
                 let number_of_threads = rayon::current_num_threads();
                 println!("download in parallel missing files with historical data from aws s3 using {} threads", number_of_threads);
-                let mut bar =  ProgressBar::default(files_to_download.len() as u32 +1, 100, false);
+                let mut bar = ProgressBar::default(files_to_download.len() as u32 + 1, 100, false);
                 bar.update();
                 let download_files_bar = Arc::new(Mutex::new(bar));
                 let values_to_process: Vec<(&String, Arc<Mutex<ProgressBar>>)> = files_to_download.iter().map(|files_to_download| {
@@ -707,6 +697,34 @@ impl<'a> TradingBacktester<'a> {
         })
     }
 
+    fn add_context_to_strategy(&self, strategy: &mut impl CandlestickTradingStrategy, index_start_day_list: &mut Vec<usize>, offset_start_current_day: usize) {
+        index_start_day_list.push(offset_start_current_day);
+        let context_size: usize = strategy.days_of_context() as usize;
+
+        if index_start_day_list.len() < context_size {
+            let mut days_of_context = context_size;
+            let mut current_day = self.data_provider.candlesticks.get(offset_start_current_day).unwrap().date;
+            for (index, initialization_candle) in self.data_provider.candlesticks.iter().skip(offset_start_current_day).enumerate() {
+                if initialization_candle.date != current_day {
+                    index_start_day_list.push(index + offset_start_current_day);
+                    current_day = initialization_candle.date;
+                    days_of_context -= 1;
+                    if days_of_context == 0 {
+                        break;
+                    }
+                }
+            }
+        }
+
+        let start_index: usize = *index_start_day_list.get(index_start_day_list.len() - context_size - 1).unwrap();
+        let end_index: usize = *index_start_day_list.last().unwrap();
+
+        strategy.init_trading_day(
+            self.asset,
+            &self.data_provider.candlesticks[start_index..end_index],
+        );
+    }
+
     fn calculate_backtest_results(&self, event_handler: &ExchangeEventHandler) -> BacktestMetrics {
         let mut total_trades = 0;
         let mut total_orders: u64 = 0;
@@ -744,7 +762,7 @@ impl<'a> TradingBacktester<'a> {
                 daily_start_balance.push(current_balance);
             }
 
-            let index_liquid_profit = liquid_profit_per_day.len() -1;
+            let index_liquid_profit = liquid_profit_per_day.len() - 1;
             let liquid_rolling_profit_current_day = *liquid_profit_per_day.last().unwrap() + position.liquid_pnl;
             liquid_profit_per_day[index_liquid_profit] = liquid_rolling_profit_current_day;
 
@@ -791,7 +809,7 @@ impl<'a> TradingBacktester<'a> {
 
             if current_balance < local_min_balance_after_local_max {
                 local_min_balance_after_local_max = current_balance;
-                let current_draw_down = (local_max_balance - local_min_balance_after_local_max)/local_max_balance;
+                let current_draw_down = (local_max_balance - local_min_balance_after_local_max) / local_max_balance;
                 if max_draw_down_percentage < current_draw_down {
                     max_draw_down_percentage = current_draw_down;
                 }
@@ -801,17 +819,17 @@ impl<'a> TradingBacktester<'a> {
         // calculate the sharp ratio
         let mut sum_excess_return_percentage = 0.0;
         let mut daily_excess_return_percentage_list: Vec<f64> = vec![];
-        for (index,daily_return) in enumerate(&liquid_profit_per_day) {
+        for (index, daily_return) in enumerate(&liquid_profit_per_day) {
             let balance_start_of_day = daily_start_balance.get(index).unwrap();
             let daily_excess_return_percentage = (daily_return / balance_start_of_day) - DAILY_RISK_FREE_RATE;
-            sum_excess_return_percentage +=daily_excess_return_percentage;
+            sum_excess_return_percentage += daily_excess_return_percentage;
             daily_excess_return_percentage_list.push(daily_excess_return_percentage);
         }
         let avg_excess_return_percentage = sum_excess_return_percentage / liquid_profit_per_day.len() as f64;
         let variance = daily_excess_return_percentage_list.iter()
             .fold(0.0, |sum, daily_excess_return| sum + (daily_excess_return - avg_excess_return_percentage).powf(2.0))
-                / (daily_excess_return_percentage_list.len() -1) as f64;
-        let standard_deviation = avg_excess_return_percentage/ variance.sqrt();
+            / (daily_excess_return_percentage_list.len() - 1) as f64;
+        let standard_deviation = avg_excess_return_percentage / variance.sqrt();
         let sharp_ratio = avg_excess_return_percentage / standard_deviation;
 
         BacktestMetrics {
@@ -838,7 +856,7 @@ impl<'a> TradingBacktester<'a> {
             max_lose_streak,
             total_trading_days,
             max_draw_down_percentage: max_draw_down_percentage * 100.0,
-            sharp_ratio
+            sharp_ratio,
         }
     }
 }

@@ -10,6 +10,7 @@ pub struct Asset {
     pub ticker: String,
     pub market: Market,
     pub exchange: Exchange,
+    pub margin_per_contract: f64,
     pub min_variation: f64,
     pub value_per_variation: f64,
 }
@@ -18,12 +19,14 @@ impl Asset {
     fn new(ticker: &str,
            market: Market,
            exchange: Exchange,
+           margin_per_contract: f64,
            min_variation: f64,
            value_per_variation: f64) -> Self {
         Asset {
             ticker: ticker.to_ascii_uppercase(),
             market,
             exchange,
+            margin_per_contract,
             min_variation,
             value_per_variation,
         }
@@ -44,6 +47,6 @@ impl Asset {
 
 lazy_static! {
     static ref AVAILABLE_ASSETS: Vec<Asset> = vec![
-        Asset::new("WIN", FUTURES, B3, 5.0, 0.2),
+        Asset::new("WIN", FUTURES, B3, 200.0 ,5.0, 0.2),
     ];
 }
