@@ -16,12 +16,12 @@ pub struct Asset {
 }
 
 impl Asset {
-    fn new(ticker: &str,
-           market: Market,
-           exchange: Exchange,
-           margin_per_contract: f64,
-           min_variation: f64,
-           value_per_variation: f64) -> Self {
+    pub(crate) fn new(ticker: &str,
+                      market: Market,
+                      exchange: Exchange,
+                      margin_per_contract: f64,
+                      min_variation: f64,
+                      value_per_variation: f64) -> Self {
         Asset {
             ticker: ticker.to_ascii_uppercase(),
             market,

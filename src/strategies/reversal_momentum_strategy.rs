@@ -37,6 +37,7 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
 
     fn init_trading_day(&mut self, _: &Asset, context_candles: &[Candlestick]) {
         let candles = aggregate_daily_candles(context_candles);
+        assert_eq!(candles.len(), 2);
 
         let last_but_one_candlestick = candles.first().unwrap();
         let last_candlestick = candles.last().unwrap();
@@ -44,7 +45,7 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
         self.signal = signal_calculation(last_but_one_candlestick, last_candlestick);
 
         if !self.signal.is_none() {
-            self.entry_price = get_entry_price(last_candlestick, self.signal.as_ref().unwrap());
+            self.entry_price = get_entry_price(last_candlestick, self.signal.as_ref().unwrap(), true);
         }
     }
 
@@ -122,13 +123,203 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
         TradeAction::do_nothing()
     }
 }
-fn get_entry_price(candlestick: &Candlestick, signal: &Signal) -> f64 {
+
+#[derive(Debug)]
+#[allow(unused)]
+pub struct ClassicReversalMomentumCandlestickStrategy {
+    signal: Option<Signal>,
+    entry_price: f64,
+    order_active: bool,
+    is_order_sent: bool,
+    day_last_order: i32,
+    stop_loss_percentage: f64,
+    take_profit_percentage: f64
+}
+
+impl CandlestickTradingStrategy for ClassicReversalMomentumCandlestickStrategy {
+    fn new() -> Self {
+        ClassicReversalMomentumCandlestickStrategy{
+            signal: None,
+            entry_price: 0.0,
+            order_active: false,
+            is_order_sent: false,
+            day_last_order: -1,
+            stop_loss_percentage: 0.04,
+            take_profit_percentage: 0.02
+        }
+    }
+
+    fn name(&self) -> &str {
+        "classic_reversal_momentum_candlestick_strategy"
+    }
+
+    fn days_of_context(&self) -> u32 {
+        2
+    }
+
+    fn init_trading_day(&mut self, _: &Asset, context_candle: &[Candlestick]) {
+        let initial_candlesticks = aggregate_daily_candles(context_candle);
+        let last_candlestick = initial_candlesticks.last().unwrap();
+
+        self.signal = classic_signal_calculation(last_candlestick);
+
+        if !self.signal.is_none() {
+            self.entry_price = get_entry_price(last_candlestick, self.signal.as_ref().unwrap(), false);
+        }
+    }
+
+    fn candlestick_configuration(&self) -> CandlestickConfiguration {
+        CandlestickConfiguration {
+            candle_type: CandlestickType::TICK,
+            candle_input_parameter: 1000,
+        }
+    }
+
+    fn process_closed_candlestick(&mut self, closed_candle: &Candlestick) -> TradeAction {
+
+        // Se time > 17:00:00
+            // se possui ordem ativa
+                // Se time < 17:50:00
+                    // Seta ordem como inativa
+                    // Envia ordem de fechamento caso tenha lucro
+                // Caso contrário
+                    // Seta ordem como inativa
+                    // Envia ordem de fechamento
+        // Se time <= 17:00:00
+            // Se possui ordem ativa
+                // Calcula profit e take_stop_signal
+                // Se possui algum signal sendo take ou stop
+                    // Seta ordem como inativa
+                    // Envia ordem de fechamento
+            // Caso contrário
+                // Se Signal for Long
+                // Se Signal for Short
+
+        if closed_candle.close_time > 17_00_00 {
+            // after 17:00:00
+            if self.order_active {
+                if closed_candle.close_time <= 17_50_00 {
+                    match self.signal.as_ref().unwrap() {
+                        Signal::LONG => {
+                            if self.entry_price < closed_candle.close {
+                                self.order_active = false;
+                                return TradeAction::send_order(MarketShort)
+                            }
+                        },
+                        Signal::SHORT => {
+                            if self.entry_price > closed_candle.close {
+                                self.order_active = false;
+                                return TradeAction::send_order(MarketLong)
+                            }
+                        }
+                    }
+                } else {
+                    return match self.signal.as_ref().unwrap() {
+                        Signal::LONG => {
+                            self.order_active = false;
+                            TradeAction::send_order(MarketShort)
+                        },
+                        Signal::SHORT => {
+                            self.order_active = false;
+                            TradeAction::send_order(MarketLong)
+                        }
+                    }
+                }
+            }
+        } else {
+            // before 17:00:00
+            if self.order_active {
+                // Order Active True and before 17:00:00
+                let current_profit_loss = get_current_profit(&self.signal.as_ref().unwrap(), &self.entry_price, &closed_candle.close);
+                let take_stop_signal = take_profit_or_stop_loss(current_profit_loss, self.take_profit_percentage, self.stop_loss_percentage);
+
+                // Send Profit Order or Loss Profit Though the day
+                if take_stop_signal.0 || take_stop_signal.1 {
+
+                    take_stop_signal.0.then(|| {
+                        println!("Take profit at: {} {}", closed_candle.date, closed_candle.close_time);
+                        assert_eq!(take_stop_signal.1, false);
+                    });
+
+                    take_stop_signal.1.then(|| {
+                        println!("Stop loss at: {} {}", closed_candle.date, closed_candle.close_time);
+                        assert_eq!(take_stop_signal.0, false);
+                    });
+
+                    return match self.signal.as_ref().unwrap() {
+                        Signal::LONG => {
+                            self.order_active = false;
+                            TradeAction::send_order(MarketShort)
+                        },
+                        Signal::SHORT => {
+                            self.order_active = false;
+                            TradeAction::send_order(MarketLong)
+                        }
+                    }
+                }
+            } else {
+                // Order Active False and before 17:00:00
+                match self.signal {
+                    None => {
+                        return TradeAction::do_nothing()
+                    }
+                    Some(Signal::LONG) => {
+                        assert_ne!(self.entry_price, 0.0);
+                        assert_eq!(self.order_active, false);
+                        if closed_candle.close >=  self.entry_price{
+                            self.order_active = true;
+                            return TradeAction::send_order(MarketLong)
+                        }
+                    }
+                    Some(Signal::SHORT) => {
+                        assert_ne!(self.entry_price, 0.0);
+                        assert_eq!(self.order_active, false);
+                        if closed_candle.close <=  self.entry_price{
+                            self.order_active = true;
+                            return TradeAction::send_order(MarketShort)
+                        }
+                    }
+                }
+            }
+        }
+
+        TradeAction::do_nothing()
+    }
+}
+
+fn take_profit_or_stop_loss(profit: f64, take_profit_percentage: f64, stop_loss_percentage: f64) -> (bool, bool) {
+    if profit >= take_profit_percentage {
+        return (true, false);
+    }
+
+    if profit <= -stop_loss_percentage {
+        return (false, true);
+    }
+
+    (false, false)
+}
+fn get_current_profit(signal: &Signal, entry_price: &f64, current_price: &f64) -> f64 {
+    match signal {
+        Signal::LONG => (current_price - entry_price) / entry_price,
+        Signal::SHORT => -((current_price - entry_price) / entry_price)
+    }
+}
+
+fn get_entry_price(candlestick: &Candlestick, signal: &Signal, is_updated_version: bool) -> f64 {
     match signal {
         Signal::LONG => {
-            candlestick.low
+            if is_updated_version {
+                candlestick.low
+            } else {
+                candlestick.high
+            }
         }
         Signal::SHORT => {
-            candlestick.high
+            if is_updated_version {
+                candlestick.high
+            } else {
+                candlestick.low
+            }
         }
     }
 }
@@ -165,10 +356,20 @@ fn aggregate_daily_candles(context_candles: &[Candlestick]) -> Vec<Candlestick> 
     }
 
     let mut aggregated_candles: Vec<Candlestick> = daily_map.into_values().collect();
-    assert_eq!(aggregated_candles.len(), 2, "Trading init days should be exactly two days");
+
     aggregated_candles.sort_by(|a, b| a.date.cmp(&b.date));
 
     aggregated_candles
+}
+
+fn classic_signal_calculation(last_candlestick: &Candlestick) -> Option<Signal> {
+    if last_candlestick.open > last_candlestick.close {
+        return Some(Signal::LONG);
+    } else if last_candlestick.open < last_candlestick.close {
+        return Some(Signal::SHORT);
+    }
+    None
+
 }
 fn signal_calculation(last_but_one_candlestick: &Candlestick, last_candlestick: &Candlestick) -> Option<Signal> {
 
@@ -207,11 +408,740 @@ fn signal_calculation(last_but_one_candlestick: &Candlestick, last_candlestick: 
     None
 }
 
+
+
+
+
+
+
+
+// Scenario 1.0:
+    // Morning
+    // Last Day Short Signal
+    // No Order Active
+    // Current Candle reach Entry Price
+
+// Scenario 1.1:
+    // Morning
+    // Last Day Short Signal
+    // No Order Active
+    // Current Candle do not reached Entry Price
+
+//Scenario 2.0:
+    // Morning
+    // Last Day Short Signal
+    // Order Active
+    // Current Candle do not Reached Take Profit
+
+//Scenario 2.1:
+    // Morning
+    // Last Day Short Signal
+    // Order Active
+    // Current Candle reached Take Profit
+
+//Scenario 2.2:
+    // Morning
+    // Last Day Short Signal
+    // Order Active
+    // Current Candle reached Stop Loss
+
+//Scenario 3.0:
+    // Morning
+    // Last Day Long Signal
+    // Order Not Active
+    // Current Candle reached entry price
+
+//Scenario 3.1:
+    // Morning
+    // Last Day Long Signal
+    // Order Not Active
+    // Current Candle do not reached entry price
+
+//Scenario 4.0:
+    // Morning
+    // Last Day Long Signal
+    // Order Active
+    // Current Candle do not Reached Take Profit
+
+//Scenario 4.1:
+    // Morning
+    // Last Day Long Signal
+    // Order Active
+    // Current Candle do Reached Take Profit
+
+//Scenario 4.2:
+    // Morning
+    // Last Day Long Signal
+    // Order Active
+    // Current Candle do Reached Stop Loss
+
+//Scenario 5.0
+    // Almost End of the day (17_00_00 -> 17_50_00)
+    // Last Day Short/Long Signal
+    // Order Not Active
+    // Current Candle Reached/DoNotReached Entry Price
+
+//Scenario 5.1
+    // Almost End of the day (17_00_00 -> 17_50_00)
+    // Last Day Short Signal
+    // Order Active
+    // Current Candle have Profit
+
+//Scenario 5.2
+    // Almost End of the day (17_00_00 -> 17_50_00)
+    // Last Day Short Signal
+    // Order Active
+    // Current Candle do not have profit
 #[cfg(test)]
-mod reversal_momentum_tests {
+mod classic_reversal_momentum_strategy_tests {
+    use crate::models::exchange::Exchange;
+    use crate::models::market::Market;
     use super::*;
+
     #[test]
-    fn test_return_entry_price_long() {
+    fn test_classic_reversal_momentum_candlestick_strategy_init_trading_days() {
+        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+
+        let initial_candlesticks = vec![
+            Candlestick { date: 20231110, open: 130821.754224, high: 132715.797145, low: 130758.852429, close: 132541.069938, volume: 1500.0, start_time: 93000, close_time: 93100, is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 132792.677116, high: 132932.458881, low: 131059.383225, close: 132205.593701, volume: 1500.0, start_time: 93100, close_time: 93200, is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 132513.113585, high: 132513.113585, low: 131464.750344, close: 132506.124497, volume: 1500.0, start_time: 93200, close_time: 93300, is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 131967.964700, high: 134323.287447, low: 131765.281140, close: 133868.996709, volume: 1500.0, start_time: 93300, close_time: 93400, is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 133715.236767, high: 135301.759804, low: 133610.400443, close: 134581.883712, volume: 1500.0, start_time: 93400, close_time: 93500, is_closed: true, trades: 300 },
+        ];
+
+        let aggregated_candle = aggregate_daily_candles(&initial_candlesticks);
+
+        assert_eq!(aggregated_candle.len(), 1);
+
+        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        classic_strategy.init_trading_day(&asset, &*initial_candlesticks);
+
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.entry_price, aggregated_candle[0].low);
+    }
+    #[test]
+    // Scenario 1.0
+    fn test_classic_reversal_momentum_candlestick_strategy_morning_short_entry_no_active_order() {
+        let last_day_candlestick = vec![
+            Candlestick{
+                date: 20231110,
+                open: 100.0,
+                high: 104.0,
+                low: 98.0,
+                close: 102.0,
+                volume: 1500.0,
+                start_time: 9_00_00,
+                close_time: 18_00_00,
+                is_closed: true,
+                trades: 300
+            }];
+        let current_candlestick = Candlestick{
+            date: 20231111,
+            open: 102.0,
+            high: 103.0,
+            low: 96.0,
+            close: 97.0,
+            volume: 3000.0,
+            start_time: 9_33_00,
+            close_time: 9_34_00,
+            is_closed: true,
+            trades: 3000,
+        };
+
+        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+
+        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].low);
+
+        assert!(current_candlestick.close_time < 17_00_00);
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.order_active, false);
+        assert!(current_candlestick.close < classic_strategy.entry_price);
+
+        // Run Scenario 1.0
+        let scenario1_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario1_short_trade_action.enter_market_action, Some(MarketShort));
+        assert_eq!(classic_strategy.order_active, true);
+    }
+    #[test]
+    // Scenario 1.1
+    fn test_classic_reversal_momentum_candlestick_strategy_morning_short_none_no_active_order() {
+        let last_day_candlestick = vec![
+            Candlestick{
+                date: 20231110,
+                open: 100.0,
+                high: 104.0,
+                low: 98.0,
+                close: 102.0,
+                volume: 1500.0,
+                start_time: 9_00_00,
+                close_time: 18_00_00,
+                is_closed: true,
+                trades: 300
+            }];
+        let current_candlestick = Candlestick{
+            date: 20231111,
+            open: 102.0,
+            high: 103.0,
+            low: 96.0,
+            close: 98.1,
+            volume: 3000.0,
+            start_time: 9_33_00,
+            close_time: 9_34_00,
+            is_closed: true,
+            trades: 3000,
+        };
+
+        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+
+        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].low);
+
+        assert!(current_candlestick.close_time < 17_00_00);
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.order_active, false);
+        assert!(current_candlestick.close > classic_strategy.entry_price);
+
+        // Run Scenario 1.1
+        let scenario1_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario1_short_trade_action.enter_market_action, None);
+        assert_eq!(classic_strategy.order_active, false);
+    }
+    #[test]
+    // Scenario 2.0
+    fn test_classic_reversal_momentum_candlestick_strategy_morning_short_keep_with_active_order() {
+        let last_day_candlestick = vec![
+            Candlestick{
+                date: 20231110,
+                open: 100.0,
+                high: 104.0,
+                low: 98.0,
+                close: 102.0,
+                volume: 1500.0,
+                start_time: 9_00_00,
+                close_time: 18_00_00,
+                is_closed: true,
+                trades: 300
+            }];
+        let mut current_candlestick = Candlestick{
+            date: 20231111,
+            open: 102.0,
+            high: 103.0,
+            low: 96.0,
+            close: 97.0,
+            volume: 3000.0,
+            start_time: 9_33_00,
+            close_time: 9_34_00,
+            is_closed: true,
+            trades: 3000,
+        };
+
+        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+
+        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].low);
+
+
+        classic_strategy.order_active = true;
+        current_candlestick.close = last_day_candlestick[0].low - last_day_candlestick[0].low*0.01; // 1% profit
+
+        assert!(current_candlestick.close_time < 17_00_00);
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.order_active, true);
+        assert!(current_candlestick.close < classic_strategy.entry_price);
+
+        let scenario2_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario2_short_trade_action.enter_market_action, None);
+        assert_eq!(classic_strategy.order_active, true);
+    }
+    #[test]
+    // Scenario 2.1
+    fn test_classic_reversal_momentum_candlestick_strategy_morning_short_exit_take_profit_order() {
+        let last_day_candlestick = vec![
+            Candlestick{
+                date: 20231110,
+                open: 100.0,
+                high: 104.0,
+                low: 98.0,
+                close: 102.0,
+                volume: 1500.0,
+                start_time: 9_00_00,
+                close_time: 18_00_00,
+                is_closed: true,
+                trades: 300
+            }];
+        let mut current_candlestick = Candlestick{
+            date: 20231111,
+            open: 102.0,
+            high: 103.0,
+            low: 96.0,
+            close: 97.0,
+            volume: 3000.0,
+            start_time: 9_33_00,
+            close_time: 9_34_00,
+            is_closed: true,
+            trades: 3000,
+        };
+
+        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+
+        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].low);
+
+
+        classic_strategy.order_active = true;
+        current_candlestick.close = last_day_candlestick[0].low - last_day_candlestick[0].low*0.03; // 3% profit
+        assert!(current_candlestick.close_time < 17_00_00);
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.order_active, true);
+        assert!(get_current_profit(&Signal::SHORT, &classic_strategy.entry_price, &current_candlestick.close) >= classic_strategy.take_profit_percentage);
+
+        let scenario2_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario2_short_trade_action.enter_market_action, Some(MarketLong));
+        assert_eq!(classic_strategy.order_active, false);
+    }
+    #[test]
+    // Scenario 2.2
+    fn test_classic_reversal_momentum_candlestick_strategy_morning_short_exit_stop_loss_order() {
+        let last_day_candlestick = vec![
+            Candlestick{
+                date: 20231110,
+                open: 100.0,
+                high: 104.0,
+                low: 98.0,
+                close: 102.0,
+                volume: 1500.0,
+                start_time: 9_00_00,
+                close_time: 18_00_00,
+                is_closed: true,
+                trades: 300
+            }];
+        let mut current_candlestick = Candlestick{
+            date: 20231111,
+            open: 102.0,
+            high: 103.0,
+            low: 96.0,
+            close: 97.0,
+            volume: 3000.0,
+            start_time: 9_33_00,
+            close_time: 9_34_00,
+            is_closed: true,
+            trades: 3000,
+        };
+
+        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+
+        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].low);
+
+
+        classic_strategy.order_active = true;
+        current_candlestick.close = last_day_candlestick[0].low + last_day_candlestick[0].low*0.05; // 5% Loss
+        assert!(current_candlestick.close_time < 17_00_00);
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.order_active, true);
+        assert!(get_current_profit(&Signal::SHORT, &classic_strategy.entry_price, &current_candlestick.close) <= classic_strategy.stop_loss_percentage);
+
+        let scenario2_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario2_short_trade_action.enter_market_action, Some(MarketLong));
+        assert_eq!(classic_strategy.order_active, false);
+    }
+    #[test]
+    //Scenario 3.0
+    fn test_classic_reversal_momentum_candlestick_strategy_morning_long_entry_no_active_order() {
+        let last_day_candlestick = vec![
+            Candlestick{
+                date: 20231110,
+                open: 102.0,
+                high: 102.0,
+                low: 98.0,
+                close: 100.0,
+                volume: 1500.0,
+                start_time: 9_00_00,
+                close_time: 18_00_00,
+                is_closed: true,
+                trades: 300
+            }];
+        let current_candlestick = Candlestick{
+            date: 20231111,
+            open: 100.0,
+            high: 105.0,
+            low: 96.0,
+            close: 103.0,
+            volume: 3000.0,
+            start_time: 9_33_00,
+            close_time: 9_34_00,
+            is_closed: true,
+            trades: 3000,
+        };
+
+        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+
+        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+
+        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+        assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].high);
+
+        assert!(current_candlestick.close_time < 17_00_00);
+        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+        assert_eq!(classic_strategy.order_active, false);
+        assert!(current_candlestick.close >= classic_strategy.entry_price);
+
+        // Run Scenario 3.0
+        let scenario3_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario3_long_trade_action.enter_market_action, Some(MarketLong));
+        assert_eq!(classic_strategy.order_active, true);
+    }
+    #[test]
+    //Scenario 3.1
+    fn test_classic_reversal_momentum_candlestick_strategy_morning_long_none_no_active_order() {
+        let last_day_candlestick = vec![
+            Candlestick{
+                date: 20231110,
+                open: 102.0,
+                high: 102.0,
+                low: 98.0,
+                close: 100.0,
+                volume: 1500.0,
+                start_time: 9_00_00,
+                close_time: 18_00_00,
+                is_closed: true,
+                trades: 300
+            }];
+        let current_candlestick = Candlestick{
+            date: 20231111,
+            open: 100.0,
+            high: 105.0,
+            low: 96.0,
+            close: 101.0,
+            volume: 3000.0,
+            start_time: 9_33_00,
+            close_time: 9_34_00,
+            is_closed: true,
+            trades: 3000,
+        };
+
+        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+
+        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+
+        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+        assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].high);
+
+        assert!(current_candlestick.close_time < 17_00_00);
+        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+        assert_eq!(classic_strategy.order_active, false);
+        assert!(current_candlestick.close < classic_strategy.entry_price);
+
+        // Run Scenario 3.1
+        let scenario3_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario3_long_trade_action.enter_market_action, None);
+        assert_eq!(classic_strategy.order_active, false);
+    }
+    #[test]
+    //Scenario 4.0
+    fn test_classic_reversal_momentum_candlestick_strategy_morning_long_keep_with_active_order() {
+        let last_day_candlestick = vec![
+            Candlestick{
+                date: 20231110,
+                open: 102.0,
+                high: 102.0,
+                low: 98.0,
+                close: 100.0,
+                volume: 1500.0,
+                start_time: 9_00_00,
+                close_time: 18_00_00,
+                is_closed: true,
+                trades: 300
+            }];
+        let mut current_candlestick = Candlestick{
+            date: 20231111,
+            open: 102.0,
+            high: 103.0,
+            low: 96.0,
+            close: 97.0,
+            volume: 3000.0,
+            start_time: 9_33_00,
+            close_time: 9_34_00,
+            is_closed: true,
+            trades: 3000,
+        };
+
+        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+
+        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+
+        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+        assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].high);
+
+
+        classic_strategy.order_active = true;
+        current_candlestick.close = last_day_candlestick[0].high + last_day_candlestick[0].high*0.01; // 1% profit
+
+        assert!(current_candlestick.close_time < 17_00_00);
+        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+        assert_eq!(classic_strategy.order_active, true);
+        assert!(current_candlestick.close > classic_strategy.entry_price);
+
+        let scenario4_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario4_short_trade_action.enter_market_action, None);
+        assert_eq!(classic_strategy.order_active, true);
+    }
+    #[test]
+    //Scenario 4.1
+    fn test_classic_reversal_momentum_candlestick_strategy_morning_long_exit_take_profit_order() {
+        let last_day_candlestick = vec![
+            Candlestick{
+                date: 20231110,
+                open: 102.0,
+                high: 102.0,
+                low: 98.0,
+                close: 100.0,
+                volume: 1500.0,
+                start_time: 9_00_00,
+                close_time: 18_00_00,
+                is_closed: true,
+                trades: 300
+            }];
+        let mut current_candlestick = Candlestick{
+            date: 20231111,
+            open: 102.0,
+            high: 103.0,
+            low: 96.0,
+            close: 97.0,
+            volume: 3000.0,
+            start_time: 9_33_00,
+            close_time: 9_34_00,
+            is_closed: true,
+            trades: 3000,
+        };
+
+        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+
+        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+
+        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+        assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].high);
+
+
+        classic_strategy.order_active = true;
+        current_candlestick.close = last_day_candlestick[0].high + last_day_candlestick[0].high*0.04; // 4% profit
+
+        assert!(current_candlestick.close_time < 17_00_00);
+        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+        assert_eq!(classic_strategy.order_active, true);
+        assert!(get_current_profit(&Signal::LONG, &classic_strategy.entry_price, &current_candlestick.close) > classic_strategy.take_profit_percentage);
+
+        let scenario4_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario4_short_trade_action.enter_market_action, Some(MarketShort));
+        assert_eq!(classic_strategy.order_active, false);
+    }
+    #[test]
+    //Scenario 4.2
+    fn test_classic_reversal_momentum_candlestick_strategy_morning_long_exit_stop_loss_order() {
+        let last_day_candlestick = vec![
+            Candlestick{
+                date: 20231110,
+                open: 102.0,
+                high: 102.0,
+                low: 98.0,
+                close: 100.0,
+                volume: 1500.0,
+                start_time: 9_00_00,
+                close_time: 18_00_00,
+                is_closed: true,
+                trades: 300
+            }];
+        let mut current_candlestick = Candlestick{
+            date: 20231111,
+            open: 102.0,
+            high: 103.0,
+            low: 96.0,
+            close: 97.0,
+            volume: 3000.0,
+            start_time: 9_33_00,
+            close_time: 9_34_00,
+            is_closed: true,
+            trades: 3000,
+        };
+
+        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+
+        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+
+        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+        assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].high);
+
+
+        classic_strategy.order_active = true;
+        current_candlestick.close = last_day_candlestick[0].high - last_day_candlestick[0].high*0.041; // 4% loss
+
+        assert!(current_candlestick.close_time < 17_00_00);
+        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+        assert_eq!(classic_strategy.order_active, true);
+        assert!(get_current_profit(&Signal::LONG, &classic_strategy.entry_price, &current_candlestick.close) <= classic_strategy.stop_loss_percentage);
+
+        let scenario4_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario4_short_trade_action.enter_market_action, Some(MarketShort));
+        assert_eq!(classic_strategy.order_active, false);
+    }
+
+    #[test]
+    //Scenario 5.0
+    fn test_classic_reversal_momentum_candlestick_strategy_almost_ending_day_no_order_active() {
+        let last_day_candlestick = vec![
+            Candlestick{
+                date: 20231110,
+                open: 100.0,
+                high: 104.0,
+                low: 98.0,
+                close: 102.0,
+                volume: 1500.0,
+                start_time: 9_00_00,
+                close_time: 18_00_00,
+                is_closed: true,
+                trades: 300
+            }];
+        let mut current_candlestick = Candlestick{
+            date: 20231111,
+            open: 102.0,
+            high: 103.0,
+            low: 96.0,
+            close: 97.0,
+            volume: 3000.0,
+            start_time: 17_30_00,
+            close_time: 17_30_01,
+            is_closed: true,
+            trades: 3000,
+        };
+
+        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+
+        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].low);
+
+        assert!(current_candlestick.close_time > 17_00_00 && current_candlestick.close_time < 17_50_00);
+        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+        assert_eq!(classic_strategy.order_active, false);
+        assert!(current_candlestick.close < classic_strategy.entry_price);
+
+        // Short Reached Price
+        let scenario5_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario5_short_trade_action.enter_market_action, None);
+        assert_eq!(classic_strategy.order_active, false);
+
+        // Short  Do not Reached Price
+        current_candlestick.close = classic_strategy.entry_price + 1.0;
+        assert!(current_candlestick.close > classic_strategy.entry_price);
+
+        let scenario5_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario5_short_trade_action.enter_market_action, None);
+        assert_eq!(classic_strategy.order_active, false);
+
+        // Long Reached Price
+        classic_strategy.signal = Some(Signal::LONG);
+        classic_strategy.entry_price = last_day_candlestick[0].high;
+
+        current_candlestick.close = last_day_candlestick[0].high + 1.0;
+        assert!(current_candlestick.close > classic_strategy.entry_price);
+
+        let scenario5_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario5_long_trade_action.enter_market_action, None);
+        assert_eq!(classic_strategy.order_active, false);
+
+        // Long do not Reached Price
+        classic_strategy.signal = Some(Signal::LONG);
+        classic_strategy.entry_price = last_day_candlestick[0].high;
+
+        current_candlestick.close = last_day_candlestick[0].high - 1.0;
+        assert!(current_candlestick.close < classic_strategy.entry_price);
+
+        let scenario5_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+        assert_eq!(scenario5_long_trade_action.enter_market_action, None);
+        assert_eq!(classic_strategy.order_active, false);
+    }
+
+
+    // Almost End of the day (17_00_00 -> 17_50_00)
+    // Last Day Short Signal
+    // Order Active
+    // Current Candle have Profit
+    #[test]
+    //Scenario 5.1
+    fn test_classic_reversal_momentum_candlestick_strategy_almost_ending_day_short_with_order_active_take_profit() {
+
+    }
+
+    #[test]
+    //Scenario 5.2
+    fn test_classic_reversal_momentum_candlestick_strategy_almost_ending_day_short_with_order_active_no_profit() {
+
+    }
+    // Almost End of the day (17_00_00 -> 17_50_00)
+    // Last Day Short Signal
+    // Order Active
+    // Current Candle do not have profit
+
+}
+
+#[cfg(test)]
+mod reversal_momentum_common_tests {
+    use super::*;
+
+    #[test]
+    fn test_take_profit_or_stop_loss() {
+        let take_profit_percentage = 0.02;
+        let stop_loss_percentage = 0.04;
+
+        assert_eq!(take_profit_or_stop_loss(0.04,take_profit_percentage, stop_loss_percentage), (true, false));
+        assert_eq!(take_profit_or_stop_loss(0.02,take_profit_percentage, stop_loss_percentage), (true, false));
+
+        assert_eq!(take_profit_or_stop_loss(0.01,take_profit_percentage, stop_loss_percentage), (false, false));
+        assert_eq!(take_profit_or_stop_loss(0.00,take_profit_percentage, stop_loss_percentage), (false, false));
+        assert_eq!(take_profit_or_stop_loss(-0.01,take_profit_percentage, stop_loss_percentage), (false, false));
+        assert_eq!(take_profit_or_stop_loss(-0.02,take_profit_percentage, stop_loss_percentage), (false, false));
+
+        assert_eq!(take_profit_or_stop_loss(-0.04,take_profit_percentage, stop_loss_percentage), (false, true));
+        assert_eq!(take_profit_or_stop_loss(-0.05,take_profit_percentage, stop_loss_percentage), (false, true));
+
+    }
+
+    #[test]
+    fn test_get_current_profit() {
+        assert_eq!(get_current_profit(&Signal::LONG,&100.0, &104.0), 0.04);
+        assert_eq!(get_current_profit(&Signal::LONG,&100.0, &96.0), -0.04);
+
+        assert_eq!(get_current_profit(&Signal::SHORT,&100.0, &104.0), -0.04);
+        assert_eq!(get_current_profit(&Signal::SHORT,&100.0, &96.0), 0.04);
+
+    }
+
+    #[test]
+    fn test_return_entry_price_long_updated() {
         let last_candle = &Candlestick{
             open: 2.0,
             high: 3.0,
@@ -224,11 +1154,11 @@ mod reversal_momentum_tests {
             is_closed: false,
             trades: 60,
         };
-        assert_eq!(get_entry_price(last_candle, &Signal::LONG), 1.0)
+        assert_eq!(get_entry_price(last_candle, &Signal::LONG, true), 1.0)
     }
 
     #[test]
-    fn test_return_entry_price_short() {
+    fn test_return_entry_price_long_classic() {
         let last_candle = &Candlestick{
             open: 2.0,
             high: 3.0,
@@ -241,12 +1171,45 @@ mod reversal_momentum_tests {
             is_closed: false,
             trades: 60,
         };
-        assert_eq!(get_entry_price(last_candle, &Signal::SHORT), 3.0)
+        assert_eq!(get_entry_price(last_candle, &Signal::LONG, false), 3.0)
     }
 
     #[test]
-    #[should_panic(expected = "Trading init days should be exactly two days")]
-    fn test_aggregate_fails_with_less_than_two_days() {
+    fn test_return_entry_price_short_updated() {
+        let last_candle = &Candlestick{
+            open: 2.0,
+            high: 3.0,
+            low: 1.0,
+            close: 2.0,
+            volume: 3.0,
+            date: 20201001,
+            start_time: 143500,
+            close_time: 143600,
+            is_closed: false,
+            trades: 60,
+        };
+        assert_eq!(get_entry_price(last_candle, &Signal::SHORT, true), 3.0)
+    }
+
+    #[test]
+    fn test_return_entry_price_short_classic() {
+        let last_candle = &Candlestick{
+            open: 2.0,
+            high: 3.0,
+            low: 1.0,
+            close: 2.0,
+            volume: 3.0,
+            date: 20201001,
+            start_time: 143500,
+            close_time: 143600,
+            is_closed: false,
+            trades: 60,
+        };
+        assert_eq!(get_entry_price(last_candle, &Signal::SHORT, false), 1.0)
+    }
+
+    #[test]
+    fn test_aggregate_with_less_than_two_days() {
         let candles = vec![
             Candlestick { date: 20231110, open: 130821.754224, high: 132715.797145, low: 130758.852429, close: 132541.069938, volume: 1500.0, start_time: 93000, close_time: 93100, is_closed: true, trades: 300 },
             Candlestick { date: 20231110, open: 132792.677116, high: 132932.458881, low: 131059.383225, close: 132205.593701, volume: 1500.0, start_time: 93100, close_time: 93200, is_closed: true, trades: 300 },
@@ -255,19 +1218,23 @@ mod reversal_momentum_tests {
             Candlestick { date: 20231110, open: 133715.236767, high: 135301.759804, low: 133610.400443, close: 134581.883712, volume: 1500.0, start_time: 93400, close_time: 93500, is_closed: true, trades: 300 },
         ];
 
-        aggregate_daily_candles(&candles);
+        let candles = aggregate_daily_candles(&candles);
+
+        assert_eq!(candles.len(), 1)
+
     }
 
     #[test]
-    #[should_panic(expected = "Trading init days should be exactly two days")]
-    fn test_aggregate_fails_with_more_than_two_days() {
+    fn test_aggregate_with_more_than_two_days() {
         let candles = vec![
             Candlestick { date: 20231109, open: 95.0, high: 105.0, low: 90.0, close: 100.0, volume: 1000.0, start_time: 93000, close_time: 100000, is_closed: true, trades: 200 },
             Candlestick { date: 20231110, open: 100.0, high: 110.0, low: 99.0, close: 105.0, volume: 1500.0, start_time: 93000, close_time: 100000, is_closed: true, trades: 300 },
             Candlestick { date: 20231111, open: 111.0, high: 120.0, low: 110.0, close: 119.0, volume: 1800.0, start_time: 93000, close_time: 100000, is_closed: true, trades: 350 },
         ];
 
-        aggregate_daily_candles(&candles);
+        let candles = aggregate_daily_candles(&candles);
+
+        assert_eq!(candles.len(), 3)
     }
     #[test]
     fn test_aggregate_exactly_two_days() {
