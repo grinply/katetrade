@@ -56,41 +56,8 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
     }
 
     fn process_closed_candlestick(&mut self, closed_candle: &Candlestick) -> TradeAction {
-        // if self.day_last_order != closed_candle.date {
-        //     self.is_order_sent = false;
-        //     self.day_last_order = closed_candle.date;
-        // }
-        //
-        // if self.is_order_sent {
-        //     return TradeAction::do_nothing();
-        // }
-
-        // Starting Day
-        match self.signal {
-            None => {
-                return TradeAction::do_nothing()
-            }
-            Some(Signal::LONG) => {
-                assert_ne!(self.entry_price, 0.0);
-
-                if !self.order_active && closed_candle.close >=  self.entry_price{
-                    self.order_active = true;
-                    self.is_order_sent = true;
-                    return TradeAction::send_order(MarketLong)
-                }
-            }
-            Some(Signal::SHORT) => {
-                assert_ne!(self.entry_price, 0.0);
-                if !self.order_active  && closed_candle.close <=  self.entry_price{
-                    self.order_active = true;
-                    self.is_order_sent = true;
-                    return TradeAction::send_order(MarketShort)
-                }
-            }
-        }
-
         // Exiting Day
-        if self.order_active {
+        if self.is_order_sent && self.order_active {
             if (closed_candle.close_time > 17_00_00) && (closed_candle.close_time <= 17_50_00) {
                 match self.signal.as_ref().unwrap() {
                     Signal::LONG => {
@@ -120,6 +87,37 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
             }
         }
 
+        if self.day_last_order != closed_candle.date {
+            self.is_order_sent = false;
+            self.day_last_order = closed_candle.date;
+        }
+
+        if self.is_order_sent {
+            return TradeAction::do_nothing();
+        }
+
+        // Starting Day
+        match self.signal {
+            None => {
+                return TradeAction::do_nothing()
+            }
+            Some(Signal::LONG) => {
+                assert_ne!(self.entry_price, 0.0);
+                if !self.order_active && closed_candle.close >=  self.entry_price{
+                    self.order_active = true;
+                    self.is_order_sent = true;
+                    return TradeAction::send_order(MarketLong)
+                }
+            }
+            Some(Signal::SHORT) => {
+                assert_ne!(self.entry_price, 0.0);
+                if !self.order_active  && closed_candle.close <=  self.entry_price{
+                    self.order_active = true;
+                    self.is_order_sent = true;
+                    return TradeAction::send_order(MarketShort)
+                }
+            }
+        }
 
         TradeAction::do_nothing()
     }
