@@ -21,11 +21,21 @@ pub struct ReversalMomentumCandlestickStrategy {
     order_active: bool,
     is_order_sent: bool,
     day_last_order: i32,
+    stop_loss_percentage: f64,
+    take_profit_percentage: f64
 }
 
 impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
     fn new() -> Self {
-        ReversalMomentumCandlestickStrategy{ signal: None, entry_price: 0.0, order_active: false, is_order_sent: false, day_last_order: -1 }
+        ReversalMomentumCandlestickStrategy{
+            signal: None,
+            entry_price: 0.0,
+            order_active: false,
+            is_order_sent: false,
+            day_last_order: -1,
+            take_profit_percentage: 0.02,
+            stop_loss_percentage: 0.04
+        }
     }
 
     fn name(&self) -> &str {
@@ -46,7 +56,10 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
 
         if !self.signal.is_none() {
             self.entry_price = get_entry_price(last_candlestick, self.signal.as_ref().unwrap(), true);
+            println!("Day {} with Signal {} and EntryPrice {}", self.day_last_order, self.signal.as_ref().unwrap(), self.entry_price);
         }
+
+
     }
 
     fn candlestick_configuration(&self) -> CandlestickConfiguration {
@@ -57,65 +70,113 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
     }
 
     fn process_closed_candlestick(&mut self, closed_candle: &Candlestick) -> TradeAction {
-        // Exiting Day
-        if self.is_order_sent && self.order_active {
-            if (closed_candle.close_time > 17_00_00) && (closed_candle.close_time <= 17_50_00) {
-                match self.signal.as_ref().unwrap() {
-                    Signal::LONG => {
-                        if self.entry_price < closed_candle.close {
-                            self.order_active = false;
-                            return TradeAction::send_order(MarketShort)
+
+        // Se time > 17:00:00
+        // se possui ordem ativa
+        // Se time < 17:50:00
+        // Seta ordem como inativa
+        // Envia ordem de fechamento caso tenha lucro
+        // Caso contrário
+        // Seta ordem como inativa
+        // Envia ordem de fechamento
+        // Se time <= 17:00:00
+        // Se possui ordem ativa
+        // Calcula profit e take_stop_signal
+        // Se possui algum signal sendo take ou stop
+        // Seta ordem como inativa
+        // Envia ordem de fechamento
+        // Caso contrário
+        // Se Signal for Long
+        // Se Signal for Short
+
+        if closed_candle.close_time > 17_00_00 {
+            // after 17:00:00
+            if self.order_active {
+                if closed_candle.close_time <= 17_50_00 {
+                    match self.signal.as_ref().unwrap() {
+                        Signal::LONG => {
+                            if self.entry_price < closed_candle.close {
+                                self.order_active = false;
+                                return TradeAction::send_order(MarketShort)
+                            }
+                        },
+                        Signal::SHORT => {
+                            if self.entry_price > closed_candle.close {
+                                self.order_active = false;
+                                return TradeAction::send_order(MarketLong)
+                            }
                         }
-                    },
-                    Signal::SHORT => {
-                        if self.entry_price > closed_candle.close {
+                    }
+                } else {
+                    return match self.signal.as_ref().unwrap() {
+                        Signal::LONG => {
                             self.order_active = false;
+                            TradeAction::send_order(MarketShort)
+                        },
+                        Signal::SHORT => {
+                            self.order_active = false;
+                            TradeAction::send_order(MarketLong)
+                        }
+                    }
+                }
+            }
+        } else {
+            // before 17:00:00
+            if self.order_active {
+                // Order Active True and before 17:00:00
+                let current_profit_loss = get_current_profit(&self.signal.as_ref().unwrap(), &self.entry_price, &closed_candle.close);
+                let take_stop_signal = take_profit_or_stop_loss(current_profit_loss, self.take_profit_percentage, self.stop_loss_percentage);
+
+                // Send Profit Order or Loss Profit Though the day
+                if take_stop_signal.0 || take_stop_signal.1 {
+
+                    take_stop_signal.0.then(|| {
+                        println!("Take profit at: {} {}", closed_candle.date, closed_candle.close_time);
+                        assert_eq!(take_stop_signal.1, false);
+                    });
+
+                    take_stop_signal.1.then(|| {
+                        println!("Stop loss at: {} {}", closed_candle.date, closed_candle.close_time);
+                        assert_eq!(take_stop_signal.0, false);
+                    });
+
+                    return match self.signal.as_ref().unwrap() {
+                        Signal::LONG => {
+                            self.order_active = false;
+                            TradeAction::send_order(MarketShort)
+                        },
+                        Signal::SHORT => {
+                            self.order_active = false;
+                            TradeAction::send_order(MarketLong)
+                        }
+                    }
+                }
+            } else {
+                // Order Active False and before 17:00:00
+                match self.signal {
+                    None => {
+                        return TradeAction::do_nothing()
+                    }
+                    Some(Signal::LONG) => {
+                        assert_ne!(self.entry_price, 0.0);
+                        assert_eq!(self.order_active, false);
+                        // TODO: This should be in a range of price
+                        if closed_candle.close >=  self.entry_price{
+                            self.order_active = true;
+                            println!("Day {} Time {} Price Reached {}, EntryPrice was {}", closed_candle.date, closed_candle.close_time, closed_candle.close, self.entry_price );
                             return TradeAction::send_order(MarketLong)
                         }
                     }
-                }
-            } else if closed_candle.close_time > 17_50_00 {
-                return match self.signal.as_ref().unwrap() {
-                    Signal::LONG => {
-                        self.order_active = false;
-                        TradeAction::send_order(MarketShort)
-                    },
-                    Signal::SHORT => {
-                        self.order_active = false;
-                        TradeAction::send_order(MarketLong)
+                    Some(Signal::SHORT) => {
+                        assert_ne!(self.entry_price, 0.0);
+                        assert_eq!(self.order_active, false);
+                        // TODO: This should be in a range of price
+                        if closed_candle.close <=  self.entry_price{
+                            self.order_active = true;
+                            println!("Day {} Time {} Price Reached {}, EntryPrice was {}", closed_candle.date, closed_candle.close_time, closed_candle.close, self.entry_price );
+                            return TradeAction::send_order(MarketShort)
+                        }
                     }
-                }
-            }
-        }
-
-        if self.day_last_order != closed_candle.date {
-            self.is_order_sent = false;
-            self.day_last_order = closed_candle.date;
-        }
-
-        if self.is_order_sent {
-            return TradeAction::do_nothing();
-        }
-
-        // Starting Day
-        match self.signal {
-            None => {
-                return TradeAction::do_nothing()
-            }
-            Some(Signal::LONG) => {
-                assert_ne!(self.entry_price, 0.0);
-                if !self.order_active && closed_candle.close >=  self.entry_price{
-                    self.order_active = true;
-                    self.is_order_sent = true;
-                    return TradeAction::send_order(MarketLong)
-                }
-            }
-            Some(Signal::SHORT) => {
-                assert_ne!(self.entry_price, 0.0);
-                if !self.order_active  && closed_candle.close <=  self.entry_price{
-                    self.order_active = true;
-                    self.is_order_sent = true;
-                    return TradeAction::send_order(MarketShort)
                 }
             }
         }
@@ -144,8 +205,8 @@ impl CandlestickTradingStrategy for ClassicReversalMomentumCandlestickStrategy {
             order_active: false,
             is_order_sent: false,
             day_last_order: -1,
-            stop_loss_percentage: 0.04,
-            take_profit_percentage: 0.02
+            stop_loss_percentage: 0.02,
+            take_profit_percentage: 0.04
         }
     }
 
@@ -653,7 +714,7 @@ mod classic_reversal_momentum_strategy_tests {
 
 
         classic_strategy.order_active = true;
-        current_candlestick.close = last_day_candlestick[0].low - last_day_candlestick[0].low*0.01; // 1% profit
+        current_candlestick.close = last_day_candlestick[0].low - last_day_candlestick[0].low*(classic_strategy.take_profit_percentage-0.01);
 
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
@@ -703,7 +764,7 @@ mod classic_reversal_momentum_strategy_tests {
 
 
         classic_strategy.order_active = true;
-        current_candlestick.close = last_day_candlestick[0].low - last_day_candlestick[0].low*0.03; // 3% profit
+        current_candlestick.close = last_day_candlestick[0].low - last_day_candlestick[0].low*(classic_strategy.take_profit_percentage+0.01);
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
         assert_eq!(classic_strategy.order_active, true);
@@ -752,7 +813,7 @@ mod classic_reversal_momentum_strategy_tests {
 
 
         classic_strategy.order_active = true;
-        current_candlestick.close = last_day_candlestick[0].low + last_day_candlestick[0].low*0.05; // 5% Loss
+        current_candlestick.close = last_day_candlestick[0].low + last_day_candlestick[0].low*(classic_strategy.stop_loss_percentage+0.01);
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
         assert_eq!(classic_strategy.order_active, true);
@@ -895,7 +956,7 @@ mod classic_reversal_momentum_strategy_tests {
 
 
         classic_strategy.order_active = true;
-        current_candlestick.close = last_day_candlestick[0].high + last_day_candlestick[0].high*0.01; // 1% profit
+        current_candlestick.close = last_day_candlestick[0].high + last_day_candlestick[0].high*(classic_strategy.take_profit_percentage-0.01); // 1% profit
 
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::LONG));

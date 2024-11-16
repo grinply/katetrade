@@ -68,8 +68,8 @@ pub struct CandlestickConfiguration {
 pub fn list_all_candlestick_strategies() -> Vec<impl CandlestickTradingStrategy+Sized> {
     vec![
         // DummyCandlestickStrategy::new(),
-        // ReversalMomentumCandlestickStrategy::new()
-        ClassicReversalMomentumCandlestickStrategy::new()
+        ReversalMomentumCandlestickStrategy::new()
+        // ClassicReversalMomentumCandlestickStrategy::new()
     ]
 }
 
