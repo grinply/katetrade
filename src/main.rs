@@ -4,6 +4,7 @@ mod models;
 mod services;
 mod strategies;
 mod utils;
+mod statistics;
 
 use std::io::{stdin};
 use std::path::PathBuf;
