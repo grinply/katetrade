@@ -16,7 +16,7 @@ pub struct Asset {
 }
 
 impl Asset {
-    pub(crate) fn new(ticker: &str,
+    fn new(ticker: &str,
                       market: Market,
                       exchange: Exchange,
                       margin_per_contract: f64,
