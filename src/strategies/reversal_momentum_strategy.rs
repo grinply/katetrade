@@ -57,7 +57,7 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
 
         if !self.signal.is_none() {
             self.entry_price_range = get_entry_price(last_candlestick, self.signal.as_ref().unwrap(),self.entry_price_range_percentage, true);
-            println!("Day {} with Signal LONG {} and EntryPrice {} to {}", last_candlestick.date, self.signal == Some(Signal::LONG), self.entry_price_range.0, self.entry_price_range.1);
+            println!("DEBUG: Day {} with Signal LONG {}", last_candlestick.date, self.signal == Some(Signal::LONG));
         }
 
 
@@ -100,6 +100,7 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
                             if self.last_buy_price <= closed_candle.close {
                                 self.order_active = false;
                                 self.last_buy_price = 0.0;
+                                println!("DEBUG: SELL LONG With profit");
                                 return TradeAction::send_order(MarketShort)
                             }
                         },
@@ -107,6 +108,7 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
                             if self.last_buy_price >= closed_candle.close {
                                 self.order_active = false;
                                 self.last_buy_price = 0.0;
+                                println!("DEBUG: SELL SHORT With profit");
                                 return TradeAction::send_order(MarketLong)
                             }
                         }
@@ -116,11 +118,13 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
                         Signal::LONG => {
                             self.order_active = false;
                             self.last_buy_price = 0.0;
+                            println!("DEBUG: SELL LONG END OF DAY");
                             TradeAction::send_order(MarketShort)
                         },
                         Signal::SHORT => {
                             self.order_active = false;
                             self.last_buy_price = 0.0;
+                            println!("DEBUG: SELL SHORT END OF DAY");
                             TradeAction::send_order(MarketLong)
                         }
                     }
@@ -138,12 +142,12 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
                 if take_stop_signal.0 || take_stop_signal.1 {
 
                     take_stop_signal.0.then(|| {
-                        println!("Take profit at: {} {}", closed_candle.date, closed_candle.close_time);
+                        println!("DEBUG: Take profit at: {} {}", closed_candle.date, closed_candle.close_time);
                         assert_eq!(take_stop_signal.1, false);
                     });
 
                     take_stop_signal.1.then(|| {
-                        println!("Stop loss at: {} {}", closed_candle.date, closed_candle.close_time);
+                        println!("DEBUG: Stop loss at: {} {}", closed_candle.date, closed_candle.close_time);
                         assert_eq!(take_stop_signal.0, false);
                     });
 
@@ -173,7 +177,7 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
                         if closed_candle.close >= self.entry_price_range.0 && closed_candle.close <= self.entry_price_range.1 {
                             self.order_active = true;
                             self.last_buy_price = closed_candle.close;
-                            println!("Day {} Time {} Price Reached {}, Bought at was {}", closed_candle.date, closed_candle.close_time, closed_candle.close, self.last_buy_price );
+                            println!("DEBUG: BUY LONG on Day: {} Time: {} Price Reached: {}", closed_candle.date, closed_candle.close_time, closed_candle.close );
                             return TradeAction::send_order(MarketLong)
                         }
                     }
@@ -182,7 +186,7 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
                         if closed_candle.close <=  self.entry_price_range.0 && closed_candle.close >= self.entry_price_range.1 {
                             self.order_active = true;
                             self.last_buy_price = closed_candle.close;
-                            println!("Day {} Time {} Price Reached {}, Bought at was {}", closed_candle.date, closed_candle.close_time, closed_candle.close, self.last_buy_price );
+                            println!("DEBUG: BUY SHORT on Day: {} Time: {} Price Reached: {}", closed_candle.date, closed_candle.close_time, closed_candle.close );
                             return TradeAction::send_order(MarketShort)
                         }
                     }
@@ -348,7 +352,7 @@ impl CandlestickTradingStrategy for ClassicReversalMomentumCandlestickStrategy {
                         if closed_candle.close >= self.entry_price_range.0 && closed_candle.close <= self.entry_price_range.1 {
                             self.order_active = true;
                             self.last_buy_price = closed_candle.close;
-                            println!("Day {} Time {} Price Reached {}, Bought at was {}", closed_candle.date, closed_candle.close_time, closed_candle.close, self.last_buy_price );
+                            println!("DEBUG: Day {} Time {} Price Reached {}, Bought at was {}", closed_candle.date, closed_candle.close_time, closed_candle.close, self.last_buy_price );
                             return TradeAction::send_order(MarketLong)
                         }
                     }
@@ -357,7 +361,7 @@ impl CandlestickTradingStrategy for ClassicReversalMomentumCandlestickStrategy {
                         if closed_candle.close <=  self.entry_price_range.0 && closed_candle.close >= self.entry_price_range.1 {
                             self.order_active = true;
                             self.last_buy_price = closed_candle.close;
-                            println!("Day {} Time {} Price Reached {}, Bought at was {}", closed_candle.date, closed_candle.close_time, closed_candle.close, self.last_buy_price );
+                            println!("DEBUG: Day {} Time {} Price Reached {}, Bought at was {}", closed_candle.date, closed_candle.close_time, closed_candle.close, self.last_buy_price );
                             return TradeAction::send_order(MarketShort)
                         }
                     }
@@ -399,9 +403,11 @@ fn get_entry_price(candlestick: &Candlestick, signal: &Signal, entry_price_range
         }
         Signal::SHORT => {
             if is_updated_version {
-                (candlestick.high*((1.0 - entry_price_range_percentage.0).abs()),candlestick.high*((1.0 - entry_price_range_percentage.1).abs()))
+                (candlestick.high - (entry_price_range_percentage.0 - 1.0)*candlestick.high,
+                candlestick.high - (entry_price_range_percentage.1 - 1.0)*candlestick.high)
             } else {
-                (candlestick.low*((1.0 - entry_price_range_percentage.0).abs()),candlestick.low*((1.0 - entry_price_range_percentage.1).abs()))
+                (candlestick.low - (entry_price_range_percentage.0 - 1.0)*candlestick.low,
+                 candlestick.low - (entry_price_range_percentage.1 - 1.0)*candlestick.low)
             }
         }
     }
@@ -1255,7 +1261,7 @@ mod reversal_momentum_common_tests {
             is_closed: false,
             trades: 60,
         };
-        assert_eq!(get_entry_price(last_candle, &Signal::LONG, (0.9, 1.1),false), (2.7,3.3))
+        assert_eq!(get_entry_price(last_candle, &Signal::LONG, (0.9, 1.1),false), (2.7,3.3000000000000003))
     }
 
     #[test]
@@ -1272,7 +1278,7 @@ mod reversal_momentum_common_tests {
             is_closed: false,
             trades: 60,
         };
-        assert_eq!(get_entry_price(last_candle, &Signal::SHORT, (0.9, 1.1),true), (2.7,3.3))
+        assert_eq!(get_entry_price(last_candle, &Signal::SHORT, (0.9, 1.1),true), (3.3, 2.6999999999999997))
     }
 
     #[test]
@@ -1289,7 +1295,7 @@ mod reversal_momentum_common_tests {
             is_closed: false,
             trades: 60,
         };
-        assert_eq!(get_entry_price(last_candle, &Signal::SHORT,(0.9,1.1), false), (0.9,1.1))
+        assert_eq!(get_entry_price(last_candle, &Signal::SHORT,(0.9,1.1), false), (1.1, 0.8999999999999999))
     }
 
     #[test]
