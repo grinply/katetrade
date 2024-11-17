@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use strum_macros::Display;
 use crate::models::action::OrderAction::{MarketLong, MarketShort};
 use crate::models::action::{TradeAction};
 use crate::models::asset::Asset;
@@ -31,10 +30,10 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
         ReversalMomentumCandlestickStrategy{
             signal: None,
             order_active: false,
-            take_profit_percentage: 0.02,
+            take_profit_percentage: 0.04,
             stop_loss_percentage: 0.04,
+            entry_price_range_percentage: (1.0, 1.01),
             entry_price_range: (0.0, 0.0),
-            entry_price_range_percentage: (1.0, 1.1),
             last_buy_price: 0.0
         }
     }
@@ -100,7 +99,7 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
                             if self.last_buy_price <= closed_candle.close {
                                 self.order_active = false;
                                 self.last_buy_price = 0.0;
-                                println!("DEBUG: SELL LONG With profit");
+                                println!("DEBUG: SELL LONG With profit, {}, time {}", closed_candle.close, closed_candle.close_time);
                                 return TradeAction::send_order(MarketShort)
                             }
                         },
@@ -108,7 +107,7 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
                             if self.last_buy_price >= closed_candle.close {
                                 self.order_active = false;
                                 self.last_buy_price = 0.0;
-                                println!("DEBUG: SELL SHORT With profit");
+                                println!("DEBUG: SELL SHORT With profit, {} time {}", closed_candle.close, closed_candle.close_time);
                                 return TradeAction::send_order(MarketLong)
                             }
                         }
@@ -118,13 +117,13 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
                         Signal::LONG => {
                             self.order_active = false;
                             self.last_buy_price = 0.0;
-                            println!("DEBUG: SELL LONG END OF DAY");
+                            println!("DEBUG: SELL LONG END OF DAY WITH {} time {}", closed_candle.close, closed_candle.close_time);
                             TradeAction::send_order(MarketShort)
                         },
                         Signal::SHORT => {
                             self.order_active = false;
                             self.last_buy_price = 0.0;
-                            println!("DEBUG: SELL SHORT END OF DAY");
+                            println!("DEBUG: SELL SHORT END OF DAY WITH {} time {}", closed_candle.close, closed_candle.close_time);
                             TradeAction::send_order(MarketLong)
                         }
                     }
@@ -215,10 +214,10 @@ impl CandlestickTradingStrategy for ClassicReversalMomentumCandlestickStrategy {
         ClassicReversalMomentumCandlestickStrategy{
             signal: None,
             order_active: false,
-            stop_loss_percentage: 0.02,
+            stop_loss_percentage: 0.04,
             take_profit_percentage: 0.04,
             entry_price_range: (0.0, 0.0),
-            entry_price_range_percentage: (1.0, 1.1),
+            entry_price_range_percentage: (1.0, 1.01),
             last_buy_price: 0.0
         }
     }
