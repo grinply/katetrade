@@ -581,7 +581,6 @@ fn signal_calculation(last_but_one_candlestick: &Candlestick, last_candlestick: 
     // Order Active
     // Current Candle do not have profit
 #[cfg(test)]
-//TODO: Revisar testes após adição/alteração do entry_price_range
 mod classic_reversal_momentum_strategy_tests {
     use crate::models::exchange::Exchange;
     use crate::models::market::Market;
@@ -590,6 +589,9 @@ mod classic_reversal_momentum_strategy_tests {
     #[test]
     fn test_classic_reversal_momentum_candlestick_strategy_init_trading_days() {
         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+        classic_strategy.take_profit_percentage= 0.04;
+        classic_strategy.stop_loss_percentage= 0.04;
+        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
         let initial_candlesticks = vec![
             Candlestick { date: 20231110, open: 130821.754224, high: 132715.797145, low: 130758.852429, close: 132541.069938, volume: 1500.0, start_time: 93000, close_time: 93100, is_closed: true, trades: 300 },
@@ -603,11 +605,14 @@ mod classic_reversal_momentum_strategy_tests {
 
         assert_eq!(aggregated_candle.len(), 1);
 
-        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         classic_strategy.init_trading_day(&asset, &*initial_candlesticks);
 
+        let expected_low = 130758.852429;
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        assert_eq!(classic_strategy.entry_price_range, (aggregated_candle[0].low, aggregated_candle[0].low*1.1));
+        assert_eq!(aggregated_candle.get(0).unwrap().low, expected_low);
+
+        assert_eq!(classic_strategy.entry_price_range, (130758.852429, 129451.26390471001));
     }
     #[test]
     // Scenario 1.0
@@ -630,7 +635,7 @@ mod classic_reversal_momentum_strategy_tests {
             open: 102.0,
             high: 103.0,
             low: 96.0,
-            close: 97.0,
+            close: 97.5,
             volume: 3000.0,
             start_time: 9_33_00,
             close_time: 9_34_00,
@@ -639,12 +644,15 @@ mod classic_reversal_momentum_strategy_tests {
         };
 
         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+        classic_strategy.take_profit_percentage= 0.04;
+        classic_strategy.stop_loss_percentage= 0.04;
+        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
-        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
 
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        assert_eq!(classic_strategy.entry_price_range, (last_day_candlestick[0].low, last_day_candlestick[0].low*1.1));
+        assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
 
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
@@ -686,17 +694,20 @@ mod classic_reversal_momentum_strategy_tests {
         };
 
         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+        classic_strategy.take_profit_percentage= 0.04;
+        classic_strategy.stop_loss_percentage= 0.04;
+        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
-        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
 
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        // assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].low);
+        assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
 
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
         assert_eq!(classic_strategy.order_active, false);
-        // assert!(current_candlestick.close > classic_strategy.entry_price);
+        assert!(current_candlestick.close > classic_strategy.entry_price_range.0);
 
         // Run Scenario 1.1
         let scenario1_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
@@ -733,21 +744,24 @@ mod classic_reversal_momentum_strategy_tests {
         };
 
         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+        classic_strategy.take_profit_percentage= 0.04;
+        classic_strategy.stop_loss_percentage= 0.04;
+        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
-        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
 
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        // assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].low);
+        assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
 
 
         classic_strategy.order_active = true;
         current_candlestick.close = last_day_candlestick[0].low - last_day_candlestick[0].low*(classic_strategy.take_profit_percentage-0.01);
-
+        classic_strategy.last_buy_price = current_candlestick.close;
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
         assert_eq!(classic_strategy.order_active, true);
-        // assert!(current_candlestick.close < classic_strategy.entry_price);
+        assert!(current_candlestick.close < classic_strategy.entry_price_range.0);
 
         let scenario2_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
         assert_eq!(scenario2_short_trade_action.enter_market_action, None);
@@ -783,20 +797,27 @@ mod classic_reversal_momentum_strategy_tests {
         };
 
         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+        classic_strategy.take_profit_percentage= 0.04;
+        classic_strategy.stop_loss_percentage= 0.04;
+        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
-        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
 
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        // assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].low);
+        assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
 
 
         classic_strategy.order_active = true;
         current_candlestick.close = last_day_candlestick[0].low - last_day_candlestick[0].low*(classic_strategy.take_profit_percentage+0.01);
+        classic_strategy.last_buy_price = classic_strategy.entry_price_range.0;
+
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
         assert_eq!(classic_strategy.order_active, true);
-        // assert!(get_current_profit(&Signal::SHORT, &classic_strategy.entry_price, &current_candlestick.close) >= classic_strategy.take_profit_percentage);
+
+        let current_profit = get_current_profit(&Signal::SHORT, &classic_strategy.last_buy_price, &current_candlestick.close);
+        assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (true, false));
 
         let scenario2_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
         assert_eq!(scenario2_short_trade_action.enter_market_action, Some(MarketLong));
@@ -832,20 +853,27 @@ mod classic_reversal_momentum_strategy_tests {
         };
 
         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+        classic_strategy.take_profit_percentage= 0.04;
+        classic_strategy.stop_loss_percentage= 0.04;
+        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
-        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
 
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        // assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].low);
+        assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
 
 
         classic_strategy.order_active = true;
         current_candlestick.close = last_day_candlestick[0].low + last_day_candlestick[0].low*(classic_strategy.stop_loss_percentage+0.01);
+        classic_strategy.last_buy_price = last_day_candlestick[0].low;
+
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
         assert_eq!(classic_strategy.order_active, true);
-        // assert!(get_current_profit(&Signal::SHORT, &classic_strategy.entry_price, &current_candlestick.close) <= classic_strategy.stop_loss_percentage);
+
+        let current_profit = get_current_profit(&Signal::SHORT, &classic_strategy.last_buy_price, &current_candlestick.close);
+        assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (false, true));
 
         let scenario2_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
         assert_eq!(scenario2_short_trade_action.enter_market_action, Some(MarketLong));
@@ -881,17 +909,21 @@ mod classic_reversal_momentum_strategy_tests {
         };
 
         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+        classic_strategy.take_profit_percentage= 0.04;
+        classic_strategy.stop_loss_percentage= 0.04;
+        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
-        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
 
         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        // assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].high);
+        assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
 
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
         assert_eq!(classic_strategy.order_active, false);
-        // assert!(current_candlestick.close >= classic_strategy.entry_price);
+
+        assert!(current_candlestick.close >= classic_strategy.entry_price_range.0 && current_candlestick.close <= classic_strategy.entry_price_range.1);
 
         // Run Scenario 3.0
         let scenario3_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
@@ -928,17 +960,20 @@ mod classic_reversal_momentum_strategy_tests {
         };
 
         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+        classic_strategy.take_profit_percentage= 0.04;
+        classic_strategy.stop_loss_percentage= 0.04;
+        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
-        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
 
         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        // assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].high);
+        assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
 
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
         assert_eq!(classic_strategy.order_active, false);
-        // assert!(current_candlestick.close < classic_strategy.entry_price);
+        assert!(current_candlestick.close <= classic_strategy.entry_price_range.0 || current_candlestick.close >= classic_strategy.entry_price_range.1);
 
         // Run Scenario 3.1
         let scenario3_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
@@ -975,21 +1010,27 @@ mod classic_reversal_momentum_strategy_tests {
         };
 
         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+        classic_strategy.take_profit_percentage= 0.04;
+        classic_strategy.stop_loss_percentage= 0.04;
+        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
-        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
 
         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        // assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].high);
+        assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
 
 
         classic_strategy.order_active = true;
         current_candlestick.close = last_day_candlestick[0].high + last_day_candlestick[0].high*(classic_strategy.take_profit_percentage-0.01); // 1% profit
+        classic_strategy.last_buy_price = classic_strategy.entry_price_range.0;
 
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
         assert_eq!(classic_strategy.order_active, true);
-        // assert!(current_candlestick.close > classic_strategy.entry_price);
+
+        let current_profit = get_current_profit(&Signal::LONG, &classic_strategy.last_buy_price, &current_candlestick.close);
+        assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (false, false));
 
         let scenario4_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
         assert_eq!(scenario4_short_trade_action.enter_market_action, None);
@@ -1025,21 +1066,27 @@ mod classic_reversal_momentum_strategy_tests {
         };
 
         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+        classic_strategy.take_profit_percentage= 0.04;
+        classic_strategy.stop_loss_percentage= 0.04;
+        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
-        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
 
         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        // assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].high);
+        assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
 
 
         classic_strategy.order_active = true;
-        current_candlestick.close = last_day_candlestick[0].high + last_day_candlestick[0].high*0.04; // 4% profit
+        classic_strategy.last_buy_price = last_day_candlestick[0].high;
+        current_candlestick.close = last_day_candlestick[0].high + last_day_candlestick[0].high*0.05; // 4% profit
 
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
         assert_eq!(classic_strategy.order_active, true);
-        // assert!(get_current_profit(&Signal::LONG, &classic_strategy.entry_price, &current_candlestick.close) > classic_strategy.take_profit_percentage);
+
+        let current_profit = get_current_profit(&Signal::LONG, &classic_strategy.last_buy_price, &current_candlestick.close);
+        assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (true, false));
 
         let scenario4_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
         assert_eq!(scenario4_short_trade_action.enter_market_action, Some(MarketShort));
@@ -1075,21 +1122,25 @@ mod classic_reversal_momentum_strategy_tests {
         };
 
         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+        classic_strategy.take_profit_percentage= 0.04;
+        classic_strategy.stop_loss_percentage= 0.04;
+        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
-        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
 
         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        // assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].high);
+        assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
 
 
         classic_strategy.order_active = true;
         current_candlestick.close = last_day_candlestick[0].high - last_day_candlestick[0].high*0.041; // 4% loss
-
+        classic_strategy.last_buy_price = last_day_candlestick[0].high;
         assert!(current_candlestick.close_time < 17_00_00);
         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
         assert_eq!(classic_strategy.order_active, true);
-        // assert!(get_current_profit(&Signal::LONG, &classic_strategy.entry_price, &current_candlestick.close) <= classic_strategy.stop_loss_percentage);
+        let current_profit = get_current_profit(&Signal::LONG, &classic_strategy.last_buy_price, &current_candlestick.close);
+        assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (false, true));
 
         let scenario4_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
         assert_eq!(scenario4_short_trade_action.enter_market_action, Some(MarketShort));
@@ -1117,7 +1168,7 @@ mod classic_reversal_momentum_strategy_tests {
             open: 102.0,
             high: 103.0,
             low: 96.0,
-            close: 97.0,
+            close: 97.5,
             volume: 3000.0,
             start_time: 17_30_00,
             close_time: 17_30_01,
@@ -1126,17 +1177,22 @@ mod classic_reversal_momentum_strategy_tests {
         };
 
         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+        classic_strategy.take_profit_percentage= 0.04;
+        classic_strategy.stop_loss_percentage= 0.04;
+        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
-        let asset = Asset::new("WIN", Market::FUTURES, Exchange::B3, 200.0 ,5.0, 0.2);
-        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3);
+
+        classic_strategy.init_trading_day(&asset.as_ref().unwrap(), &*last_day_candlestick);
 
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        // assert_eq!(classic_strategy.entry_price, last_day_candlestick[0].low);
+        assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
 
         assert!(current_candlestick.close_time > 17_00_00 && current_candlestick.close_time < 17_50_00);
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
         assert_eq!(classic_strategy.order_active, false);
-        // assert!(current_candlestick.close < classic_strategy.entry_price);
+        assert!(current_candlestick.close < classic_strategy.entry_price_range.0);
+        assert!(current_candlestick.close > classic_strategy.entry_price_range.1);
 
         // Short Reached Price
         let scenario5_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
@@ -1144,8 +1200,8 @@ mod classic_reversal_momentum_strategy_tests {
         assert_eq!(classic_strategy.order_active, false);
 
         // Short  Do not Reached Price
-        // current_candlestick.close = classic_strategy.entry_price + 1.0;
-        // assert!(current_candlestick.close > classic_strategy.entry_price);
+        current_candlestick.close = classic_strategy.entry_price_range.0 + 1.0;
+        assert!(current_candlestick.close > classic_strategy.entry_price_range.0);
 
         let scenario5_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
         assert_eq!(scenario5_short_trade_action.enter_market_action, None);
@@ -1153,10 +1209,10 @@ mod classic_reversal_momentum_strategy_tests {
 
         // Long Reached Price
         classic_strategy.signal = Some(Signal::LONG);
-        // classic_strategy.entry_price = last_day_candlestick[0].high;
+        classic_strategy.entry_price_range.0 = last_day_candlestick[0].high;
 
         current_candlestick.close = last_day_candlestick[0].high + 1.0;
-        // assert!(current_candlestick.close > classic_strategy.entry_price);
+        assert!(current_candlestick.close > classic_strategy.entry_price_range.0);
 
         let scenario5_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
         assert_eq!(scenario5_long_trade_action.enter_market_action, None);
@@ -1164,10 +1220,10 @@ mod classic_reversal_momentum_strategy_tests {
 
         // Long do not Reached Price
         classic_strategy.signal = Some(Signal::LONG);
-        // classic_strategy.entry_price = last_day_candlestick[0].high;
+        classic_strategy.entry_price_range.0 = last_day_candlestick[0].high;
 
         current_candlestick.close = last_day_candlestick[0].high - 1.0;
-        // assert!(current_candlestick.close < classic_strategy.entry_price);
+        assert!(current_candlestick.close < classic_strategy.entry_price_range.0);
 
         let scenario5_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
         assert_eq!(scenario5_long_trade_action.enter_market_action, None);
