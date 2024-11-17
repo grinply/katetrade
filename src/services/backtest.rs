@@ -856,11 +856,9 @@ impl<'a> TradingBacktester<'a> {
 
 
 fn get_daily_percentage_returns(liquid_profit_per_day: Vec<f64>, daily_start_balances: Vec<f64>) -> Vec<f64> {
-    let mut daily_percentage_returns = vec![];
-    for (returns_current_day, start_balance_current_day) in liquid_profit_per_day.iter().zip(daily_start_balances.iter()) {
-        daily_percentage_returns.push(100.0 * (returns_current_day / start_balance_current_day));
-    }
-    daily_percentage_returns
+    liquid_profit_per_day.iter().zip(daily_start_balances.iter())
+        .map(|(returns_current_day, start_balance_current_day)| 100.0 * (*returns_current_day / *start_balance_current_day))
+        .collect()
 }
 
 fn download_binary_trades_file(
