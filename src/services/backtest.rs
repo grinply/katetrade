@@ -19,6 +19,7 @@ use crate::models::side::Side;
 use rayon::prelude::*;
 use crate::models::market::Market;
 use crate::models::trade::TradeFile;
+use crate::statistics;
 
 const INITIAL_BALANCE: f64 = 10_000.0;
 const MINIMUM_BALANCE: f64 = 800.0;
@@ -816,21 +817,13 @@ impl<'a> TradingBacktester<'a> {
             }
         }
 
-        // calculate the sharp ratio
-        let mut sum_excess_return_percentage = 0.0;
-        let mut daily_excess_return_percentage_list: Vec<f64> = vec![];
-        for (index, daily_return) in enumerate(&liquid_profit_per_day) {
-            let balance_start_of_day = daily_start_balance.get(index).unwrap();
-            let daily_excess_return_percentage = 100.0* (daily_return / balance_start_of_day) - DAILY_RISK_FREE_RATE;
-            sum_excess_return_percentage += daily_excess_return_percentage;
-            daily_excess_return_percentage_list.push(daily_excess_return_percentage);
-        }
-        let avg_excess_return_percentage = sum_excess_return_percentage / liquid_profit_per_day.len() as f64;
-        let variance = daily_excess_return_percentage_list.iter()
-            .fold(0.0, |sum, daily_excess_return| sum + (daily_excess_return - avg_excess_return_percentage).powf(2.0))
-            / (daily_excess_return_percentage_list.len() - 1) as f64;
-        let standard_deviation = avg_excess_return_percentage / variance.sqrt();
-        let sharp_ratio = avg_excess_return_percentage / standard_deviation;
+        let daily_percentage_returns = get_daily_percentage_returns(liquid_profit_per_day, daily_start_balance);
+        let sum_daily_excess_return_percentage: f64 = daily_percentage_returns.iter()
+            .map(|daily_percentage_return| *daily_percentage_return - DAILY_RISK_FREE_RATE)
+            .sum();
+        let avg_daily_excess_return_percentage = sum_daily_excess_return_percentage / daily_percentage_returns.len() as f64;
+        let standard_deviation_percentage_returns = statistics::standard_deviation(daily_percentage_returns);
+        let sharp_ratio = avg_daily_excess_return_percentage / standard_deviation_percentage_returns;
 
         BacktestMetrics {
             final_balance: event_handler.current_balance,
@@ -861,6 +854,14 @@ impl<'a> TradingBacktester<'a> {
     }
 }
 
+
+fn get_daily_percentage_returns(liquid_profit_per_day: Vec<f64>, daily_start_balances: Vec<f64>) -> Vec<f64> {
+    let mut daily_percentage_returns = vec![];
+    for (returns_current_day, start_balance_current_day) in liquid_profit_per_day.iter().zip(daily_start_balances.iter()) {
+        daily_percentage_returns.push(100.0 * (returns_current_day / start_balance_current_day));
+    }
+    daily_percentage_returns
+}
 
 fn download_binary_trades_file(
     aws_client: Arc<AwsClient>,
@@ -903,4 +904,21 @@ fn parse_candles_from_file(
     }
 
     Ok(candlesticks)
+}
+
+#[cfg(test)]
+mod test {
+
+    use super::*;
+
+    #[test]
+    fn should_calculate_daily_return_percentages_correctly(){
+        let start_of_day_balances = vec![10_000.0, 10_132.0, 9279.0];
+        let result_each_day = vec![132.0, -853.0, 2714.0];
+
+        let expected_percentage_returns: Vec<f64> = vec![1.32, -8.418870904066326, 29.248841469985994];
+        let percentage_returns = get_daily_percentage_returns(result_each_day, start_of_day_balances);
+        assert_eq!(expected_percentage_returns, percentage_returns);
+    }
+
 }
