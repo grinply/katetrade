@@ -28,7 +28,7 @@ pub struct TradeRuleStrategy {
 
 impl TradeRuleStrategy {
     pub fn decode(chromosome: &[f32]) -> Self {
-        assert_eq!(18, chromosome.len(), "the chromosome must have length 36, but it has {}", chromosome.len());
+        assert_eq!(36, chromosome.len(), "the chromosome must have length 36, but it has {}", chromosome.len());
 
         for i in 0..chromosome.len() {
             if chromosome[i] < 0.0 || chromosome[i] > 1.0 {
@@ -39,8 +39,7 @@ impl TradeRuleStrategy {
         TradeRuleStrategy {
             quantity_to_trade: value_on_range((1.0, 10.0), chromosome[0] as f64)  as u8,
             long_rule: TradeRule::new(Side::BUY, &chromosome[1..=17]),
-            //short_rule: TradeRule::new(Side::SELL, &chromosome[18..=35]),
-            short_rule: TradeRule::new(Side::SELL, &chromosome[1..=17]),
+            short_rule: TradeRule::new(Side::SELL, &chromosome[18..=35]),
             is_long_position_open: false,
             is_short_position_open: false,
             take_profit_price: 0.0,
@@ -80,7 +79,7 @@ impl CandlestickTradingStrategy for TradeRuleStrategy {
         }
 
         let start_long = self.long_rule.evaluate(new_candle);
-        //let start_short = self.short_rule.evaluate(new_candle);
+        let start_short = self.short_rule.evaluate(new_candle);
 
         // close long position
         if self.is_long_position_open {
@@ -95,21 +94,21 @@ impl CandlestickTradingStrategy for TradeRuleStrategy {
         }
 
         // close short position
-        // if self.is_short_position_open {
-        //     return if new_candle.start_time >= 17_25_00 ||
-        //         self.take_profit_price >= new_candle.low ||
-        //         self.stop_loss_price <= new_candle.high {
-        //         self.is_short_position_open = false;
-        //         TradeAction::send_order(OrderAction::MarketLong)
-        //     }else{
-        //         TradeAction::do_nothing()
-        //     };
-        // }
+        if self.is_short_position_open {
+            return if new_candle.start_time >= 17_25_00 ||
+                self.take_profit_price >= new_candle.low ||
+                self.stop_loss_price <= new_candle.high {
+                self.is_short_position_open = false;
+                TradeAction::send_order(OrderAction::MarketLong)
+            }else{
+                TradeAction::do_nothing()
+            };
+        }
 
         // if we have a signal for both sides don't do anything
-        // if start_long && start_short {
-        //     return TradeAction::do_nothing();
-        // }
+        if start_long && start_short {
+            return TradeAction::do_nothing();
+        }
 
         // open long position
         if start_long {
