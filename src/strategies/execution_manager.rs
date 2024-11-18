@@ -241,6 +241,7 @@ impl OrderExecutor for LiveOrderExecutor {
                     send_limit_order(self.ticker.as_str(), self.market, Side::BUY, price_requested, 1, self.account_id.as_str(), self.strategy_id.as_str()),
                 Some(OrderAction::LimitShort(price_requested)) => self.client.
                     send_limit_order(self.ticker.as_str(), self.market, Side::SELL, price_requested, 1, self.account_id.as_str(), self.strategy_id.as_str()),
+                Some(OrderAction::Abort) => panic!("received an abort command we should understand why"),
                 None => unreachable!()
             };
 

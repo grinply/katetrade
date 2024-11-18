@@ -4,3 +4,4 @@ pub mod configuration;
 pub mod visualization;
 pub mod backtest;
 pub mod aws;
+pub(crate) mod optimization;

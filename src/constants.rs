@@ -21,3 +21,4 @@ pub const B3: &str = "B3";
 pub const TIME: &str = "TIME";
 pub const TICK: &str = "TICK";
 pub const VOLUME: &str = "VOLUME";
+pub const CHROMOSOME_SIZE_TRADE_RULE: usize = 18;

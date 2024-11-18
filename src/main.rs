@@ -4,7 +4,7 @@ mod models;
 mod services;
 mod strategies;
 mod utils;
-mod statistics;
+mod indicators;
 
 use std::io::{stdin};
 use std::path::PathBuf;
@@ -19,13 +19,16 @@ use std::time::Instant;
 use rayon::iter::IntoParallelIterator;
 use simple_bar::ProgressBar;
 use rayon::iter::ParallelIterator;
+use crate::constants::CHROMOSOME_SIZE_TRADE_RULE;
 use crate::models::asset::Asset;
 use crate::models::candlestick::CandlestickType;
 use crate::models::market::Market;
 use crate::models::side::Side;
 use crate::models::trade;
 use crate::services::{backtest, configuration};
+use crate::services::backtest::TradingBacktester;
 use crate::services::configuration::{load_configuration, KateConfiguration};
+use crate::services::optimization::brkga::{BrkgaConfig, FitnessExecutor, BRKGA};
 use crate::strategies::execution_manager::{LiveStrategyExecutor, ExecutionRequest};
 use crate::strategies::strategy::{get_candlestick_strategy_by_name, CandlestickConfiguration, StrategyInputData};
 
@@ -162,6 +165,47 @@ fn cli() -> Command {
                         .about("evaluate the network connection with market connector (service responsible for processing orders and providing live market data")
                 )
         )
+
+        .subcommand(
+            Command::new("train")
+                .about("Training a population of trade rule strategy")
+        )
+}
+
+fn train_trade_rule_command(sub_matches: &ArgMatches) {
+    // BRKGA optimization configuration
+    let fraction_top = 0.1;
+    let fraction_bottom = 0.3;
+    let population_size = 200_000;
+    let max_iterations = 4000;
+    let elitism_rate = 0.6;
+    let seed = 1115225;
+
+    // backtester configuration
+    let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+    let start_date = 20150101;
+    let end_date = 20240228;
+    let candle_configuration = CandlestickConfiguration {
+        candle_type: CandlestickType::TIME,
+        candle_input_parameter: 1,
+    };
+
+    let backtest_engine = TradingBacktester::new(
+        asset,
+        start_date,
+        end_date,
+        candle_configuration,
+        true,
+    ).unwrap();
+
+    let mut brkga_evolutionary_optimizer = BRKGA::new(
+        seed,
+        CHROMOSOME_SIZE_TRADE_RULE,
+        (fraction_top, fraction_bottom, population_size, max_iterations, elitism_rate),
+        FitnessExecutor::new(backtest_engine)
+    );
+
+    brkga_evolutionary_optimizer.run()
 }
 
 fn parse_file_command(sub_matches: &ArgMatches) {
@@ -264,14 +308,14 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
     let qty_to_trade: u32 = if sub_matches.get_one::<String>("qty_to_trade").is_some() {
         sub_matches.get_one::<String>("qty_to_trade").expect("required")
             .parse().expect("should be a positive number")
-    }else{
+    } else {
         1
     };
 
     let fixed_trade_qty: bool = if sub_matches.get_one::<String>("fixed_trade_qty").is_some() {
         sub_matches.get_one::<String>("fixed_trade_qty").expect("required")
             .parse().expect("should be a boolean value")
-    }else{
+    } else {
         true
     };
 
@@ -523,6 +567,9 @@ fn main() {
                 }
                 _ => unreachable!(),
             }
+        }
+        Some(("train", sub_matches)) => {
+            train_trade_rule_command(sub_matches);
         }
         _ => unreachable!(), // If all subcommands are defined above, anything else is unreachable
     }

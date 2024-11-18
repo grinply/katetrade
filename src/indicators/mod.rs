@@ -1,0 +1,1 @@
+pub mod simple_moving_average;

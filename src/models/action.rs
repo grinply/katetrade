@@ -1,3 +1,5 @@
+use crate::models::action::OrderAction::Abort;
+
 #[derive(Debug, PartialEq)]
 #[allow(unused)]
 pub enum OrderAction {
@@ -5,6 +7,7 @@ pub enum OrderAction {
     MarketShort,    // will execute immediately a short position at the market
     LimitLong(f64), // will send a long limit order to the exchange order book that MAY ( or may not)  be triggered later with the given price
     LimitShort(f64),// will send a short limit order to the exchange order book that MAY ( or may not)  be triggered later with the given price
+    Abort,
 }
 
 #[derive(Debug)]
@@ -50,6 +53,14 @@ impl TradeAction {
     pub fn do_nothing() -> TradeAction{
         TradeAction {
             enter_market_action: None,
+            stop_loss_action: None,
+            take_profit_action: None
+        }
+    }
+
+    pub fn abort() -> TradeAction {
+        TradeAction {
+            enter_market_action: Some(Abort),
             stop_loss_action: None,
             take_profit_action: None
         }

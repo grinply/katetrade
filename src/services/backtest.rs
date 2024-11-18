@@ -13,15 +13,14 @@ use crate::services::aws::AwsClient;
 use crate::services::backtest::TradeEvent::NewCandle;
 use crate::services::configuration::{kate_configuration_directory, S3_BUCKET_HISTORICAL_DATA};
 use crate::strategies::strategy::{CandlestickConfiguration, CandlestickTradingStrategy};
-use crate::utils::date;
+use crate::utils::{date, math};
 use simple_bar::ProgressBar;
 use crate::models::side::Side;
 use rayon::prelude::*;
 use crate::models::market::Market;
 use crate::models::trade::TradeFile;
-use crate::statistics;
 
-const INITIAL_BALANCE: f64 = 10_000.0;
+pub const INITIAL_BALANCE: f64 = 10_000.0;
 const MINIMUM_BALANCE: f64 = 800.0;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
@@ -55,6 +54,8 @@ pub struct BacktestMetrics {
     pub max_win_streak: i32,
     pub max_lose_streak: i32,
     pub max_draw_down_percentage: f64,
+    pub avg_winning_trade: f64,
+    pub avg_losing_trade: f64,
 }
 
 impl Display for BacktestMetrics {
@@ -78,7 +79,8 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Trade Liquid PNL", self.avg_trade_liquid_pnl)
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Winning Trade PNL", self.avg_winning_trade)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Losing Trade PNL", self.avg_losing_trade)
     }
 }
 
@@ -148,6 +150,7 @@ enum TradeEvent<'a> {
     ZeroPosition,
     ScheduleOrderLong(f64),
     ScheduleOrderShort(f64),
+    Abort,
     None,
 }
 
@@ -185,6 +188,7 @@ impl<'a> ExchangeEventHandler<'a> {
             OrderAction::MarketShort => TradeEvent::ExecuteOrderShort,
             OrderAction::LimitLong(price) => TradeEvent::ScheduleOrderLong(price),
             OrderAction::LimitShort(price) => TradeEvent::ScheduleOrderShort(price),
+            OrderAction::Abort => TradeEvent::Abort
         };
         self.events[self.event_index] = order_event;
         self.event_index += 1;
@@ -214,7 +218,11 @@ impl<'a> ExchangeEventHandler<'a> {
                     panic!("operation not allowed");
                     // self.scheduled_orders.push(event);
                 }
-                TradeEvent::None => ()
+                TradeEvent::Abort => {
+                    self.removed_for_lack_of_margin = true;
+                }
+                TradeEvent::None => (),
+
             }
         }
         for index in 0..self.events.len() {
@@ -535,7 +543,7 @@ impl<'a> TradingBacktester<'a> {
         start_date: u32,
         end_date: u32,
         candlestick_configuration: CandlestickConfiguration,
-        sequential_download: bool,
+        no_download: bool,
     ) -> Result<TradingBacktester, anyhow::Error> {
         let start_date = date::convert_to_naive_date(start_date)?;
         let end_date = date::convert_to_naive_date(end_date)?;
@@ -557,7 +565,6 @@ impl<'a> TradingBacktester<'a> {
 
         let mut trading_days = 0;
         let mut files_to_parse: Vec<String> = vec![];
-        let aws_client = Arc::new(AwsClient::new("sa-east-1".to_string())?);
 
         let uppercase_ticker = asset.ticker.to_ascii_uppercase();
         let mut files_to_download: Vec<String> = vec![];
@@ -620,53 +627,41 @@ impl<'a> TradingBacktester<'a> {
                     if binary_trades_file_full_path.exists() {
                         trading_days += 1;
                         files_to_parse.push(binary_trades_file_full_path.to_str().unwrap().to_string());
-                    } else if aws_client.file_exists_on_s3(S3_BUCKET_HISTORICAL_DATA, file_path_on_s3.as_str())? == true {
-                        trading_days += 1;
-                        files_to_download.push(binary_trades_file_name);
-                        files_to_parse.push(binary_trades_file_full_path.to_str().unwrap().to_string());
+                    } else if !no_download {
+                        if AwsClient::new("sa-east-1".to_string())?.file_exists_on_s3(S3_BUCKET_HISTORICAL_DATA, file_path_on_s3.as_str())? == true {
+                            trading_days += 1;
+                            files_to_download.push(binary_trades_file_name);
+                            files_to_parse.push(binary_trades_file_full_path.to_str().unwrap().to_string());
+                        }
                     }
                 }
             }
         }
 
-        if files_to_download.len() > 0 {
-            if !sequential_download {
-                let number_of_threads = rayon::current_num_threads();
-                println!("download in parallel missing files with historical data from aws s3 using {} threads", number_of_threads);
-                let mut bar = ProgressBar::default(files_to_download.len() as u32 + 1, 100, false);
-                bar.update();
-                let download_files_bar = Arc::new(Mutex::new(bar));
-                let values_to_process: Vec<(&String, Arc<Mutex<ProgressBar>>)> = files_to_download.iter().map(|files_to_download| {
-                    (files_to_download, Arc::clone(&download_files_bar))
-                }).collect();
+        if !no_download && files_to_download.len() > 0 {
+            let number_of_threads = rayon::current_num_threads();
+            println!("download in parallel missing files with historical data from aws s3 using {} threads", number_of_threads);
+            let mut bar = ProgressBar::default(files_to_download.len() as u32 + 1, 100, false);
+            bar.update();
+            let download_files_bar = Arc::new(Mutex::new(bar));
+            let values_to_process: Vec<(&String, Arc<Mutex<ProgressBar>>)> = files_to_download.iter().map(|files_to_download| {
+                (files_to_download, Arc::clone(&download_files_bar))
+            }).collect();
 
-                values_to_process.into_par_iter().for_each(|tuple| {
-                    let file_to_download = tuple.0;
-                    let progress_bar = tuple.1;
-                    download_binary_trades_file(
-                        aws_client.clone(),
-                        format!("trades/{}/{}", uppercase_ticker, file_to_download),
-                        history_trades_folder_path.to_str().unwrap().to_string(),
-                        file_to_download.as_str(),
-                    ).expect(format!("failed to download file {}", file_to_download).as_str());
+            let aws_client = Arc::new(AwsClient::new("sa-east-1".to_string())?);
+            values_to_process.into_par_iter().for_each(|tuple| {
+                let file_to_download = tuple.0;
+                let progress_bar = tuple.1;
+                download_binary_trades_file(
+                    aws_client.clone(),
+                    format!("trades/{}/{}", uppercase_ticker, file_to_download),
+                    history_trades_folder_path.to_str().unwrap().to_string(),
+                    file_to_download.as_str(),
+                ).expect(format!("failed to download file {}", file_to_download).as_str());
 
-                    let mut download_progress_bar = progress_bar.lock().unwrap();
-                    download_progress_bar.update();
-                })
-            } else {
-                println!("download sequentially missing files with historical data from aws s3");
-                let mut download_progress_bar = ProgressBar::default(files_to_download.len() as u32 + 1, 100, false);
+                let mut download_progress_bar = progress_bar.lock().unwrap();
                 download_progress_bar.update();
-                for file_to_download in files_to_download {
-                    download_binary_trades_file(
-                        aws_client.clone(),
-                        format!("trades/{}/{}", uppercase_ticker, file_to_download),
-                        history_trades_folder_path.to_str().unwrap().to_string(),
-                        file_to_download.as_str(),
-                    ).expect(format!("failed to download file {}", file_to_download).as_str());
-                    download_progress_bar.update();
-                }
-            }
+            })
         }
 
         println!("parsing binary files with historical data from local disk");
@@ -701,6 +696,10 @@ impl<'a> TradingBacktester<'a> {
     fn add_context_to_strategy(&self, strategy: &mut impl CandlestickTradingStrategy, index_start_day_list: &mut Vec<usize>, offset_start_current_day: usize) {
         index_start_day_list.push(offset_start_current_day);
         let context_size: usize = strategy.days_of_context() as usize;
+
+        if context_size == 0 {
+            return;
+        }
 
         if index_start_day_list.len() < context_size {
             let mut days_of_context = context_size;
@@ -756,6 +755,9 @@ impl<'a> TradingBacktester<'a> {
         };
         let mut total_trading_days = 1;
 
+        let mut sum_winning_trades: f64 = 0.0;
+        let mut sum_losing_trades: f64 = 0.0;
+
         for position in &event_handler.positions {
             if position.date != current_day {
                 liquid_profit_per_day.push(0.0);
@@ -776,6 +778,7 @@ impl<'a> TradingBacktester<'a> {
 
             if position.liquid_pnl > 0.0 {
                 total_wins += 1;
+                sum_winning_trades+= position.liquid_pnl;
                 if current_win_lose_streak < 0 {
                     max_lose_streak = cmp::max(max_lose_streak, -current_win_lose_streak);
                     current_win_lose_streak = 1;
@@ -785,6 +788,7 @@ impl<'a> TradingBacktester<'a> {
                 }
             } else {
                 total_loses += 1;
+                sum_losing_trades+= position.liquid_pnl;
                 if current_win_lose_streak > 0 {
                     max_win_streak = cmp::max(max_win_streak, current_win_lose_streak);
                     current_win_lose_streak = -1;
@@ -822,7 +826,7 @@ impl<'a> TradingBacktester<'a> {
             .map(|daily_percentage_return| *daily_percentage_return - DAILY_RISK_FREE_RATE)
             .sum();
         let avg_daily_excess_return_percentage = sum_daily_excess_return_percentage / daily_percentage_returns.len() as f64;
-        let standard_deviation_percentage_returns = statistics::standard_deviation(daily_percentage_returns);
+        let standard_deviation_percentage_returns = math::standard_deviation(daily_percentage_returns);
         let sharp_ratio = avg_daily_excess_return_percentage / standard_deviation_percentage_returns;
 
         BacktestMetrics {
@@ -839,7 +843,7 @@ impl<'a> TradingBacktester<'a> {
             median_minutes_in_the_market_per_day: 0,
             total_fees_paid,
             minutes_in_the_market: 0,
-            win_rate_percentage: total_wins as f64 / total_trades as f64,
+            win_rate_percentage: 100.0 * (total_wins as f64 / total_trades as f64),
             total_trades,
             quantity_of_contracts: total_orders,
             total_wins,
@@ -850,6 +854,8 @@ impl<'a> TradingBacktester<'a> {
             total_trading_days,
             max_draw_down_percentage: max_draw_down_percentage * 100.0,
             sharp_ratio,
+            avg_winning_trade: sum_winning_trades / total_wins as f64,
+            avg_losing_trade: sum_losing_trades / total_loses as f64,
         }
     }
 }
@@ -891,26 +897,25 @@ fn parse_candles_from_file(
     }
 
     let trades_file = TradeFile::new_from_binary_file(binary_trades_file_full_path.as_str())?;
-
-    let mut candlestick_parser = candlestick::select_candlestick_generator(candlestick_configuration);
-    let mut candlesticks: Vec<Candlestick> = vec![];
+    let mut candlestick_parser = candlestick::select_candlestick_generator(candlestick_configuration.clone());
+    let mut candlesticks: Vec<Candlestick> = Vec::new();
+    let mut counter = 0;
 
     for trade in trades_file {
         if let Some(candle) = candlestick_parser.parse_only_closed_candles(&trade) {
             candlesticks.push(candle);
+            counter+=1;
         }
     }
-
     Ok(candlesticks)
 }
 
 #[cfg(test)]
 mod test {
-
     use super::*;
 
     #[test]
-    fn should_calculate_daily_return_percentages_correctly(){
+    fn should_calculate_daily_return_percentages_correctly() {
         let start_of_day_balances = vec![10_000.0, 10_132.0, 9279.0];
         let result_each_day = vec![132.0, -853.0, 2714.0];
 
@@ -918,5 +923,4 @@ mod test {
         let percentage_returns = get_daily_percentage_returns(result_each_day, start_of_day_balances);
         assert_eq!(expected_percentage_returns, percentage_returns);
     }
-
 }
