@@ -139,6 +139,10 @@ pub struct TradeRule {
     stop_loss_atr: ATR,
 
     macd_target_value: f64,
+    macd_fast_period: usize,
+    macd_slow_period: usize,
+
+
     rsi_lower_bound: f64,
     rsi_higher_bound: f64,
 
@@ -168,8 +172,8 @@ impl TradeRule {
     }
 
     pub fn new(direction: Side, chromosome: &[f32]) -> Self {
-        let macd_period1 = value_on_range((2.0, 100.0), chromosome[7] as f64) as usize;
-        let macd_period2 = value_on_range((2.0, 100.0), chromosome[8] as f64) as usize;
+        let macd_fast_period = value_on_range((2.0, 100.0), chromosome[7] as f64) as usize;
+        let macd_slow_period = value_on_range((2.0, 100.0), chromosome[8] as f64) as usize;
         let macd_singal_period = value_on_range((2.0, 100.0), chromosome[9] as f64) as usize;
         let rsi_bound1 = value_on_range((1.0, 100.0), chromosome[5] as f64);
         let rsi_bound2 = value_on_range((1.0, 100.0), chromosome[6] as f64);
@@ -183,7 +187,9 @@ impl TradeRule {
             rsi: RSI::new(value_on_range((1.0, 100.0), chromosome[4] as f64) as usize).unwrap(),
             rsi_lower_bound: rsi_bound1.max(rsi_bound2),
             rsi_higher_bound: rsi_bound1.min(rsi_bound2),
-            macd: MACD::new(macd_period1, macd_period2, macd_singal_period).unwrap(),
+            macd_fast_period,
+            macd_slow_period,
+            macd: MACD::new(macd_fast_period, macd_slow_period, macd_singal_period).unwrap(),
             macd_target_value: value_on_range((-1000.0, 1000.0), chromosome[10] as f64),
             ema: EMA::new(value_on_range((2.0, 100.0), chromosome[11] as f64) as usize).unwrap(),
             ema_min_percentage_diff_from_price: value_on_range((0.1, 100.0), chromosome[12] as f64),
@@ -233,6 +239,10 @@ impl TradeRule {
         }else{
             self.sma_stop_loss.max_value_on_period() + diff
         }
+    }
+
+    fn is_valid(&self) -> bool {
+        self.rsi_lower_bound < self.rsi_higher_bound && self.macd_fast_period < self.macd_slow_period
     }
 }
 
