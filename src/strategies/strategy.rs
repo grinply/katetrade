@@ -69,6 +69,7 @@ pub fn list_all_candlestick_strategies() -> Vec<impl CandlestickTradingStrategy+
     vec![
         // DummyCandlestickStrategy::new(),
         ReversalMomentumCandlestickStrategy::new()
+        // ClassicReversalMomentumCandlestickStrategy::new()
     ]
 }
 
