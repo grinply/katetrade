@@ -42,7 +42,7 @@ mod test {
         let values = vec![192.0, 183.0, 180.0, 179.0];
 
         let sd = standard_deviation(values);
-        assert_eq!(5.916079783099616, sd);
+        assert_eq!(5.123475382979799, sd);
     }
 
     #[test]

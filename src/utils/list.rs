@@ -1,4 +1,5 @@
 
+#[allow(unused)]
 /// create an evenly spaced Vec of points between 0 and the target_number
 pub fn create_vec_of_points(start_value:u32, amount_of_points: u32) -> Vec<(u32, u32)> {
     assert!(amount_of_points <= 1 || amount_of_points > start_value,

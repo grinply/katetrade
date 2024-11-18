@@ -11,7 +11,6 @@ use crate::services::data_feed_reader;
 use crate::services::market_connector::MarketConnectorClient;
 use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name, CandlestickTradingStrategy};
 use crate::strategies::strategy::{HighResolutionTradingStrategy, StrategyInputData};
-use crate::models::candlestick::{CandlestickGenerator};
 use crate::models::side::Side;
 use crate::models::trade::Trade;
 

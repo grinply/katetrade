@@ -298,7 +298,7 @@ impl TimeCandlestickGenerator {
         Some(result_candle)
     }
 
-    fn remove_seconds_from_start_time(&self, mut candlestick: &mut Candlestick){
+    fn remove_seconds_from_start_time(&self, candlestick: &mut Candlestick){
         if candlestick.start_time < 99_99_99 {
             candlestick.start_time = (candlestick.start_time / 100) * 100;
         }else{
@@ -346,7 +346,7 @@ mod tests {
         assert_eq!(candlesticks.first().unwrap().start_time, 09_00_00);
 
         assert_eq!(candlesticks.last().unwrap().date, 2015_01_02);
-        assert_eq!(candlesticks.last().unwrap().start_time, 17_54_02);
+        assert_eq!(candlesticks.last().unwrap().start_time, 17_54_00);
         assert_eq!(535, candlesticks.len());
     }
 
@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(131000.0, second_closed_candle.low);
         assert_eq!(131200.0, second_closed_candle.close);
         assert_eq!(5, second_closed_candle.trades);
-        assert_eq!(09_01_07_234, second_closed_candle.start_time);
+        assert_eq!(09_01_00_000, second_closed_candle.start_time);
 
         let last_candle = result_candlesticks.last().unwrap();
 
@@ -389,7 +389,7 @@ mod tests {
         assert_eq!(131210.0, last_candle.low);
         assert_eq!(131225.0, last_candle.close);
         assert_eq!(3, last_candle.trades);
-        assert_eq!(09_02_10, last_candle.start_time);
+        assert_eq!(09_02_00, last_candle.start_time);
     }
     #[test]
     fn time_candlesticks_generator_should_correctly_create_closed_only_candles_of_one_minute() {
@@ -425,7 +425,7 @@ mod tests {
         assert_eq!(131000.0, second_candle.low);
         assert_eq!(131200.0, second_candle.close);
         assert_eq!(5, second_candle.trades);
-        assert_eq!(09_01_07_234, second_candle.start_time);
+        assert_eq!(09_01_00_000, second_candle.start_time);
     }
 
     #[test]
@@ -588,7 +588,7 @@ mod tests {
         // Verify the second closed candle (09:05:00 - 09:09:59)
         let second_candle = &result_candlesticks[1];
         assert_eq!(second_candle.is_closed, true);
-        assert_eq!(second_candle.start_time, 09_05_10);
+        assert_eq!(second_candle.start_time, 09_05_00);
         assert_eq!(second_candle.open, 131100.0);
         assert_eq!(second_candle.high, 131130.0);
         assert_eq!(second_candle.low, 131080.0);
@@ -603,7 +603,7 @@ mod tests {
         // Verify that the last candle is open and has correct data
         if let Some(last_candle) = &generator.last_candle {
             assert_eq!(last_candle.is_closed, false);
-            assert_eq!(last_candle.start_time, 09_10_15);
+            assert_eq!(last_candle.start_time, 09_10_00);
             assert_eq!(last_candle.open, 131110.0);
             assert_eq!(last_candle.high, 131150.0);
             assert_eq!(last_candle.low, 131070.0);

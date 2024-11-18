@@ -28,7 +28,7 @@ use crate::models::trade;
 use crate::services::{backtest, configuration};
 use crate::services::backtest::TradingBacktester;
 use crate::services::configuration::{load_configuration, KateConfiguration};
-use crate::services::optimization::brkga::{BrkgaConfig, FitnessExecutor, BRKGA};
+use crate::services::optimization::brkga::{FitnessExecutor, BRKGA};
 use crate::strategies::execution_manager::{LiveStrategyExecutor, ExecutionRequest};
 use crate::strategies::strategy::{get_candlestick_strategy_by_name, CandlestickConfiguration, StrategyInputData};
 
@@ -172,7 +172,7 @@ fn cli() -> Command {
         )
 }
 
-fn train_trade_rule_command(sub_matches: &ArgMatches) {
+fn train_trade_rule_command(_: &ArgMatches) {
     // BRKGA optimization configuration
     let fraction_top = 0.1;
     let fraction_bottom = 0.3;

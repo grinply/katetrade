@@ -4,7 +4,7 @@ use std::{cmp};
 use std::fmt::{Display, Formatter};
 use chrono::{Datelike, NaiveDate, Weekday};
 use itertools::{enumerate};
-use crate::models::candlestick::{Candlestick, CandlestickGenerator};
+use crate::models::candlestick::{Candlestick};
 use crate::models::{candlestick};
 use crate::models::action::{OrderAction, TradeAction};
 use crate::models::asset::Asset;
@@ -899,12 +899,10 @@ fn parse_candles_from_file(
     let trades_file = TradeFile::new_from_binary_file(binary_trades_file_full_path.as_str())?;
     let mut candlestick_parser = candlestick::select_candlestick_generator(candlestick_configuration.clone());
     let mut candlesticks: Vec<Candlestick> = Vec::new();
-    let mut counter = 0;
 
     for trade in trades_file {
         if let Some(candle) = candlestick_parser.parse_only_closed_candles(&trade) {
             candlesticks.push(candle);
-            counter+=1;
         }
     }
     Ok(candlesticks)

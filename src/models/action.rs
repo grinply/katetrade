@@ -58,6 +58,7 @@ impl TradeAction {
         }
     }
 
+    #[allow(unused)]
     pub fn abort() -> TradeAction {
         TradeAction {
             enter_market_action: Some(Abort),

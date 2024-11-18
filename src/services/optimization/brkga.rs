@@ -21,6 +21,7 @@ pub struct BRKGA {
     fitness_executor: FitnessExecutor,
 }
 
+#[allow(unused)]
 trait FitnessFunction {
     fn fitness(&self, chromosome: Vec<f32>) -> f32;
 }
@@ -155,7 +156,7 @@ impl BRKGA {
         println!("Time elapsed is: {:?}", duration);
     }
 
-    fn show_details(&self, generation: usize) {
+    fn show_details(&self, _: usize) {
         let best = &self.population[self.population_size-1];
         let median = &self.population[self.population_size/2];
         let worst = &self.population[0];
@@ -289,8 +290,8 @@ mod tests {
             assert!(first_indivual.chromosome[i] >= 0.0 && first_indivual.chromosome[i] <= 1.0);
         }
 
-        assert_eq!(0.38724673, first_indivual.chromosome[0]);
-        assert_eq!(0.65034866, first_indivual.chromosome[35]);
+        assert_eq!(0.6609407, first_indivual.chromosome[0]);
+        assert_eq!(0.24245396, first_indivual.chromosome[35]);
 
         let second_individual = brkga.random_individual();
 

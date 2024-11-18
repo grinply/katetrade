@@ -11,6 +11,7 @@ pub struct SimpleMovingAverage {
     current_value: f64,
 }
 
+#[allow(unused)]
 impl SimpleMovingAverage {
     pub fn new(period: usize) -> Self {
         Self {

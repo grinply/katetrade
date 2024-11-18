@@ -21,6 +21,7 @@ pub struct TradeRuleStrategy {
     short_rule: TradeRule,
     is_long_position_open: bool,
     is_short_position_open: bool,
+    #[allow(unused)]
     quantity_to_trade: u8,
     stop_loss_price: f64,
     take_profit_price: f64
@@ -61,7 +62,7 @@ impl CandlestickTradingStrategy for TradeRuleStrategy {
         0
     }
 
-    fn init_trading_day(&mut self, asset: &Asset, context_candles: &[Candlestick]) {
+    fn init_trading_day(&mut self, _: &Asset, _: &[Candlestick]) {
         self.long_rule.reset();
         self.short_rule.reset();
         self.is_short_position_open = false;
