@@ -21,15 +21,13 @@ pub struct TradeRuleStrategy {
     short_rule: TradeRule,
     is_long_position_open: bool,
     is_short_position_open: bool,
-    #[allow(unused)]
-    quantity_to_trade: u8,
     stop_loss_price: f64,
     take_profit_price: f64
 }
 
 impl TradeRuleStrategy {
     pub fn decode(chromosome: &[f32]) -> Self {
-        assert_eq!(36, chromosome.len(), "the chromosome must have length 36, but it has {}", chromosome.len());
+        assert_eq!(35, chromosome.len(), "the chromosome must have length 36, but it has {}", chromosome.len());
 
         for i in 0..chromosome.len() {
             if chromosome[i] < 0.0 || chromosome[i] > 1.0 {
@@ -38,9 +36,8 @@ impl TradeRuleStrategy {
         }
 
         TradeRuleStrategy {
-            quantity_to_trade: value_on_range((1.0, 10.0), chromosome[0] as f64)  as u8,
-            long_rule: TradeRule::new(Side::BUY, &chromosome[1..=17]),
-            short_rule: TradeRule::new(Side::SELL, &chromosome[18..=35]),
+            long_rule: TradeRule::new(Side::BUY, &chromosome[0..=16]),
+            short_rule: TradeRule::new(Side::SELL, &chromosome[17..=34]),
             is_long_position_open: false,
             is_short_position_open: false,
             take_profit_price: 0.0,
@@ -120,12 +117,12 @@ impl CandlestickTradingStrategy for TradeRuleStrategy {
         }
 
         // open short position
-        // if start_short {
-        //     self.is_short_position_open = true;
-        //     self.take_profit_price = self.short_rule.take_profit_price();
-        //     self.stop_loss_price = self.short_rule.stop_loss_price();
-        //     return TradeAction::send_order(OrderAction::MarketLong);
-        // }
+        if start_short {
+            self.is_short_position_open = true;
+            self.take_profit_price = self.short_rule.take_profit_price();
+            self.stop_loss_price = self.short_rule.stop_loss_price();
+            return TradeAction::send_order(OrderAction::MarketLong);
+        }
 
         TradeAction::do_nothing()
     }

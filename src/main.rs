@@ -176,10 +176,10 @@ fn train_trade_rule_command(_: &ArgMatches) {
     // BRKGA optimization configuration
     let fraction_top = 0.1;
     let fraction_bottom = 0.3;
-    let population_size = 200_000;
+    let population_size = 20_000;
     let max_iterations = 4000;
     let elitism_rate = 0.6;
-    let seed = 1115225;
+    let seed = 78452;
 
     // backtester configuration
     let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
