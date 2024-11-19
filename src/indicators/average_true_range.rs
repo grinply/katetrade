@@ -12,7 +12,7 @@ impl AverageTrueRange {
     pub fn new(period: usize) -> Self {
         Self {
             true_range: TrueRange::new(),
-            ema: Ema::new(period),
+            ema: Ema::default(period),
         }
     }
 

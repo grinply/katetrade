@@ -20,7 +20,7 @@ use rayon::prelude::*;
 use crate::models::market::Market;
 use crate::models::trade::TradeFile;
 
-pub const INITIAL_BALANCE: f64 = 100_000.0;
+pub const INITIAL_BALANCE: f64 = 10_000.0;
 const MINIMUM_BALANCE: f64 = 800.0;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
@@ -56,6 +56,8 @@ pub struct BacktestMetrics {
     pub max_draw_down_percentage: f64,
     pub avg_winning_trade: f64,
     pub avg_losing_trade: f64,
+    pub profit_factor: f64,
+    pub profit_factor_log_sum: f64
 }
 
 impl Display for BacktestMetrics {
@@ -66,6 +68,7 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <30} {1: <25.2?}", "Absolute Return", self.final_balance - INITIAL_BALANCE)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Return(%)", self.total_return_percentage)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Sharp Ratio", self.sharp_ratio)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Profit Factor", self.profit_factor)?;
         writeln!(f, "{0: <30} {1: <25}", "Sharp Ratio Description", evaluate_sharp_ratio(self.sharp_ratio))?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Max DrawDown(%)", self.max_draw_down_percentage)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Fees Paid", self.total_fees_paid)?;
@@ -76,6 +79,7 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <30} {1: <25.2?}", "Max Lose Streak", self.max_lose_streak)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Trades", self.total_trades)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Contracts Executed", self.quantity_of_contracts)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Contracts per Trade", self.quantity_of_contracts / (2 * self.total_trades))?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
@@ -198,9 +202,13 @@ impl<'a> ExchangeEventHandler<'a> {
         for event in self.events {
             match event {
                 NewCandle(candlestick) => {
+                    if let Some(existing_last_candle) = self.last_candlestick {
+                        self.track_mark_to_market(existing_last_candle, candlestick);
+                    }
                     self.last_candlestick = self.current_candlestick;
                     self.current_candlestick = Some(candlestick);
                     self.track_current_month();
+
                     self.should_updated_traded_qty(candlestick);
                     self.check_compulsory_close_position(candlestick);
                     self.check_scheduled_order_trigger(candlestick);
@@ -229,6 +237,34 @@ impl<'a> ExchangeEventHandler<'a> {
             self.events[index] = TradeEvent::None;
         }
         self.event_index = 0;
+    }
+
+    fn track_mark_to_market(&mut self, last_candle: &Candlestick, new_candle: &Candlestick) {
+        if let Some(open_position) = self.current_position.as_mut() {
+            let diff = new_candle.close.log10() - last_candle.close.log10();
+
+            if diff < 0.0 {
+                if open_position.side == Side::BUY {
+                    // price decrease is a loss for long positions
+                    open_position.sum_per_candle_log_lose_returns+=-1.0*diff;
+                    open_position.sum_per_candle_total_log_returns+=diff;
+                }else{
+                    // price decrease is a win for short positions
+                    open_position.sum_per_candle_log_win_returns+=-1.0*diff;
+                    open_position.sum_per_candle_total_log_returns+=-1.0*diff;
+                }
+            }else{
+                if open_position.side == Side::BUY {
+                    // price increase is a win for long positions
+                    open_position.sum_per_candle_log_win_returns+=diff;
+                    open_position.sum_per_candle_total_log_returns+=diff;
+                }else{
+                    // price increase is a loss for short positions
+                    open_position.sum_per_candle_log_lose_returns+=diff;
+                    open_position.sum_per_candle_total_log_returns-=diff;
+                }
+            }
+        }
     }
 
     fn should_updated_traded_qty(&mut self, candlestick: &Candlestick) {
@@ -293,22 +329,13 @@ impl<'a> ExchangeEventHandler<'a> {
 
     fn execute_market_order(&mut self, direction: Side) {
         let current_candle = self.current_candlestick.unwrap();
+        let entry_price = self.calculate_price_with_slippage(current_candle, direction.clone());
         match &mut self.current_position {
-            None => {
-                let entry_price = self.calculate_price_with_slippage(current_candle, direction.clone());
-                self.open_new_position(entry_price, direction, current_candle);
-            }
+            None => self.open_new_position(entry_price, direction, current_candle),
             Some(position) => {
                 if position.side == direction {
-                    let entry_price = self.calculate_price_with_slippage(current_candle, direction);
                     self.increase_position(entry_price);
                 } else {
-                    let oposit_direction = if direction == Side::BUY {
-                        Side::SELL
-                    } else {
-                        Side::BUY
-                    };
-                    let entry_price = self.calculate_price_with_slippage(current_candle, oposit_direction);
                     self.decrease_position(entry_price, current_candle, self.base_qty_per_order as i32);
                 }
             }
@@ -336,18 +363,25 @@ impl<'a> ExchangeEventHandler<'a> {
             self.removed_for_lack_of_margin = true;
             return;
         }
+        let quantity_to_increase = self.base_qty_per_order as i32;
 
-        let current_fee = &self.calculate_fees(self.base_qty_per_order as u64);
+
+        let current_fee = &self.calculate_fees(quantity_to_increase as u64);
         let position = self.current_position.as_mut().unwrap();
-        let new_total = position.total_qty + self.base_qty_per_order as i32;
+        let new_total = position.total_qty + quantity_to_increase;
+
         position.avg_entry_price = ((position.avg_entry_price * position.total_qty as f64) + (current_entry_price * self.base_qty_per_order as f64)) / new_total as f64;
+        assert!(position.avg_entry_price > 0.0);
+
         position.total_qty = new_total;
-        position.open_qty += new_total;
+        position.open_qty += quantity_to_increase;
 
         position.quantity_of_contracts += self.base_qty_per_order;
         position.total_paid_in_fees += current_fee;
-        self.total_contracts_executed_current_month += self.base_qty_per_order as u64;
+        self.total_contracts_executed_current_month += quantity_to_increase as u64;
         self.current_balance -= current_fee;
+
+        assert!(position.total_qty >= position.open_qty, "open quantity cannot be greater than total quantity");
     }
 
     fn has_margin_execute_order(&self) -> bool {
@@ -366,18 +400,23 @@ impl<'a> ExchangeEventHandler<'a> {
         assert!(quantity_to_decrease <= position.open_qty, "can´t decrease a position more contracts/shares than it has");
 
         let executed_qty = position.total_qty - position.open_qty;
-        position.avg_exit_price = ((position.avg_exit_price * executed_qty as f64) + (current_exit_price * quantity_to_decrease as f64)) / position.total_qty as f64;
+        position.avg_exit_price = ((position.avg_exit_price * executed_qty as f64) + (current_exit_price * quantity_to_decrease as f64)) / (executed_qty + quantity_to_decrease ) as f64;
+
+        assert!(position.avg_exit_price > 0.0);
         position.open_qty -= quantity_to_decrease;
 
-        position.quantity_of_contracts += self.base_qty_per_order;
+        position.quantity_of_contracts += quantity_to_decrease as u32;
         position.total_paid_in_fees += current_fee;
         self.current_balance -= current_fee;
         self.total_contracts_executed_current_month += quantity_to_decrease as u64;
 
+        assert!(position.total_qty >= position.open_qty, "open quantity quantity cannot be greater than total quantity");
         if position.open_qty == 0 {
             self.close_position(candlestick);
         }
     }
+
+
 
     fn track_current_month(&mut self) {
         let current_month_year = self.current_candlestick.as_ref().unwrap().date / 100;
@@ -410,6 +449,9 @@ impl<'a> ExchangeEventHandler<'a> {
             total_paid_in_fees: fee_open_position,
             quantity_of_contracts: self.base_qty_per_order,
             is_closed: false,
+            sum_per_candle_total_log_returns: 0.0,
+            sum_per_candle_log_win_returns: 0.0,
+            sum_per_candle_log_lose_returns: 0.0,
         };
         self.current_position = Some(new_position);
         self.current_balance -= fee_open_position;
@@ -431,6 +473,7 @@ impl<'a> ExchangeEventHandler<'a> {
         self.current_balance += closed_position.gross_pnl;
         self.positions.push(closed_position);
         self.current_position = None;
+        // println!("candle: {}-{} balance_after_position: {}", candlestick.date, candlestick.start_time, self.current_balance);
     }
 
     fn calculate_gross_realized_pnl(position: &Position, asset: &Asset) -> f64 {
@@ -438,7 +481,7 @@ impl<'a> ExchangeEventHandler<'a> {
             Side::BUY => position.avg_exit_price - position.avg_entry_price,
             Side::SELL => position.avg_entry_price - position.avg_exit_price
         };
-        (price_diff / asset.min_variation) * (position.total_qty - position.open_qty) as f64 * asset.value_per_variation
+        price_diff * (position.total_qty - position.open_qty) as f64 * asset.value_per_variation
     }
 
     fn calculate_gross_open_pnl(position: &Position, asset: &Asset, current_price: f64) -> f64 {
@@ -727,7 +770,7 @@ impl<'a> TradingBacktester<'a> {
 
     fn calculate_backtest_results(&self, event_handler: &ExchangeEventHandler) -> BacktestMetrics {
         let mut total_trades = 0;
-        let mut total_orders: u64 = 0;
+        let mut total_contracts: u64 = 0;
         let mut total_fees_paid = 0.0;
         let mut total_liquid_pnl = 0.0;
         let mut total_gross_pnl = 0.0;
@@ -758,7 +801,15 @@ impl<'a> TradingBacktester<'a> {
         let mut sum_winning_trades: f64 = 0.0;
         let mut sum_losing_trades: f64 = 0.0;
 
+        let mut sum_log_losing_candles: f64 = 0.0;
+        let mut sum_log_winning_candle: f64 = 0.0;
+        let mut profit_factor_log_sum: f64 = 0.0;
+
         for position in &event_handler.positions {
+            sum_log_winning_candle+=position.sum_per_candle_log_win_returns;
+            sum_log_losing_candles+=position.sum_per_candle_log_lose_returns;
+            profit_factor_log_sum+=position.sum_per_candle_total_log_returns;
+
             if position.date != current_day {
                 liquid_profit_per_day.push(0.0);
                 total_trading_days += 1;
@@ -772,7 +823,7 @@ impl<'a> TradingBacktester<'a> {
             total_trades += 1;
             total_liquid_pnl += position.liquid_pnl;
             total_gross_pnl += position.gross_pnl;
-            total_orders += position.quantity_of_contracts as u64;
+            total_contracts += position.quantity_of_contracts as u64;
             total_fees_paid += position.total_paid_in_fees;
             current_day = position.date;
 
@@ -829,6 +880,10 @@ impl<'a> TradingBacktester<'a> {
         let standard_deviation_percentage_returns = math::standard_deviation(daily_percentage_returns);
         let sharp_ratio = avg_daily_excess_return_percentage / standard_deviation_percentage_returns;
 
+        if sum_log_losing_candles == 0.0 {
+            sum_log_losing_candles = 1.0;
+        }
+
         BacktestMetrics {
             final_balance: event_handler.current_balance,
             initial_balance: INITIAL_BALANCE,
@@ -845,7 +900,7 @@ impl<'a> TradingBacktester<'a> {
             minutes_in_the_market: 0,
             win_rate_percentage: 100.0 * (total_wins as f64 / total_trades as f64),
             total_trades,
-            quantity_of_contracts: total_orders,
+            quantity_of_contracts: total_contracts,
             total_wins,
             total_loses,
             avg_risk_reward: 0.0,
@@ -856,6 +911,8 @@ impl<'a> TradingBacktester<'a> {
             sharp_ratio,
             avg_winning_trade: sum_winning_trades / total_wins as f64,
             avg_losing_trade: sum_losing_trades / total_loses as f64,
+            profit_factor: sum_log_winning_candle/sum_log_losing_candles,
+            profit_factor_log_sum
         }
     }
 }
@@ -910,6 +967,8 @@ fn parse_candles_from_file(
 
 #[cfg(test)]
 mod test {
+    use crate::models::candlestick::CandlestickType;
+    use crate::models::exchange::Exchange;
     use super::*;
 
     #[test]
@@ -920,5 +979,33 @@ mod test {
         let expected_percentage_returns: Vec<f64> = vec![1.32, -8.418870904066326, 29.248841469985994];
         let percentage_returns = get_daily_percentage_returns(result_each_day, start_of_day_balances);
         assert_eq!(expected_percentage_returns, percentage_returns);
+    }
+
+    #[test]
+    fn should_calculate_avg_entry_price_correctly_after_increase_position(){
+
+    }
+
+    #[test]
+    fn should_calculate_avg_exit_price_correctly_after_decrease_position(){
+
+    }
+
+    fn backtester_with_mock_data() -> TradingBacktester{
+        let data_provider = DataProvider {
+            candlesticks: vec![],
+            candle_configuration: CandlestickConfiguration {
+                candle_type: CandlestickType::TIME,
+                candle_input_parameter: 1,
+            },
+        };
+
+        TradingBacktester {
+            qty_history_trading_days: 1,
+            qty_history_candles: 1,
+            qty_history_trades: 1,
+            asset: Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap(),
+            data_provider,
+        }
     }
 }

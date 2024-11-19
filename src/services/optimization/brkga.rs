@@ -1,3 +1,6 @@
+use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use itertools::Itertools;
@@ -6,6 +9,7 @@ use rand::prelude::*;
 use rand_pcg::{Pcg64, Lcg128Xsl64};
 use simple_bar::ProgressBar;
 use crate::services::backtest::{BacktestMetrics, TradingBacktester};
+use crate::services::configuration::kate_configuration_directory;
 use crate::strategies::custom::trade_rule_strategy::strategy::TradeRuleStrategy;
 
 pub struct BRKGA {
@@ -42,13 +46,13 @@ impl BRKGA {
         }
     }
 
-    fn initial_population(&mut self) -> Vec<Individual>{
+    fn initial_population(&mut self) -> Vec<Individual> {
         (0..self.population_size).map(|_| self.random_individual()).collect()
     }
 
     pub fn random_individual(&mut self) -> Individual {
         loop {
-            let chromosome = (0..self.chromosome_size).map(|_|self.rng.gen_range(0.0..=1.0)).collect_vec();
+            let chromosome = (0..self.chromosome_size).map(|_| self.rng.gen_range(0.0..=1.0)).collect_vec();
             let value = chromosome.as_slice();
             if is_chromosome_valid(value) {
                 return Individual::new(chromosome);
@@ -58,7 +62,7 @@ impl BRKGA {
 
     fn generate_mutants(&mut self, fraction_of_population: f32) -> Vec<Individual> {
         let amount_mutants = (self.population_size as f32 * fraction_of_population) as usize;
-        (0..amount_mutants).map(|_|self.random_individual()).collect()
+        (0..amount_mutants).map(|_| self.random_individual()).collect()
     }
 
     fn get_elite_population(&self, fraction_of_population: f32) -> Vec<Individual> {
@@ -68,7 +72,8 @@ impl BRKGA {
     }
 
     fn sort_population(&mut self) {
-        self.population.sort_by(|a, b| a.fitness.partial_cmp(&b.fitness).unwrap());
+        self.population.sort_by(|a, b| a.fitness.partial_cmp(&b.fitness)
+            .expect("invalid fitness value, make sure all fitness value are number and not 'nan' or 'inf'"));
     }
 
     fn calculate_population_fitness(&mut self) {
@@ -105,7 +110,7 @@ impl BRKGA {
         child
     }
 
-    fn evolve_population(&mut self) -> Vec<Individual>{
+    fn evolve_population(&mut self) -> Vec<Individual> {
         let mut new_population: Vec<Individual> = Vec::with_capacity(self.population_size);
 
         let best_fitness = self.population.last().unwrap().fitness.unwrap();
@@ -114,7 +119,7 @@ impl BRKGA {
         if best_fitness > worse_fitness {
             new_population.extend(self.generate_mutants(self.fraction_bottom));
             new_population.extend(self.get_elite_population(self.fraction_top));
-        }else{
+        } else {
             new_population.extend(self.generate_mutants(1.0));
         }
 
@@ -142,8 +147,8 @@ impl BRKGA {
         let elite_start = self.population_size - amount_elite;
         self.rng.gen_range(0..elite_start)
     }
-
-    pub fn run(&mut self) {
+    // save_results_on_folder: Option<PathBuf>)
+    pub fn run(&mut self, save_results: bool) {
         println!("starting optimization with a population of {} individuals", self.population_size);
         let start = Instant::now();
         self.population = self.initial_population();
@@ -151,10 +156,15 @@ impl BRKGA {
         for i in 0..self.max_iterations {
             println!("\niteration #{}", i);
             let start_iteration = Instant::now();
+
             self.calculate_population_fitness();
             self.sort_population();
             self.show_details(i);
+            if save_results {
+                self.save_results_to_disk(i);
+            }
             self.population = self.evolve_population();
+
             let duration_iteration = start_iteration.elapsed();
             println!("time elapsed is: {:.2?}", duration_iteration);
         }
@@ -163,21 +173,53 @@ impl BRKGA {
         println!("Time elapsed is: {:?}", duration);
     }
 
+    fn details(&self, chromosome: &[f32]) -> String {
+        let trading_model = TradeRuleStrategy::decode(chromosome);
+        let quantity_to_trade = trading_model.quantity_to_trade();
+        let metrics = self.fitness_executor.backtester.run_backtest(
+            trading_model,
+            quantity_to_trade,
+            true,
+        );
+        format!("{}", metrics)
+    }
+
+    fn save_results_to_disk(&self, generation: usize) {
+        let experiment_directory = kate_configuration_directory()
+            .join("experiments");
+
+        if !experiment_directory.exists() {
+            fs::create_dir_all(&experiment_directory).expect("should be allowed to create experiment directory");
+        }
+
+        let file_name = format!("generation_{generation}__{:?}", chrono::offset::Utc::now());
+
+        let mut experiment_file = File::create(experiment_directory.join(file_name).as_path())
+            .expect("should be allowed to open experiment file");
+
+        experiment_file.write_fmt(format_args!("best fitness: {}\n", self.population.last().unwrap().fitness.unwrap())).unwrap();
+        experiment_file.write_fmt(format_args!("{}\n\n", self.details(self.population.last().unwrap().chromosome.as_slice()))).unwrap();
+
+        experiment_file.write_fmt(format_args!("#solutions:\n")).unwrap();
+        for individual in &self.population {
+            let value = format!("{:?}", individual.chromosome.as_slice());
+            experiment_file.write_fmt(format_args!("{}\n", value)).unwrap();
+        }
+
+        experiment_file.flush().unwrap();
+        experiment_file.sync_all().unwrap();
+        println!("chromosomes from generation {} file saved on disk", generation);
+    }
+
     fn show_details(&self, _: usize) {
         let best = self.population.last().unwrap();
-        let median = &self.population[self.population_size/2];
+        let median = &self.population[self.population_size / 2];
         let worst = self.population.first().unwrap();
         println!("best fitness: {}", best.fitness.unwrap());
         println!("median fitness: {}", median.fitness.unwrap());
         println!("worst fitness: {}", worst.fitness.unwrap());
         println!("best chromosome {:?}", best.chromosome);
-        // let trading_model = TradeRuleStrategy::decode(best.chromosome.as_slice());
-        // let metrics = self.fitness_executor.backtester.run_backtest(
-        //     trading_model,
-        //     self.fitness_executor.qty_per_trade,
-        //     self.fitness_executor.fixed_amount_per_trade
-        // );
-        // println!("{}", metrics);
+        println!("{}", self.details(best.chromosome.as_slice()));
     }
 }
 
@@ -206,7 +248,6 @@ impl Clone for Individual {
 
 #[derive()]
 pub struct FitnessExecutor {
-    qty_per_trade: u32,
     fixed_amount_per_trade: bool,
     backtester: TradingBacktester<'static>,
 }
@@ -215,27 +256,38 @@ impl FitnessExecutor {
     pub fn new(backtester: TradingBacktester<'static>) -> Self {
         Self {
             backtester,
-            qty_per_trade: 1,
-            fixed_amount_per_trade: true
+            fixed_amount_per_trade: true,
         }
     }
 
     pub fn calculate_fitness(&self, chromosome: &[f32]) -> f32 {
         let trading_model = TradeRuleStrategy::decode(chromosome);
-        let metrics = self.backtester.run_backtest(trading_model, self.qty_per_trade, self.fixed_amount_per_trade);
+        let quantity_to_trade = trading_model.quantity_to_trade();
+        let metrics = self.backtester.run_backtest(
+            trading_model,
+            quantity_to_trade,
+            self.fixed_amount_per_trade,
+        );
         Self::fitness_from_metrics(metrics) as f32
     }
 
     fn fitness_from_metrics(metrics: BacktestMetrics) -> f64 {
-        // if metrics.avg_losing_trade.is_nan() || metrics.avg_winning_trade.is_nan() || metrics.max_draw_down_percentage.is_nan() {
-        //     -10_000.0
-        // }else{
-        //     (metrics.avg_winning_trade * metrics.total_wins as f64) - (metrics.avg_losing_trade * metrics.total_loses as f64)
-        // }
-        if metrics.total_trades == 0 {
-            -100.0
-        }else{
-            metrics.total_return_percentage
+        if metrics.max_draw_down_percentage.is_nan() ||
+            metrics.max_draw_down_percentage.is_infinite() ||
+            metrics.avg_winning_trade.is_infinite() ||
+            metrics.avg_winning_trade.is_nan() ||
+            metrics.avg_losing_trade.is_infinite() ||
+            metrics.avg_losing_trade.is_nan() ||
+            metrics.profit_factor.is_infinite() ||
+            metrics.profit_factor.is_nan() {
+            return -10_000.0;
+        }
+
+        let actual_profit = metrics.avg_winning_trade - metrics.avg_losing_trade;
+        if actual_profit < 0.0 && metrics.profit_factor < 0.0 {
+            -(metrics.total_trades as f64 * actual_profit * metrics.profit_factor) / ((2240.0 - metrics.total_trading_days as f64) + (1.0 + 2.0 * metrics.max_draw_down_percentage / 100.0))
+        } else {
+            (metrics.total_trades as f64 * actual_profit * metrics.profit_factor) / ((2240.0 - metrics.total_trading_days as f64) + (1.0 + 2.0 * metrics.max_draw_down_percentage / 100.0))
         }
     }
 }
@@ -256,21 +308,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_new_brkga(){
+    fn test_new_brkga() {
         let config: BrkgaConfig = (0.1, 0.2, 15000, 1000, 0.6);
 
         let backtest_engine = TradingBacktester::new(
             Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap(),
             20150102,
             20150102,
-            CandlestickConfiguration{
+            CandlestickConfiguration {
                 candle_type: CandlestickType::TICK,
                 candle_input_parameter: 1000,
             },
-            true
+            true,
         ).unwrap();
 
-        let brkga = BRKGA::new(1223,36, config, FitnessExecutor::new(backtest_engine));
+        let brkga = BRKGA::new(1223, 36, config, FitnessExecutor::new(backtest_engine));
 
         assert_eq!(brkga.chromosome_size, 36);
         assert_eq!(brkga.fraction_top, 0.1);
@@ -287,11 +339,11 @@ mod tests {
             Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap(),
             20150102,
             20150102,
-            CandlestickConfiguration{
+            CandlestickConfiguration {
                 candle_type: CandlestickType::TICK,
                 candle_input_parameter: 1000,
             },
-            true
+            true,
         ).unwrap();
 
         let mut brkga = BRKGA::new(59841, CHROMOSOME_SIZE_TRADE_RULE, config, FitnessExecutor::new(backtest_engine));

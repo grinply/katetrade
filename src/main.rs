@@ -176,10 +176,10 @@ fn train_trade_rule_command(_: &ArgMatches) {
     // BRKGA optimization configuration
     let fraction_top = 0.1;
     let fraction_bottom = 0.3;
-    let population_size = 10_000;
+    let population_size = 30_000;
     let max_iterations = 4000;
     let elitism_rate = 0.6;
-    let seed = 78452;
+    let seed = 77445533;
 
     // backtester configuration
     let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
@@ -198,12 +198,12 @@ fn train_trade_rule_command(_: &ArgMatches) {
         true,
     ).unwrap();
 
-    // let chromossome = &[0.32413867, 0.67048925, 0.90890265, 0.755218, 0.8588618, 0.0008425714, 0.6942571, 0.03849328, 0.3989399, 0.13038625, 0.12336554, 0.09373165, 0.5603761, 0.5726301, 0.016678216, 0.30571368, 0.28847948, 0.35937777, 0.34531346, 0.6901999, 0.1552936, 0.17833997, 0.036284212, 0.9390681, 0.1301247, 0.6381162, 0.8004601, 0.77931535, 0.36866787, 0.2666308, 0.5181945, 0.5243668, 0.9043379, 0.3104345, 0.26426294];
+    // let chromossome = &[0.67876405, 0.8095317, 0.9583367, 0.8523022, 0.84862673, 0.024558548, 0.48876733, 0.75430655, 0.71779007, 0.6599687, 0.2312366, 0.36340645, 0.38362318, 0.16349198, 0.6110715, 0.6645817, 0.3785953, 0.00021755698, 0.55651146, 0.009756804, 0.39979237, 0.8241235, 0.1278627, 0.5014096, 0.68468195, 0.41976088, 0.8933759, 0.010697962, 0.39965826, 0.0010228158, 0.9796411, 0.6751861, 0.19786635, 0.008033396, 0.4861638];
     // let trading_model = TradeRuleStrategy::decode(chromossome);
     // let metrics = backtest_engine.run_backtest(
     //     trading_model,
     //     1,
-    //     true
+    //     true,
     // );
     //
     // println!("{}", metrics);
@@ -215,7 +215,7 @@ fn train_trade_rule_command(_: &ArgMatches) {
         FitnessExecutor::new(backtest_engine)
     );
 
-    brkga_evolutionary_optimizer.run()
+    brkga_evolutionary_optimizer.run(true)
 }
 
 fn parse_file_command(sub_matches: &ArgMatches) {

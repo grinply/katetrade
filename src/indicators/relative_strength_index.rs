@@ -17,8 +17,8 @@ impl RelativeStrengthIndex {
     pub fn new(period: usize) -> Self {
         Self {
             period,
-            up_ema_indicator: Ema::new(period),
-            down_ema_indicator: Ema::new(period),
+            up_ema_indicator: Ema::default(period),
+            down_ema_indicator: Ema::default(period),
             prev_val: 0.0,
             is_new: true,
             current_rsi: 0.0,
