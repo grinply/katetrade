@@ -176,7 +176,7 @@ fn train_trade_rule_command(_: &ArgMatches) {
     // BRKGA optimization configuration
     let fraction_top = 0.1;
     let fraction_bottom = 0.3;
-    let population_size = 20_000;
+    let population_size = 10_000;
     let max_iterations = 4000;
     let elitism_rate = 0.6;
     let seed = 78452;
@@ -197,6 +197,16 @@ fn train_trade_rule_command(_: &ArgMatches) {
         candle_configuration,
         true,
     ).unwrap();
+
+    // let chromossome = &[0.32413867, 0.67048925, 0.90890265, 0.755218, 0.8588618, 0.0008425714, 0.6942571, 0.03849328, 0.3989399, 0.13038625, 0.12336554, 0.09373165, 0.5603761, 0.5726301, 0.016678216, 0.30571368, 0.28847948, 0.35937777, 0.34531346, 0.6901999, 0.1552936, 0.17833997, 0.036284212, 0.9390681, 0.1301247, 0.6381162, 0.8004601, 0.77931535, 0.36866787, 0.2666308, 0.5181945, 0.5243668, 0.9043379, 0.3104345, 0.26426294];
+    // let trading_model = TradeRuleStrategy::decode(chromossome);
+    // let metrics = backtest_engine.run_backtest(
+    //     trading_model,
+    //     1,
+    //     true
+    // );
+    //
+    // println!("{}", metrics);
 
     let mut brkga_evolutionary_optimizer = BRKGA::new(
         seed,

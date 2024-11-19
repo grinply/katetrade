@@ -20,7 +20,7 @@ use rayon::prelude::*;
 use crate::models::market::Market;
 use crate::models::trade::TradeFile;
 
-pub const INITIAL_BALANCE: f64 = 10_000.0;
+pub const INITIAL_BALANCE: f64 = 100_000.0;
 const MINIMUM_BALANCE: f64 = 800.0;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;

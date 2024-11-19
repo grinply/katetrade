@@ -1,13 +1,12 @@
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+use itertools::Itertools;
 use rayon::prelude::*;
 use rand::prelude::*;
 use rand_pcg::{Pcg64, Lcg128Xsl64};
 use simple_bar::ProgressBar;
 use crate::services::backtest::{BacktestMetrics, TradingBacktester};
-use crate::strategies::custom::trade_rule_strategy::TradeRuleStrategy;
-
-
+use crate::strategies::custom::trade_rule_strategy::strategy::TradeRuleStrategy;
 
 pub struct BRKGA {
     fraction_top: f32, // amount of individuals considered elite
@@ -48,7 +47,13 @@ impl BRKGA {
     }
 
     pub fn random_individual(&mut self) -> Individual {
-        Individual::new((0..self.chromosome_size).map(|_|self.rng.gen_range(0.0..=1.0)).collect())
+        loop {
+            let chromosome = (0..self.chromosome_size).map(|_|self.rng.gen_range(0.0..=1.0)).collect_vec();
+            let value = chromosome.as_slice();
+            if is_chromosome_valid(value) {
+                return Individual::new(chromosome);
+            }
+        }
     }
 
     fn generate_mutants(&mut self, fraction_of_population: f32) -> Vec<Individual> {
@@ -79,7 +84,8 @@ impl BRKGA {
             .par_iter_mut()
             .for_each(|ind| {
                 let bar = Arc::clone(&fitness_bar);
-                ind.fitness = Some(self.fitness_executor.calculate_fitness(ind.chromosome.as_slice()));
+                let chromossome = ind.chromosome.as_slice();
+                ind.fitness = Some(self.fitness_executor.calculate_fitness(chromossome));
                 let mut parse_progress_bar = bar.lock().unwrap();
                 parse_progress_bar.update();
             });
@@ -87,8 +93,9 @@ impl BRKGA {
 
     fn crossover(&mut self, index_elite_parent: usize, index_non_elite_parent: usize) -> Individual {
         let mut child = Individual::new(Vec::with_capacity(self.chromosome_size));
-        for i in 0..self.chromosome_size {
 
+
+        for i in 0..self.chromosome_size {
             if self.rng.gen_range(0.0..1.0) < self.elitism_rate {
                 child.chromosome.push(self.population[index_elite_parent].chromosome[i]);
             } else {
@@ -157,20 +164,20 @@ impl BRKGA {
     }
 
     fn show_details(&self, _: usize) {
-        let best = &self.population[self.population_size-1];
+        let best = self.population.last().unwrap();
         let median = &self.population[self.population_size/2];
-        let worst = &self.population[0];
+        let worst = self.population.first().unwrap();
         println!("best fitness: {}", best.fitness.unwrap());
         println!("median fitness: {}", median.fitness.unwrap());
         println!("worst fitness: {}", worst.fitness.unwrap());
         println!("best chromosome {:?}", best.chromosome);
-        let trading_model = TradeRuleStrategy::decode(best.chromosome.as_slice());
-        let metrics = self.fitness_executor.backtester.run_backtest(
-            trading_model,
-            self.fitness_executor.qty_per_trade,
-            self.fitness_executor.fixed_amount_per_trade
-        );
-        println!("{}", metrics);
+        // let trading_model = TradeRuleStrategy::decode(best.chromosome.as_slice());
+        // let metrics = self.fitness_executor.backtester.run_backtest(
+        //     trading_model,
+        //     self.fitness_executor.qty_per_trade,
+        //     self.fitness_executor.fixed_amount_per_trade
+        // );
+        // println!("{}", metrics);
     }
 }
 
@@ -208,7 +215,7 @@ impl FitnessExecutor {
     pub fn new(backtester: TradingBacktester<'static>) -> Self {
         Self {
             backtester,
-            qty_per_trade: 10,
+            qty_per_trade: 1,
             fixed_amount_per_trade: true
         }
     }
@@ -233,8 +240,14 @@ impl FitnessExecutor {
     }
 }
 
+fn is_chromosome_valid(chromosome: &[f32]) -> bool {
+    let trading_model = TradeRuleStrategy::decode(chromosome);
+    trading_model.is_valid()
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::constants::CHROMOSOME_SIZE_TRADE_RULE;
     use crate::models::asset::Asset;
     use crate::models::candlestick::CandlestickType;
     use crate::models::exchange::Exchange;
@@ -281,17 +294,17 @@ mod tests {
             true
         ).unwrap();
 
-        let mut brkga = BRKGA::new(59841, 36, config, FitnessExecutor::new(backtest_engine));
+        let mut brkga = BRKGA::new(59841, CHROMOSOME_SIZE_TRADE_RULE, config, FitnessExecutor::new(backtest_engine));
         let first_indivual = brkga.random_individual();
 
-        assert_eq!(first_indivual.chromosome.len(), 36);
+        assert_eq!(first_indivual.chromosome.len(), CHROMOSOME_SIZE_TRADE_RULE);
 
         for i in 0..first_indivual.chromosome.len() {
             assert!(first_indivual.chromosome[i] >= 0.0 && first_indivual.chromosome[i] <= 1.0);
         }
 
-        assert_eq!(0.6609407, first_indivual.chromosome[0]);
-        assert_eq!(0.24245396, first_indivual.chromosome[35]);
+        assert_eq!(0.47762603, first_indivual.chromosome[0]);
+        assert_eq!(0.6316566, first_indivual.chromosome[34]);
 
         let second_individual = brkga.random_individual();
 
