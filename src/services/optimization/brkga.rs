@@ -34,6 +34,7 @@ pub fn run_brkga_optimization(
 }
 
 /// trait that must be implemented for anything that you want to be optimized using BRKGA
+/// required in order to run [run_brkga_optimization]
 pub trait FitnessExecutor: Send + Sync {
     fn calculate_fitness(&self, chromosome: &[f32]) -> f64;
     fn chromosome_details(&self, chromosome: &[f32]) -> String;
@@ -41,7 +42,8 @@ pub trait FitnessExecutor: Send + Sync {
     fn chromosome_size(&self) -> usize;
 }
 
-/// configuration parameters used when running optimizations using BRKGA
+/// configuration parameters used when running optimizations with BRKGA
+/// with the function [run_brkga_optimization]
 pub struct BrkgaConfig {
     fraction_top: f32,
     fraction_bottom: f32,
