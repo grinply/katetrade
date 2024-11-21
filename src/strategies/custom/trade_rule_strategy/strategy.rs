@@ -9,7 +9,8 @@ use crate::strategies::custom::trade_rule_strategy::trade_rule::{TradeRule};
 use crate::strategies::strategy::{CandlestickConfiguration, CandlestickTradingStrategy};
 use crate::utils::math::value_on_range;
 
-
+/// this is strategy is based upon the papers:
+/// Trade Optimizer and Optimization of the Trading Rule in Foreign Exchange using Genetic Algorithm
 pub struct TradeRuleStrategy {
     quantity_to_trade: u32,
     long_rule: TradeRule,
