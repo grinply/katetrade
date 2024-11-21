@@ -19,6 +19,7 @@ use std::time::Instant;
 use rayon::iter::IntoParallelIterator;
 use simple_bar::ProgressBar;
 use rayon::iter::ParallelIterator;
+use crate::constants::OPTIMIZE;
 use crate::models::asset::Asset;
 use crate::models::candlestick::CandlestickType;
 use crate::models::market::Market;
@@ -26,7 +27,7 @@ use crate::models::side::Side;
 use crate::models::trade;
 use crate::services::{backtest, configuration};
 use crate::services::configuration::{load_configuration, KateConfiguration};
-use crate::services::optimization::brkga::{BRKGA};
+use crate::services::optimization::brkga::{run_brkga_optimization, BrkgaConfig};
 use crate::strategies::custom::trade_rule_strategy::optimization::fitness_optimizer_trade_rule_strategy;
 use crate::strategies::execution_manager::{LiveStrategyExecutor, ExecutionRequest};
 use crate::strategies::strategy::{get_candlestick_strategy_by_name, CandlestickConfiguration, StrategyInputData};
@@ -164,45 +165,12 @@ fn cli() -> Command {
                         .about("evaluate the network connection with market connector (service responsible for processing orders and providing live market data")
                 )
         )
-
         .subcommand(
-            Command::new("train")
-                .about("Training a population of trade rule strategy")
+            Command::new(OPTIMIZE)
+                .about("Optimize/train a group for best solutions for a customized trading strategy")
         )
 }
 
-fn train_trade_rule_command(_: &ArgMatches) {
-    // BRKGA optimization configuration
-    let fraction_top = 0.1;
-    let fraction_bottom = 0.3;
-    let population_size = 15_000;
-    let max_iterations = 1000;
-    let elitism_rate = 0.6;
-    let seed = 77445533;
-
-    // backtester configuration
-    let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-    let training_start_date = 20220101;
-    let training_end_date = 20240228;
-    let validation_start_date = 2024_06_13;
-    let validation_end_date = 2024_11_20;
-
-    let trade_rule_fitness_executor = fitness_optimizer_trade_rule_strategy(
-        asset,
-        training_start_date,
-        training_end_date,
-        validation_start_date,
-        validation_end_date,
-    );
-
-    let mut brkga_evolutionary_optimizer = BRKGA::new(
-        seed,
-        (fraction_top, fraction_bottom, population_size, max_iterations, elitism_rate),
-        trade_rule_fitness_executor
-    );
-
-    brkga_evolutionary_optimizer.run(true)
-}
 
 fn parse_file_command(sub_matches: &ArgMatches) {
     let ticker = sub_matches.get_one::<String>("ticker").expect("required");
@@ -522,6 +490,51 @@ fn process_connection_status_command(client: MarketConnectorClient) {
     }
 }
 
+fn optimize_trade_parameters_command(_: &ArgMatches) {
+    let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3)
+        .expect("must provide an existing/registered asset to trade");
+
+    // BRKGA optimization configuration
+    // internal BRKGA parameters are hard coded
+    // if you must tune this you can recompile the code
+    let population_size = 15_000;
+    let max_iterations = 1000;
+    let fraction_top = 0.1;
+    let fraction_bottom = 0.3;
+    let elitism_rate = 0.6;
+    let seed = 11223344;
+
+    let training_start_date = 2022_01_01;
+    let training_end_date = 2024_02_28;
+    let validation_start_date = 2024_06_13;
+    let validation_end_date = 2024_11_20;
+
+    // if in the future we have another implementation that has optimizations available we can have
+    // a new parameter from the CLI to define which one to choose
+    let trade_rule_fitness_executor = fitness_optimizer_trade_rule_strategy(
+        asset,
+        training_start_date,
+        training_end_date,
+        validation_start_date,
+        validation_end_date,
+    );
+
+    let brkga_configuration = BrkgaConfig::new(
+        fraction_top,
+        fraction_bottom,
+        population_size,
+        max_iterations,
+        elitism_rate,
+    );
+
+    run_brkga_optimization(
+        seed,
+        brkga_configuration,
+        trade_rule_fitness_executor,
+        true,
+    );
+}
+
 fn main() {
     let configuration: KateConfiguration = load_configuration();
     let client = MarketConnectorClient::new(
@@ -564,8 +577,8 @@ fn main() {
                 _ => unreachable!(),
             }
         }
-        Some(("train", sub_matches)) => {
-            train_trade_rule_command(sub_matches);
+        Some((OPTIMIZE, sub_matches)) => {
+            optimize_trade_parameters_command(sub_matches);
         }
         _ => unreachable!(), // If all subcommands are defined above, anything else is unreachable
     }

@@ -10,7 +10,46 @@ use rand_pcg::{Pcg64, Lcg128Xsl64};
 use simple_bar::ProgressBar;
 use crate::services::configuration::kate_configuration_directory;
 
-pub struct BRKGA {
+/// BRKGA: Biased Random Key Genetic Algorithm.
+///
+/// BRKGA is an evolutionary algorithm used for optimization. In the current trading context
+/// it can be used to find parameters hat maximize a given performance metric such as total return.
+///
+/// In order to use the optimizer you must specify how to evaluate each solution ( calculate its fitness ).
+/// implementing the trait [FitnessExecutor], for a concrete example refer to [BacktestOptimizerTradeRule]
+pub fn run_brkga_optimization(
+    seed: u64,
+    config: BrkgaConfig,
+    fitness_executor: Box<dyn FitnessExecutor>,
+    save_results_to_disk: bool,
+) -> Vec<Individual> {
+    let mut brkga_evolutionary_optimizer = BRKGA::new(
+        seed,
+        config,
+        fitness_executor,
+    );
+    brkga_evolutionary_optimizer.run(save_results_to_disk);
+    brkga_evolutionary_optimizer.population
+}
+
+/// trait that must be implemented for anything that you want to be optimized using BRKGA
+pub trait FitnessExecutor: Send + Sync {
+    fn calculate_fitness(&self, chromosome: &[f32]) -> f64;
+    fn chromosome_details(&self, chromosome: &[f32]) -> String;
+    fn is_chromosome_valid(&self, chromosome: &[f32]) -> bool;
+    fn chromosome_size(&self) -> usize;
+}
+
+/// configuration parameters used when running optimizations using BRKGA
+pub struct BrkgaConfig {
+    fraction_top: f32,
+    fraction_bottom: f32,
+    population_size: usize,
+    max_iterations: usize,
+    elitism_rate: f32,
+}
+
+struct BRKGA {
     fraction_top: f32, // amount of individuals considered elite
     fraction_bottom: f32, // amount of mutants to be introduced in each generation
     population_size: usize, // size of the population
@@ -22,29 +61,37 @@ pub struct BRKGA {
     fitness_executor: Box<dyn FitnessExecutor>,
 }
 
-/// trait that must be implemented for anything that you want to be optimized
-pub trait FitnessExecutor: Send + Sync{
-    fn calculate_fitness(&self, chromosome: &[f32]) -> f64;
-    fn chromosome_details(&self, chromosome: &[f32]) -> String;
-    fn is_chromosome_valid(&self, chromosome: &[f32]) -> bool;
-    fn chromosome_size(&self) -> usize;
+impl BrkgaConfig {
+    pub fn new(
+        fraction_top: f32,
+        fraction_bottom: f32,
+        population_size: usize,
+        max_iterations: usize,
+        elitism_rate: f32
+    ) -> Self {
+        BrkgaConfig {
+            fraction_top,
+            fraction_bottom,
+            population_size,
+            max_iterations,
+            elitism_rate
+        }
+    }
 }
 
-pub type BrkgaConfig = (f32, f32, usize, usize, f32);
-
 impl BRKGA {
-    pub fn new(
+    fn new(
         seed: u64,
         config: BrkgaConfig,
         fitness_executor: Box<dyn FitnessExecutor>,
     ) -> Box<Self> {
         Box::new(
             BRKGA {
-                fraction_top: config.0,
-                fraction_bottom: config.1,
-                population_size: config.2,
-                max_iterations: config.3,
-                elitism_rate: config.4,
+                fraction_top: config.fraction_top,
+                fraction_bottom: config.fraction_bottom,
+                population_size: config.population_size,
+                max_iterations: config.max_iterations,
+                elitism_rate: config.elitism_rate,
                 chromosome_size: fitness_executor.chromosome_size(),
                 fitness_executor,
                 rng: Pcg64::seed_from_u64(seed),
@@ -62,7 +109,7 @@ impl BRKGA {
             let chromosome = (0..self.chromosome_size).map(|_| self.rng.gen_range(0.0..=1.0)).collect_vec();
             let value = chromosome.as_slice();
 
-            if  self.fitness_executor.is_chromosome_valid(value) {
+            if self.fitness_executor.is_chromosome_valid(value) {
                 return Individual::new(chromosome);
             }
         }
@@ -157,7 +204,7 @@ impl BRKGA {
         self.rng.gen_range(0..elite_start)
     }
     // save_results_on_folder: Option<PathBuf>)
-    pub fn run(&mut self, save_results: bool) {
+    fn run(&mut self, save_results: bool) {
         println!("starting optimization with a population of {} individuals", self.population_size);
         let start = Instant::now();
         self.population = self.initial_population();
@@ -252,7 +299,7 @@ mod tests {
     #[test]
     fn test_generate_random_individual() {
         let config: BrkgaConfig = (0.1, 0.2, 15000, 1000, 0.6);
-        let mut brkga = BRKGA::new(59841, config, Box::new(TestFitnessExecutor{}));
+        let mut brkga = BRKGA::new(59841, config, Box::new(TestFitnessExecutor {}));
         let first_indivual = brkga.random_individual();
 
         assert_eq!(first_indivual.chromosome.len(), 10);
@@ -269,16 +316,14 @@ mod tests {
         assert_ne!(first_indivual.chromosome, second_individual.chromosome);
     }
 
-    struct TestFitnessExecutor {
-
-    }
+    struct TestFitnessExecutor {}
 
     impl FitnessExecutor for TestFitnessExecutor {
         fn calculate_fitness(&self, chromosome: &[f32]) -> f64 {
             let mut sum = 0;
             for i in 0..chromosome.len() {
                 if chromosome[i] > 0.5 {
-                    sum+=1;
+                    sum += 1;
                 }
             }
 
