@@ -43,38 +43,12 @@ pub fn fitness_optimizer_trade_rule_strategy(
 fn calculate_fitness(metrics: BacktestMetrics) -> f64{
     if metrics.max_draw_down_percentage.is_nan() ||
         metrics.max_draw_down_percentage.is_infinite() ||
-        metrics.avg_winning_trade.is_infinite() ||
-        metrics.avg_winning_trade.is_nan() ||
-        metrics.avg_losing_trade.is_infinite() ||
-        metrics.avg_losing_trade.is_nan() ||
-        metrics.profit_factor.is_infinite() ||
-        metrics.profit_factor.is_nan() {
+        metrics.profit_factor.is_nan() ||
+        metrics.profit_factor.is_infinite(){
         return -10_000.0;
     }
 
-    let mut base_result = metrics.total_return_percentage / 100.0;
-
-    if metrics.total_trades < 533 {
-        base_result /= (533.0 - metrics.total_trades as f64) * 19.0;
-    }
-
-    if metrics.win_rate_percentage < 60.0 {
-        base_result /= (60.0 - metrics.win_rate_percentage) * 250.0;
-    }
-
-    if metrics.max_draw_down_percentage > 35.0 {
-        base_result /= (metrics.max_draw_down_percentage - 35.0) * 155.0;
-    }
-
-    if metrics.profit_factor < 1.2 {
-        base_result /= 10_000.0;
-    }
-
-    if metrics.avg_winning_trade < metrics.avg_losing_trade {
-        base_result /= 10_000.0;
-    }
-
-    base_result
+    (5.0 * metrics.profit_factor * metrics.total_return_percentage / 100.0) / (1.0 + 5.0 * metrics.max_draw_down_percentage/100.0)
 }
 
 impl FitnessExecutor for BacktestOptimizerTradeRule {
@@ -96,13 +70,13 @@ impl FitnessExecutor for BacktestOptimizerTradeRule {
         let training_metrics = self.training_backtester.run_backtest(
             trading_model,
             quantity_to_trade,
-            false,
+            true,
         );
 
         let validation_metrics = self.validation_backtester.run_backtest(
             TradeRuleStrategy::decode(chromosome),
             quantity_to_trade,
-            false,
+            true,
         );
 
         format!(
