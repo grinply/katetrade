@@ -19,16 +19,15 @@ use std::time::Instant;
 use rayon::iter::IntoParallelIterator;
 use simple_bar::ProgressBar;
 use rayon::iter::ParallelIterator;
-use crate::constants::CHROMOSOME_SIZE_TRADE_RULE;
 use crate::models::asset::Asset;
 use crate::models::candlestick::CandlestickType;
 use crate::models::market::Market;
 use crate::models::side::Side;
 use crate::models::trade;
 use crate::services::{backtest, configuration};
-use crate::services::backtest::TradingBacktester;
 use crate::services::configuration::{load_configuration, KateConfiguration};
-use crate::services::optimization::brkga::{FitnessExecutor, BRKGA};
+use crate::services::optimization::brkga::{BRKGA};
+use crate::strategies::custom::trade_rule_strategy::optimization::fitness_optimizer_trade_rule_strategy;
 use crate::strategies::execution_manager::{LiveStrategyExecutor, ExecutionRequest};
 use crate::strategies::strategy::{get_candlestick_strategy_by_name, CandlestickConfiguration, StrategyInputData};
 
@@ -176,43 +175,30 @@ fn train_trade_rule_command(_: &ArgMatches) {
     // BRKGA optimization configuration
     let fraction_top = 0.1;
     let fraction_bottom = 0.3;
-    let population_size = 30_000;
-    let max_iterations = 4000;
+    let population_size = 15_000;
+    let max_iterations = 1000;
     let elitism_rate = 0.6;
     let seed = 77445533;
 
     // backtester configuration
     let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-    let start_date = 20150101;
-    let end_date = 20240228;
-    let candle_configuration = CandlestickConfiguration {
-        candle_type: CandlestickType::TIME,
-        candle_input_parameter: 1,
-    };
+    let training_start_date = 20220101;
+    let training_end_date = 20240228;
+    let validation_start_date = 2024_06_13;
+    let validation_end_date = 2024_11_20;
 
-    let backtest_engine = TradingBacktester::new(
+    let trade_rule_fitness_executor = fitness_optimizer_trade_rule_strategy(
         asset,
-        start_date,
-        end_date,
-        candle_configuration,
-        true,
-    ).unwrap();
-
-    // let chromossome = &[0.67876405, 0.8095317, 0.9583367, 0.8523022, 0.84862673, 0.024558548, 0.48876733, 0.75430655, 0.71779007, 0.6599687, 0.2312366, 0.36340645, 0.38362318, 0.16349198, 0.6110715, 0.6645817, 0.3785953, 0.00021755698, 0.55651146, 0.009756804, 0.39979237, 0.8241235, 0.1278627, 0.5014096, 0.68468195, 0.41976088, 0.8933759, 0.010697962, 0.39965826, 0.0010228158, 0.9796411, 0.6751861, 0.19786635, 0.008033396, 0.4861638];
-    // let trading_model = TradeRuleStrategy::decode(chromossome);
-    // let metrics = backtest_engine.run_backtest(
-    //     trading_model,
-    //     1,
-    //     true,
-    // );
-    //
-    // println!("{}", metrics);
+        training_start_date,
+        training_end_date,
+        validation_start_date,
+        validation_end_date,
+    );
 
     let mut brkga_evolutionary_optimizer = BRKGA::new(
         seed,
-        CHROMOSOME_SIZE_TRADE_RULE,
         (fraction_top, fraction_bottom, population_size, max_iterations, elitism_rate),
-        FitnessExecutor::new(backtest_engine)
+        trade_rule_fitness_executor
     );
 
     brkga_evolutionary_optimizer.run(true)

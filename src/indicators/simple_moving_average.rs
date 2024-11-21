@@ -8,6 +8,7 @@ pub struct SimpleMovingAverage {
     count: usize,
     sum: f64,
     deque: Box<[f64]>,
+    results: Box<[f64]>,
     current_value: f64,
 }
 
@@ -20,6 +21,7 @@ impl SimpleMovingAverage {
             count: 0,
             sum: 0.0,
             deque: vec![0.0; period].into_boxed_slice(),
+            results: vec![0.0; period].into_boxed_slice(),
             current_value: 0.0,
         }
     }
@@ -39,6 +41,27 @@ impl SimpleMovingAverage {
         min
     }
 
+    pub fn count_decreasing(&self) -> usize {
+        let mut sum = 0;
+        for i in 1..self.deque.len(){
+            if self.deque[i-1] > self.deque[i]{
+                sum+=1
+            }
+        }
+        sum
+    }
+
+    // count how many of the last values from the
+    pub fn count_increasing(&self) -> usize {
+        let mut sum = 0;
+        for i in 1..self.results.len(){
+            if self.results[i-1] < self.results[i]{
+                sum+=1
+            }
+        }
+        sum
+    }
+
     pub fn max_value_on_period(&self) -> f64 {
         let mut max = self.deque[0];
         for i in 1..self.deque.len() {
@@ -46,7 +69,6 @@ impl SimpleMovingAverage {
                 max = self.deque[i];
             }
         }
-
         max
     }
 
@@ -73,6 +95,8 @@ impl Next<f64> for SimpleMovingAverage {
     fn next(&mut self, input: f64) -> Self::Output {
         let old_val = self.deque[self.index];
         self.deque[self.index] = input;
+        let initial_index = self.index;
+
 
         self.index = if self.index + 1 < self.period {
             self.index + 1
@@ -86,6 +110,7 @@ impl Next<f64> for SimpleMovingAverage {
 
         self.sum = self.sum - old_val + input;
         self.current_value = self.sum / (self.count as f64);
+        self.results[initial_index] = self.current_value;
         self.current_value
     }
 }

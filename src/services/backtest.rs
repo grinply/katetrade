@@ -39,6 +39,8 @@ pub struct BacktestMetrics {
     pub avg_trade_liquid_pnl: f64,
     pub avg_daily_liquid_profit: f64,
     pub worse_day_liquid_profit: f64,
+    pub avg_long_trade_liquid_pnl: f64,
+    pub avg_long_short_liquid_pnl: f64,
     pub best_day_liquid_profit: f64,
     pub sharp_ratio: f64,
     pub median_day_liquid_profit: f64,
@@ -47,6 +49,8 @@ pub struct BacktestMetrics {
     pub minutes_in_the_market: u64,
     pub win_rate_percentage: f64,
     pub total_trades: u64,
+    pub total_long_trades: u64,
+    pub total_short_trades: u64,
     pub quantity_of_contracts: u64,
     pub total_wins: u64,
     pub total_loses: u64,
@@ -62,6 +66,12 @@ pub struct BacktestMetrics {
 
 impl Display for BacktestMetrics {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let avg_contracts_traded = if self.total_trades == 0 {
+            0
+        }else{
+            self.quantity_of_contracts / (2 * self.total_trades)
+        };
+
         writeln!(f, "{0: <30} {1: <25.2?}", "Trading Days", self.total_trading_days)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Start Balance", INITIAL_BALANCE)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Final Balance", self.final_balance)?;
@@ -78,8 +88,10 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Loses", self.total_loses)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Max Lose Streak", self.max_lose_streak)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Trades", self.total_trades)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Total Long Trades", self.total_long_trades)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Total Short Trades", self.total_short_trades)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Contracts Executed", self.quantity_of_contracts)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Contracts per Trade", self.quantity_of_contracts / (2 * self.total_trades))?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Contracts per Trade", avg_contracts_traded)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
@@ -744,7 +756,7 @@ impl<'a> TradingBacktester<'a> {
             return;
         }
 
-        if index_start_day_list.len() < context_size {
+        if index_start_day_list.len() <= context_size {
             let mut days_of_context = context_size;
             let mut current_day = self.data_provider.candlesticks.get(offset_start_current_day).unwrap().date;
             for (index, initialization_candle) in self.data_provider.candlesticks.iter().skip(offset_start_current_day).enumerate() {
@@ -777,6 +789,11 @@ impl<'a> TradingBacktester<'a> {
         let mut total_wins = 0;
         let mut total_loses = 0;
 
+        let mut total_long_trades = 0;
+        let mut total_short_trades = 0;
+        let mut avg_long_trade_pnl = 0.0;
+        let mut avg_short_trade_pnl = 0.0;
+
         let mut max_win_streak = 0;
         let mut max_lose_streak = 0;
         let mut current_win_lose_streak: i32 = 0;
@@ -797,18 +814,12 @@ impl<'a> TradingBacktester<'a> {
             -1
         };
         let mut total_trading_days = 1;
-
+        let mut profit_factor_log_sum = 0.0;
         let mut sum_winning_trades: f64 = 0.0;
         let mut sum_losing_trades: f64 = 0.0;
 
-        let mut sum_log_losing_candles: f64 = 0.0;
-        let mut sum_log_winning_candle: f64 = 0.0;
-        let mut profit_factor_log_sum: f64 = 0.0;
-
         for position in &event_handler.positions {
-            sum_log_winning_candle+=position.sum_per_candle_log_win_returns;
-            sum_log_losing_candles+=position.sum_per_candle_log_lose_returns;
-            profit_factor_log_sum+=position.sum_per_candle_total_log_returns;
+            profit_factor_log_sum += position.sum_per_candle_total_log_returns;
 
             if position.date != current_day {
                 liquid_profit_per_day.push(0.0);
@@ -826,6 +837,15 @@ impl<'a> TradingBacktester<'a> {
             total_contracts += position.quantity_of_contracts as u64;
             total_fees_paid += position.total_paid_in_fees;
             current_day = position.date;
+
+
+            if position.side == Side::BUY {
+                total_long_trades+=1;
+                avg_long_trade_pnl+=position.liquid_pnl;
+            }else{
+                total_short_trades+=1;
+                avg_short_trade_pnl+=position.liquid_pnl;
+            }
 
             if position.liquid_pnl > 0.0 {
                 total_wins += 1;
@@ -880,10 +900,6 @@ impl<'a> TradingBacktester<'a> {
         let standard_deviation_percentage_returns = math::standard_deviation(daily_percentage_returns);
         let sharp_ratio = avg_daily_excess_return_percentage / standard_deviation_percentage_returns;
 
-        if sum_log_losing_candles == 0.0 {
-            sum_log_losing_candles = 1.0;
-        }
-
         BacktestMetrics {
             final_balance: event_handler.current_balance,
             initial_balance: INITIAL_BALANCE,
@@ -893,6 +909,8 @@ impl<'a> TradingBacktester<'a> {
             avg_trade_liquid_pnl: total_liquid_pnl / total_trades as f64,
             avg_daily_liquid_profit: total_liquid_pnl / total_trading_days as f64,
             worse_day_liquid_profit: liquid_profit_worst_day,
+            avg_long_trade_liquid_pnl: avg_long_trade_pnl / (total_long_trades as f64 + 1e-30),
+            avg_long_short_liquid_pnl: avg_short_trade_pnl / (total_short_trades as f64 + 1e-30),
             best_day_liquid_profit: liquid_profit_best_day,
             median_day_liquid_profit: 0.0,
             median_minutes_in_the_market_per_day: 0,
@@ -900,6 +918,8 @@ impl<'a> TradingBacktester<'a> {
             minutes_in_the_market: 0,
             win_rate_percentage: 100.0 * (total_wins as f64 / total_trades as f64),
             total_trades,
+            total_long_trades,
+            total_short_trades,
             quantity_of_contracts: total_contracts,
             total_wins,
             total_loses,
@@ -911,7 +931,7 @@ impl<'a> TradingBacktester<'a> {
             sharp_ratio,
             avg_winning_trade: sum_winning_trades / total_wins as f64,
             avg_losing_trade: sum_losing_trades / total_loses as f64,
-            profit_factor: sum_log_winning_candle/sum_log_losing_candles,
+            profit_factor: sum_winning_trades/(-1.0*sum_losing_trades),
             profit_factor_log_sum
         }
     }
@@ -967,8 +987,6 @@ fn parse_candles_from_file(
 
 #[cfg(test)]
 mod test {
-    use crate::models::candlestick::CandlestickType;
-    use crate::models::exchange::Exchange;
     use super::*;
 
     #[test]
@@ -981,31 +999,12 @@ mod test {
         assert_eq!(expected_percentage_returns, percentage_returns);
     }
 
-    #[test]
-    fn should_calculate_avg_entry_price_correctly_after_increase_position(){
-
-    }
-
-    #[test]
-    fn should_calculate_avg_exit_price_correctly_after_decrease_position(){
-
-    }
-
-    fn backtester_with_mock_data() -> TradingBacktester{
-        let data_provider = DataProvider {
-            candlesticks: vec![],
-            candle_configuration: CandlestickConfiguration {
-                candle_type: CandlestickType::TIME,
-                candle_input_parameter: 1,
-            },
-        };
-
-        TradingBacktester {
-            qty_history_trading_days: 1,
-            qty_history_candles: 1,
-            qty_history_trades: 1,
-            asset: Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap(),
-            data_provider,
-        }
-    }
+    // todo: commented function as reference for future test implementations
+    // fn should_calculate_avg_entry_price_correctly_after_increase_position(){
+    //
+    // }
+    //
+    // fn should_calculate_avg_exit_price_correctly_after_decrease_position(){
+    //
+    // }
 }

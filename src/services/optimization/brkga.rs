@@ -8,9 +8,7 @@ use rayon::prelude::*;
 use rand::prelude::*;
 use rand_pcg::{Pcg64, Lcg128Xsl64};
 use simple_bar::ProgressBar;
-use crate::services::backtest::{BacktestMetrics, TradingBacktester};
 use crate::services::configuration::kate_configuration_directory;
-use crate::strategies::custom::trade_rule_strategy::strategy::TradeRuleStrategy;
 
 pub struct BRKGA {
     fraction_top: f32, // amount of individuals considered elite
@@ -21,29 +19,38 @@ pub struct BRKGA {
     rng: Lcg128Xsl64,
     chromosome_size: usize,
     population: Vec<Individual>,
-    fitness_executor: FitnessExecutor,
+    fitness_executor: Box<dyn FitnessExecutor>,
 }
 
-#[allow(unused)]
-trait FitnessFunction {
-    fn fitness(&self, chromosome: Vec<f32>) -> f32;
+/// trait that must be implemented for anything that you want to be optimized
+pub trait FitnessExecutor: Send + Sync{
+    fn calculate_fitness(&self, chromosome: &[f32]) -> f64;
+    fn chromosome_details(&self, chromosome: &[f32]) -> String;
+    fn is_chromosome_valid(&self, chromosome: &[f32]) -> bool;
+    fn chromosome_size(&self) -> usize;
 }
 
 pub type BrkgaConfig = (f32, f32, usize, usize, f32);
 
 impl BRKGA {
-    pub fn new(seed: u64, chromosome_size: usize, config: BrkgaConfig, fitness_executor: FitnessExecutor) -> Self {
-        Self {
-            fraction_top: config.0,
-            fraction_bottom: config.1,
-            population_size: config.2,
-            max_iterations: config.3,
-            elitism_rate: config.4,
-            chromosome_size,
-            fitness_executor,
-            rng: Pcg64::seed_from_u64(seed),
-            population: vec![],
-        }
+    pub fn new(
+        seed: u64,
+        config: BrkgaConfig,
+        fitness_executor: Box<dyn FitnessExecutor>,
+    ) -> Box<Self> {
+        Box::new(
+            BRKGA {
+                fraction_top: config.0,
+                fraction_bottom: config.1,
+                population_size: config.2,
+                max_iterations: config.3,
+                elitism_rate: config.4,
+                chromosome_size: fitness_executor.chromosome_size(),
+                fitness_executor,
+                rng: Pcg64::seed_from_u64(seed),
+                population: vec![],
+            }
+        )
     }
 
     fn initial_population(&mut self) -> Vec<Individual> {
@@ -54,7 +61,8 @@ impl BRKGA {
         loop {
             let chromosome = (0..self.chromosome_size).map(|_| self.rng.gen_range(0.0..=1.0)).collect_vec();
             let value = chromosome.as_slice();
-            if is_chromosome_valid(value) {
+
+            if  self.fitness_executor.is_chromosome_valid(value) {
                 return Individual::new(chromosome);
             }
         }
@@ -85,12 +93,13 @@ impl BRKGA {
         let fitness_bar = Arc::new(Mutex::new(ProgressBar::default(individuals_without_fitness_calculated.len() as u32, 100, false)));
 
         println!("calculating fitness for {} individuals", individuals_without_fitness_calculated.len());
+
         individuals_without_fitness_calculated
             .par_iter_mut()
             .for_each(|ind| {
                 let bar = Arc::clone(&fitness_bar);
                 let chromossome = ind.chromosome.as_slice();
-                ind.fitness = Some(self.fitness_executor.calculate_fitness(chromossome));
+                ind.fitness = Some(self.fitness_executor.calculate_fitness(chromossome) as f32);
                 let mut parse_progress_bar = bar.lock().unwrap();
                 parse_progress_bar.update();
             });
@@ -173,17 +182,6 @@ impl BRKGA {
         println!("Time elapsed is: {:?}", duration);
     }
 
-    fn details(&self, chromosome: &[f32]) -> String {
-        let trading_model = TradeRuleStrategy::decode(chromosome);
-        let quantity_to_trade = trading_model.quantity_to_trade();
-        let metrics = self.fitness_executor.backtester.run_backtest(
-            trading_model,
-            quantity_to_trade,
-            true,
-        );
-        format!("{}", metrics)
-    }
-
     fn save_results_to_disk(&self, generation: usize) {
         let experiment_directory = kate_configuration_directory()
             .join("experiments");
@@ -198,7 +196,8 @@ impl BRKGA {
             .expect("should be allowed to open experiment file");
 
         experiment_file.write_fmt(format_args!("best fitness: {}\n", self.population.last().unwrap().fitness.unwrap())).unwrap();
-        experiment_file.write_fmt(format_args!("{}\n\n", self.details(self.population.last().unwrap().chromosome.as_slice()))).unwrap();
+        experiment_file.write_fmt(format_args!("{}\n\n", self.fitness_executor
+            .chromosome_details(self.population.last().unwrap().chromosome.as_slice()))).unwrap();
 
         experiment_file.write_fmt(format_args!("#solutions:\n")).unwrap();
         for individual in &self.population {
@@ -218,8 +217,8 @@ impl BRKGA {
         println!("best fitness: {}", best.fitness.unwrap());
         println!("median fitness: {}", median.fitness.unwrap());
         println!("worst fitness: {}", worst.fitness.unwrap());
-        println!("best chromosome {:?}", best.chromosome);
-        println!("{}", self.details(best.chromosome.as_slice()));
+        println!("\nbest chromosome {:?}", best.chromosome);
+        println!("{}", self.fitness_executor.chromosome_details(best.chromosome.as_slice()));
     }
 }
 
@@ -246,121 +245,57 @@ impl Clone for Individual {
     }
 }
 
-#[derive()]
-pub struct FitnessExecutor {
-    fixed_amount_per_trade: bool,
-    backtester: TradingBacktester<'static>,
-}
-
-impl FitnessExecutor {
-    pub fn new(backtester: TradingBacktester<'static>) -> Self {
-        Self {
-            backtester,
-            fixed_amount_per_trade: true,
-        }
-    }
-
-    pub fn calculate_fitness(&self, chromosome: &[f32]) -> f32 {
-        let trading_model = TradeRuleStrategy::decode(chromosome);
-        let quantity_to_trade = trading_model.quantity_to_trade();
-        let metrics = self.backtester.run_backtest(
-            trading_model,
-            quantity_to_trade,
-            self.fixed_amount_per_trade,
-        );
-        Self::fitness_from_metrics(metrics) as f32
-    }
-
-    fn fitness_from_metrics(metrics: BacktestMetrics) -> f64 {
-        if metrics.max_draw_down_percentage.is_nan() ||
-            metrics.max_draw_down_percentage.is_infinite() ||
-            metrics.avg_winning_trade.is_infinite() ||
-            metrics.avg_winning_trade.is_nan() ||
-            metrics.avg_losing_trade.is_infinite() ||
-            metrics.avg_losing_trade.is_nan() ||
-            metrics.profit_factor.is_infinite() ||
-            metrics.profit_factor.is_nan() {
-            return -10_000.0;
-        }
-
-        let actual_profit = metrics.avg_winning_trade - metrics.avg_losing_trade;
-        if actual_profit < 0.0 && metrics.profit_factor < 0.0 {
-            -(metrics.total_trades as f64 * actual_profit * metrics.profit_factor) / ((2240.0 - metrics.total_trading_days as f64) + (1.0 + 2.0 * metrics.max_draw_down_percentage / 100.0))
-        } else {
-            (metrics.total_trades as f64 * actual_profit * metrics.profit_factor) / ((2240.0 - metrics.total_trading_days as f64) + (1.0 + 2.0 * metrics.max_draw_down_percentage / 100.0))
-        }
-    }
-}
-
-fn is_chromosome_valid(chromosome: &[f32]) -> bool {
-    let trading_model = TradeRuleStrategy::decode(chromosome);
-    trading_model.is_valid()
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::constants::CHROMOSOME_SIZE_TRADE_RULE;
-    use crate::models::asset::Asset;
-    use crate::models::candlestick::CandlestickType;
-    use crate::models::exchange::Exchange;
-    use crate::models::market::Market;
-    use crate::strategies::strategy::CandlestickConfiguration;
     use super::*;
-
-    #[test]
-    fn test_new_brkga() {
-        let config: BrkgaConfig = (0.1, 0.2, 15000, 1000, 0.6);
-
-        let backtest_engine = TradingBacktester::new(
-            Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap(),
-            20150102,
-            20150102,
-            CandlestickConfiguration {
-                candle_type: CandlestickType::TICK,
-                candle_input_parameter: 1000,
-            },
-            true,
-        ).unwrap();
-
-        let brkga = BRKGA::new(1223, 36, config, FitnessExecutor::new(backtest_engine));
-
-        assert_eq!(brkga.chromosome_size, 36);
-        assert_eq!(brkga.fraction_top, 0.1);
-        assert_eq!(brkga.fraction_bottom, 0.2);
-        assert_eq!(brkga.population_size, 15000);
-        assert_eq!(brkga.max_iterations, 1000);
-        assert_eq!(brkga.elitism_rate, 0.6);
-    }
 
     #[test]
     fn test_generate_random_individual() {
         let config: BrkgaConfig = (0.1, 0.2, 15000, 1000, 0.6);
-        let backtest_engine = TradingBacktester::new(
-            Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap(),
-            20150102,
-            20150102,
-            CandlestickConfiguration {
-                candle_type: CandlestickType::TICK,
-                candle_input_parameter: 1000,
-            },
-            true,
-        ).unwrap();
-
-        let mut brkga = BRKGA::new(59841, CHROMOSOME_SIZE_TRADE_RULE, config, FitnessExecutor::new(backtest_engine));
+        let mut brkga = BRKGA::new(59841, config, Box::new(TestFitnessExecutor{}));
         let first_indivual = brkga.random_individual();
 
-        assert_eq!(first_indivual.chromosome.len(), CHROMOSOME_SIZE_TRADE_RULE);
+        assert_eq!(first_indivual.chromosome.len(), 10);
 
         for i in 0..first_indivual.chromosome.len() {
             assert!(first_indivual.chromosome[i] >= 0.0 && first_indivual.chromosome[i] <= 1.0);
         }
 
-        assert_eq!(0.47762603, first_indivual.chromosome[0]);
-        assert_eq!(0.6316566, first_indivual.chromosome[34]);
+        assert_eq!(0.6609407, first_indivual.chromosome[0]);
+        assert_eq!(0.3866915, first_indivual.chromosome[9]);
 
         let second_individual = brkga.random_individual();
 
         assert_ne!(first_indivual.chromosome, second_individual.chromosome);
+    }
+
+    struct TestFitnessExecutor {
+
+    }
+
+    impl FitnessExecutor for TestFitnessExecutor {
+        fn calculate_fitness(&self, chromosome: &[f32]) -> f64 {
+            let mut sum = 0;
+            for i in 0..chromosome.len() {
+                if chromosome[i] > 0.5 {
+                    sum+=1;
+                }
+            }
+
+            sum as f64
+        }
+
+        fn chromosome_details(&self, _: &[f32]) -> String {
+            "".to_string()
+        }
+
+        fn is_chromosome_valid(&self, _: &[f32]) -> bool {
+            true
+        }
+
+        fn chromosome_size(&self) -> usize {
+            10
+        }
     }
 }
 

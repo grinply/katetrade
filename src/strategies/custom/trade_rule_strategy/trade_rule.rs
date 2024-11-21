@@ -9,9 +9,6 @@ use crate::utils::math::{percentage_difference, value_on_range};
 
 use crate::models::candlestick::Candlestick;
 use crate::models::side::Side;
-use crate::strategies::strategy::{CandlestickTradingStrategy};
-
-pub(crate) const RULE_CHROMOSOME_SIZE: usize = 65;
 
 pub struct TradeRule {
     direction: Side,
@@ -21,6 +18,8 @@ pub struct TradeRule {
     ema: EMA,
     take_profit_atr: ATR,
     stop_loss_atr: ATR,
+
+    sma_count: usize,
 
     macd_target_value: f64,
     macd_fast_period: usize,
@@ -55,28 +54,6 @@ impl TradeRule {
     }
 
     pub fn new(direction: Side, chromosome: &[f32]) -> Self {
-        // first relative strength index
-        // let rsi1_upper_bound = value_on_range((1.0, 100.0), chromosome[0] as f64);
-        // let rsi1_lower_bound = value_on_range((1.0, 100.0), chromosome[1] as f64);
-        // let rsi1_period = value_on_range((1.0, 100.0), chromosome[2] as f64) as usize;
-        //
-        // //percentage difference from the last candle
-        // let pd_upper_bound = value_on_range((1.0, 100.0), chromosome[3] as f64);
-        // let pd_lower_bound = value_on_range((1.0, 100.0), chromosome[4] as f64);
-        //
-        // // rising and falling rate from last N period
-        // let rr_upper_bound = value_on_range((1.0, 100.0), chromosome[5] as f64);
-        // let rr_lower_bound = value_on_range((1.0, 100.0), chromosome[6] as f64);
-        // let rr_period = value_on_range((1.0, 100.0), chromosome[6] as f64) as usize;
-        //
-        // // simple moving average
-        // let sma_upper_bound = value_on_range((1.0, 100.0), chromosome[6] as f64);
-        // let sma_lower_bound = value_on_range((1.0, 100.0), chromosome[6] as f64);
-        // let sma_period = value_on_range((1.0, 100.0), chromosome[6] as f64) as usize;
-        //
-        // // second relative strength index
-
-
         let rsi1_upper_bound = value_on_range((1.0, 100.0), chromosome[4] as f64);
         let rsi1_lower_bound = value_on_range((1.0, 100.0), chromosome[5] as f64);
         let rsi1_period = value_on_range((1.0, 100.0), chromosome[6] as f64) as usize;
@@ -84,6 +61,9 @@ impl TradeRule {
         let macd_fast_period = value_on_range((2.0, 100.0), chromosome[7] as f64) as usize;
         let macd_slow_period = value_on_range((2.0, 100.0), chromosome[8] as f64) as usize;
         let macd_singal_period = value_on_range((2.0, 100.0), chromosome[9] as f64) as usize;
+
+        let sma_period = value_on_range((2.0, 200.0), chromosome[13] as f64) as usize;
+        let sma_count = value_on_range((1.0, sma_period as f64), chromosome[17] as f64) as usize;
 
         TradeRule {
             direction,
@@ -101,7 +81,8 @@ impl TradeRule {
             ema: EMA::new(value_on_range((2.0, 100.0), chromosome[11] as f64) as usize).unwrap(),
             sma_min_percentage_diff_from_price: value_on_range((0.0, 1.0), chromosome[12] as f64),
             sma_max_percentage_diff_from_price: value_on_range((0.0, 1.0), chromosome[14] as f64),
-            sma: SMA::new(value_on_range((2.0, 100.0), chromosome[13] as f64) as usize),
+            sma: SMA::new(sma_period),
+            sma_count,
             sma_take_profit: SMA::new(value_on_range((1.0, 100.0), chromosome[15] as f64) as usize),
             sma_stop_loss: SMA::new(value_on_range((1.0, 100.0), chromosome[16] as f64) as usize),
             stop_loss_atr_value: 0.0,
@@ -121,8 +102,16 @@ impl TradeRule {
         self.take_profit_atr_value = self.take_profit_atr.next(candle);
         self.stop_loss_atr_value = self.stop_loss_atr.next(candle);
 
-        //expression that evaluates if a trade should be opened
+
+        let sma_direction_count = if self.direction == Side::BUY {
+            self.sma.count_increasing()
+        } else{
+            self.sma.count_decreasing()
+        };
+
+        // expression that evaluates if a trade should be opened
         // test if all ranges here make sense with the generated values
+        sma_direction_count > self.sma_count && // check for trend
         macd > self.macd_target_value &&
         rsi < self.rsi_upper_bound && rsi > self.rsi_lower_bound &&
         pd < self.sma_max_percentage_diff_from_price && pd > self.sma_min_percentage_diff_from_price

@@ -9,6 +9,7 @@ pub struct ExponentialMovingAverage {
     is_new: bool,
 }
 
+#[allow(unused)]
 impl ExponentialMovingAverage {
     pub fn new(period: usize, weight: f64) -> Self {
         assert!(weight >= 0.0 && weight <= 1.0, "weight should be a value between 0 and 1");
@@ -85,23 +86,23 @@ mod tests {
 
     #[test]
     fn test_new() {
-        let ema = ExponentialMovingAverage::new(5);
+        let ema = ExponentialMovingAverage::default(5);
         assert_eq!(ema.period, 5);
 
-        let ema = ExponentialMovingAverage::new(0);
+        let ema = ExponentialMovingAverage::default(0);
         assert_eq!(ema.period, 0);
     }
 
     #[test]
     fn test_next() {
-        let mut ema = ExponentialMovingAverage::new(3);
+        let mut ema = ExponentialMovingAverage::default(3);
 
         assert_eq!(ema.next(&new_candle(2.0)), 2.0);
         assert_eq!(ema.next(&new_candle(5.0)), 3.5);
         assert_eq!(ema.next(&new_candle(1.0)), 2.25);
         assert_eq!(ema.next(&new_candle(6.25)), 4.25);
 
-        let mut ema = ExponentialMovingAverage::new(3);
+        let mut ema = ExponentialMovingAverage::default(3);
         let candle1 = new_candle(2.0);
         let candle2 = new_candle(5.0);
         assert_eq!(ema.next(&candle1), 2.0);
@@ -110,7 +111,7 @@ mod tests {
 
     #[test]
     fn test_display() {
-        let ema = ExponentialMovingAverage::new(7);
+        let ema = ExponentialMovingAverage::default(7);
         assert_eq!(format!("{}", ema), "EMA(7)");
     }
 

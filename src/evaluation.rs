@@ -166,6 +166,9 @@ mod tests {
             total_paid_in_fees: 0.0,
             quantity_of_contracts: 0,
             is_closed: false,
+            sum_per_candle_total_log_returns: 0.0,
+            sum_per_candle_log_win_returns: 0.0,
+            sum_per_candle_log_lose_returns: 0.0,
         });
 
         trading_results.push(Position {
@@ -184,6 +187,9 @@ mod tests {
             total_paid_in_fees: 0.0,
             quantity_of_contracts: 0,
             is_closed: false,
+            sum_per_candle_total_log_returns: 0.0,
+            sum_per_candle_log_win_returns: 0.0,
+            sum_per_candle_log_lose_returns: 0.0,
         });
 
         trading_results.push(Position {
@@ -202,6 +208,9 @@ mod tests {
             total_paid_in_fees: 0.0,
             quantity_of_contracts: 0,
             is_closed: false,
+            sum_per_candle_total_log_returns: 0.0,
+            sum_per_candle_log_win_returns: 0.0,
+            sum_per_candle_log_lose_returns: 0.0,
         });
 
         trading_results.push(Position {
@@ -220,6 +229,9 @@ mod tests {
             total_paid_in_fees: 0.0,
             quantity_of_contracts: 0,
             is_closed: false,
+            sum_per_candle_total_log_returns: 0.0,
+            sum_per_candle_log_win_returns: 0.0,
+            sum_per_candle_log_lose_returns: 0.0,
         });
 
         let daily_pnls = calculate_daily_pnl(&trading_results);
