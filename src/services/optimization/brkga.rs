@@ -16,7 +16,8 @@ use crate::services::configuration::kate_configuration_directory;
 /// it can be used to find parameters hat maximize a given performance metric such as total return.
 ///
 /// In order to use the optimizer you must specify how to evaluate each solution ( calculate its fitness ).
-/// implementing the trait [FitnessExecutor], for a concrete example refer to [BacktestOptimizerTradeRule]
+/// implementing the trait [FitnessExecutor], for a concrete example refer to
+/// [crate::strategies::custom::trade_rule_strategy::optimization::BacktestOptimizerTradeRule]
 pub fn run_brkga_optimization(
     seed: u64,
     config: BrkgaConfig,
