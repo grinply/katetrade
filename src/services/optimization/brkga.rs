@@ -298,7 +298,7 @@ mod tests {
 
     #[test]
     fn test_generate_random_individual() {
-        let config: BrkgaConfig = (0.1, 0.2, 15000, 1000, 0.6);
+        let config = BrkgaConfig::new(0.1, 0.2, 15000, 1000, 0.6);
         let mut brkga = BRKGA::new(59841, config, Box::new(TestFitnessExecutor {}));
         let first_indivual = brkga.random_individual();
 
