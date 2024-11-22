@@ -18,6 +18,9 @@ pub struct Position {
     pub total_paid_in_fees: f64,
     pub quantity_of_contracts: u32,
     pub is_closed: bool,
+    pub sum_per_candle_total_log_returns: f64,
+    pub sum_per_candle_log_win_returns: f64,
+    pub sum_per_candle_log_lose_returns: f64,
 }
 
 #[allow(unused)]

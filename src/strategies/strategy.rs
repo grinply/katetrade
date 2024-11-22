@@ -3,9 +3,8 @@ use crate::models::candlestick::{Candlestick, CandlestickType};
 use crate::models::action::TradeAction;
 use crate::models::asset::Asset;
 use crate::models::trade::Trade;
-use crate::strategies::dummy_strategy::{DummyHighResolutionStrategy};
-#[allow(unused)]
-use crate::strategies::reversal_momentum_strategy::{ClassicReversalMomentumCandlestickStrategy, ReversalMomentumCandlestickStrategy};
+use crate::strategies::custom::dummy_strategy::{DummyHighResolutionStrategy};
+use crate::strategies::custom::reversal_momentum_strategy::ReversalMomentumCandlestickStrategy;
 
 /// algorithmic trading strategy to operate in the capital markets using raw Trade data
 #[allow(unused)]

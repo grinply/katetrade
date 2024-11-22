@@ -469,6 +469,7 @@ dependencies = [
  "lazy_static",
  "once_cell",
  "rand",
+ "rand_pcg",
  "rayon",
  "rusty-s3",
  "serde",
@@ -477,6 +478,7 @@ dependencies = [
  "strum",
  "strum_macros",
  "sysinfo",
+ "ta",
  "ureq",
 ]
 
@@ -630,6 +632,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom",
+]
+
+[[package]]
+name = "rand_pcg"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59cad018caf63deb318e5a4586d99a24424a364f40f1e5778c29aca23f4fc73e"
+dependencies = [
+ "rand_core",
 ]
 
 [[package]]
@@ -846,6 +857,12 @@ dependencies = [
  "rayon",
  "windows",
 ]
+
+[[package]]
+name = "ta"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "609409d472a0a7d8d4dd9e19891bbdef546b9dce670c3057d0e02192dc541226"
 
 [[package]]
 name = "terminal_size"

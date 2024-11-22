@@ -11,7 +11,6 @@ use crate::services::data_feed_reader;
 use crate::services::market_connector::MarketConnectorClient;
 use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name, CandlestickTradingStrategy};
 use crate::strategies::strategy::{HighResolutionTradingStrategy, StrategyInputData};
-use crate::models::candlestick::{CandlestickGenerator};
 use crate::models::side::Side;
 use crate::models::trade::Trade;
 
@@ -241,6 +240,7 @@ impl OrderExecutor for LiveOrderExecutor {
                     send_limit_order(self.ticker.as_str(), self.market, Side::BUY, price_requested, 1, self.account_id.as_str(), self.strategy_id.as_str()),
                 Some(OrderAction::LimitShort(price_requested)) => self.client.
                     send_limit_order(self.ticker.as_str(), self.market, Side::SELL, price_requested, 1, self.account_id.as_str(), self.strategy_id.as_str()),
+                Some(OrderAction::Abort) => panic!("received an abort command we should understand why"),
                 None => unreachable!()
             };
 

@@ -1,4 +1,5 @@
 use strum_macros::EnumString;
+use ta::{Close, High, Low, Open, Volume};
 use crate::models::trade::Trade;
 use crate::strategies::strategy::CandlestickConfiguration;
 
@@ -27,14 +28,11 @@ pub enum CandlestickType {
 
 #[allow(unused)]
 pub trait CandlestickGenerator {
-    fn new(input_configuration: u64) -> impl CandlestickGenerator;
-
     fn description(&self) -> String;
 
     /// generates a brand-new Candlestick for every new trade, representing the still open candle
     /// it and also the closed when they finally do close.
     fn parse_with_open_candles(&mut self, new_trade: &Trade) -> Candlestick;
-
 
     /// generates a new Candlestick only the candlestick is closed
     /// it will only update its internal state with the new_trade in the meantime
@@ -62,14 +60,43 @@ pub struct VolumeCandlestickGenerator {
     last_candle: Option<Candlestick>,
 }
 
-pub fn select_candlestick_generator(configuration: CandlestickConfiguration) -> impl CandlestickGenerator {
-    if configuration.candle_type == CandlestickType::VOLUME {
-        panic!("Candlestick generator for volume is not implemented yet");
+pub fn select_candlestick_generator(configuration: CandlestickConfiguration) -> Box<dyn CandlestickGenerator> {
+    match configuration.candle_type {
+        CandlestickType::TIME => Box::new(TimeCandlestickGenerator::new(configuration.candle_input_parameter)),
+        CandlestickType::TICK => Box::new(TickCandlestickGenerator::new(configuration.candle_input_parameter)),
+        CandlestickType::VOLUME => Box::new(TickCandlestickGenerator::new(configuration.candle_input_parameter))
     }
-    if configuration.candle_type == CandlestickType::TIME {
-        TimeCandlestickGenerator::new(configuration.candle_input_parameter);
+}
+
+// implementing OHLCV trait from technical analysis library to use existing simple_moving_average
+impl Open for Candlestick {
+    fn open(&self) -> f64 {
+        self.open
     }
-    TickCandlestickGenerator::new(configuration.candle_input_parameter)
+}
+
+impl High for Candlestick {
+    fn high(&self) -> f64 {
+        self.high
+    }
+}
+
+impl Low for Candlestick {
+    fn low(&self) -> f64 {
+        self.low
+    }
+}
+
+impl Close for Candlestick {
+    fn close(&self) -> f64 {
+        self.close
+    }
+}
+
+impl Volume for Candlestick {
+    fn volume(&self) -> f64 {
+        self.volume
+    }
 }
 
 impl Candlestick {
@@ -89,7 +116,7 @@ impl Candlestick {
     }
 }
 
-impl CandlestickGenerator for TickCandlestickGenerator {
+impl TickCandlestickGenerator {
     fn new(input_configuration: u64) -> impl CandlestickGenerator {
         TickCandlestickGenerator {
             ticks_per_candle: input_configuration,
@@ -97,7 +124,9 @@ impl CandlestickGenerator for TickCandlestickGenerator {
             date_last_trade: -1,
         }
     }
+}
 
+impl CandlestickGenerator for TickCandlestickGenerator {
     fn description(&self) -> String {
         "Candlestick grouped by quantity of trades".to_string()
     }
@@ -153,17 +182,7 @@ impl CandlestickGenerator for TickCandlestickGenerator {
 }
 
 impl CandlestickGenerator for TimeCandlestickGenerator {
-    fn new(input_configuration: u64) -> impl CandlestickGenerator {
-        if input_configuration == 0 || input_configuration > 60 {
-            panic!("Invalid candlestick period, the period must be between 1 and 60 minutes");
-        }
-        TimeCandlestickGenerator {
-            last_price: 0.0,
-            last_day: 0,
-            period_minutes: input_configuration as u8,
-            last_candle: None,
-        }
-    }
+
 
     fn description(&self) -> String {
         String::from(format!("candlesticks based on time slices of {} minutes", self.period_minutes))
@@ -180,6 +199,18 @@ impl CandlestickGenerator for TimeCandlestickGenerator {
 
 
 impl TimeCandlestickGenerator {
+    fn new(input_configuration: u64) -> impl CandlestickGenerator {
+        if input_configuration == 0 || input_configuration > 60 {
+            panic!("Invalid candlestick period, the period must be between 1 and 60 minutes");
+        }
+        TimeCandlestickGenerator {
+            last_price: 0.0,
+            last_day: 0,
+            period_minutes: input_configuration as u8,
+            last_candle: None,
+        }
+    }
+
     fn parse(&mut self, new_trade: &Trade, only_closed_candles: bool) -> Option<Candlestick> {
         if new_trade.price < 0.0 {
             panic!("Trade price should be greater than 0, received {}", new_trade.price);
@@ -259,7 +290,10 @@ impl TimeCandlestickGenerator {
         let result_candle = existing_candle.clone();
 
         if existing_candle.is_closed {
-            self.last_candle = Some(Candlestick::new(new_trade));
+            let mut new_candle = Candlestick::new(new_trade);
+            self.add_close_time_to_time_based_candlestick(&mut new_candle);
+            self.remove_seconds_from_start_time(&mut new_candle);
+            self.last_candle = Some(new_candle);
         }
         Some(result_candle)
     }
@@ -284,9 +318,37 @@ impl TimeCandlestickGenerator {
 
 
 
+
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+    use crate::models::trade::TradeFile;
     use super::*;
+
+    #[test]
+    fn parse_correct_amount_of_time_based_candlesticks() {
+        let binary_trades_path = PathBuf::from("resources/TRADE-B3-FUTURES-WIN-20150102");
+
+        assert!(binary_trades_path.exists());
+
+        let trades_file = TradeFile::new_from_binary_file(binary_trades_path.as_path().to_str().unwrap())
+            .unwrap();
+
+        let mut generator = TimeCandlestickGenerator::new(1);
+        let mut candlesticks: Vec<Candlestick> = vec![];
+
+        for trade in trades_file {
+            if let Some(candle) = generator.parse_only_closed_candles(&trade) {
+                candlesticks.push(candle);
+            }
+        }
+        assert_eq!(candlesticks.first().unwrap().date, 2015_01_02);
+        assert_eq!(candlesticks.first().unwrap().start_time, 09_00_00);
+
+        assert_eq!(candlesticks.last().unwrap().date, 2015_01_02);
+        assert_eq!(candlesticks.last().unwrap().start_time, 17_54_00);
+        assert_eq!(535, candlesticks.len());
+    }
 
     #[test]
     fn time_candlesticks_generator_should_correctly_create_candles_of_one_minute_including_not_closed_candles() {
@@ -317,7 +379,7 @@ mod tests {
         assert_eq!(131000.0, second_closed_candle.low);
         assert_eq!(131200.0, second_closed_candle.close);
         assert_eq!(5, second_closed_candle.trades);
-        assert_eq!(09_01_07_234, second_closed_candle.start_time);
+        assert_eq!(09_01_00_000, second_closed_candle.start_time);
 
         let last_candle = result_candlesticks.last().unwrap();
 
@@ -327,7 +389,7 @@ mod tests {
         assert_eq!(131210.0, last_candle.low);
         assert_eq!(131225.0, last_candle.close);
         assert_eq!(3, last_candle.trades);
-        assert_eq!(09_02_10, last_candle.start_time);
+        assert_eq!(09_02_00, last_candle.start_time);
     }
     #[test]
     fn time_candlesticks_generator_should_correctly_create_closed_only_candles_of_one_minute() {
@@ -363,7 +425,7 @@ mod tests {
         assert_eq!(131000.0, second_candle.low);
         assert_eq!(131200.0, second_candle.close);
         assert_eq!(5, second_candle.trades);
-        assert_eq!(09_01_07_234, second_candle.start_time);
+        assert_eq!(09_01_00_000, second_candle.start_time);
     }
 
     #[test]
@@ -526,7 +588,7 @@ mod tests {
         // Verify the second closed candle (09:05:00 - 09:09:59)
         let second_candle = &result_candlesticks[1];
         assert_eq!(second_candle.is_closed, true);
-        assert_eq!(second_candle.start_time, 09_05_10);
+        assert_eq!(second_candle.start_time, 09_05_00);
         assert_eq!(second_candle.open, 131100.0);
         assert_eq!(second_candle.high, 131130.0);
         assert_eq!(second_candle.low, 131080.0);
@@ -541,7 +603,7 @@ mod tests {
         // Verify that the last candle is open and has correct data
         if let Some(last_candle) = &generator.last_candle {
             assert_eq!(last_candle.is_closed, false);
-            assert_eq!(last_candle.start_time, 09_10_15);
+            assert_eq!(last_candle.start_time, 09_10_00);
             assert_eq!(last_candle.open, 131110.0);
             assert_eq!(last_candle.high, 131150.0);
             assert_eq!(last_candle.low, 131070.0);

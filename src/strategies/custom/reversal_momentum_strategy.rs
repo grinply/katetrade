@@ -63,7 +63,7 @@ impl ReversalMomentumCandlestickStrategy {
         assert_ne!(self.last_buy_price, 0.0);
 
         if actual_time.gt(&NaiveTime::from_hms_opt(17, 0, 0).unwrap()) {
-            if actual_time.le(&NaiveTime::from_hms_opt(17, 50, 0).unwrap()) {
+            if actual_time.le(&NaiveTime::from_hms_opt(17, 30, 0).unwrap()) {
                 return self.check_profit_loss(closed_candle);
             } else {
                 return self.close_order_on_end_of_day();
