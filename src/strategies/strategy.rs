@@ -5,6 +5,7 @@ use crate::models::asset::Asset;
 use crate::models::trade::Trade;
 use crate::strategies::custom::dummy_strategy::{DummyHighResolutionStrategy};
 use crate::strategies::custom::reversal_momentum_strategy::ReversalMomentumCandlestickStrategy;
+use crate::strategies::custom::rsi_strategy::RsiOverboughtOversoldCandlestickStrategy;
 
 /// algorithmic trading strategy to operate in the capital markets using raw Trade data
 #[allow(unused)]
@@ -68,8 +69,9 @@ pub struct CandlestickConfiguration {
 pub fn list_all_candlestick_strategies() -> Vec<impl CandlestickTradingStrategy+Sized> {
     vec![
         // DummyCandlestickStrategy::new(),
-        ReversalMomentumCandlestickStrategy::new()
+        // ReversalMomentumCandlestickStrategy::new()
         // ClassicReversalMomentumCandlestickStrategy::new()
+        RsiOverboughtOversoldCandlestickStrategy::new()
     ]
 }
 
