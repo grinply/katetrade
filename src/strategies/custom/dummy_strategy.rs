@@ -1,9 +1,9 @@
 use crate::models::action::OrderAction::{MarketLong, MarketShort};
 use crate::models::action::TradeAction;
 use crate::models::asset::Asset;
-use crate::models::candlestick::{Candlestick, CandlestickType};
+use crate::models::candlestick::{Candlestick, CandlestickGenerator, TickCandlestickGenerator};
 use crate::models::trade::Trade;
-use crate::strategies::strategy::{CandlestickConfiguration, CandlestickTradingStrategy, HighResolutionTradingStrategy};
+use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
 
 #[derive(Debug)]
 pub struct DummyHighResolutionStrategy {
@@ -56,7 +56,7 @@ impl CandlestickTradingStrategy for DummyCandlestickStrategy {
         }
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "dummy_candlestick_strategy"
     }
 
@@ -64,11 +64,8 @@ impl CandlestickTradingStrategy for DummyCandlestickStrategy {
         // Initialize trading day logic
     }
 
-    fn candlestick_configuration(&self) -> CandlestickConfiguration {
-        CandlestickConfiguration {
-            candle_type: CandlestickType::TICK,
-            candle_input_parameter: 50,
-        }
+    fn candlestick_generator(&self) -> Box<dyn CandlestickGenerator> {
+        Box::new(TickCandlestickGenerator::new(50))
     }
 
     fn process_closed_candlestick(&mut self, _: &Candlestick) -> TradeAction {

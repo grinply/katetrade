@@ -4,15 +4,14 @@ use std::{cmp};
 use std::fmt::{Display, Formatter};
 use chrono::{Datelike, NaiveDate, Weekday};
 use itertools::{enumerate};
-use crate::models::candlestick::{Candlestick};
-use crate::models::{candlestick};
+use crate::models::candlestick::{Candlestick, CandlestickGenerator};
 use crate::models::action::{OrderAction, TradeAction};
 use crate::models::asset::Asset;
 use crate::models::pnl::Position;
 use crate::services::aws::AwsClient;
 use crate::services::backtest::TradeEvent::NewCandle;
 use crate::services::configuration::{kate_configuration_directory, S3_BUCKET_HISTORICAL_DATA};
-use crate::strategies::strategy::{CandlestickConfiguration, CandlestickTradingStrategy};
+use crate::strategies::strategy::{CandlestickTradingStrategy};
 use crate::utils::{date, math};
 use simple_bar::ProgressBar;
 use crate::models::side::Side;
@@ -124,7 +123,6 @@ pub struct TradingBacktester<'a> {
 #[allow(unused)]
 struct DataProvider {
     candlesticks: Vec<Candlestick>,
-    candle_configuration: CandlestickConfiguration,
 }
 
 #[allow(unused)]
@@ -149,10 +147,9 @@ struct ExchangeEventHandler<'a> {
 }
 
 impl DataProvider {
-    fn new(candlesticks: Vec<Candlestick>, candle_configuration: CandlestickConfiguration) -> Self {
+    fn new(candlesticks: Vec<Candlestick>) -> Self {
         DataProvider {
             candlesticks,
-            candle_configuration,
         }
     }
 }
@@ -558,7 +555,7 @@ fn add_orders_event(event_handler: &mut ExchangeEventHandler, action: TradeActio
 }
 
 impl<'a> TradingBacktester<'a> {
-    pub fn run_backtest(&self, mut strategy: impl CandlestickTradingStrategy, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
+    pub fn run_backtest(&self, mut strategy: Box<dyn CandlestickTradingStrategy>, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
         let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
 
         let mut index_list_each_start_trading_day = vec![];
@@ -597,7 +594,7 @@ impl<'a> TradingBacktester<'a> {
         asset: &Asset,
         start_date: u32,
         end_date: u32,
-        candlestick_configuration: CandlestickConfiguration,
+        candlestick_generator: Box<dyn CandlestickGenerator>,
         no_download: bool,
     ) -> Result<TradingBacktester, anyhow::Error> {
         let start_date = date::convert_to_naive_date(start_date)?;
@@ -723,13 +720,15 @@ impl<'a> TradingBacktester<'a> {
         let parse_candles_bar = Arc::new(Mutex::new(ProgressBar::default(files_to_parse.len() as u32, 100, false)));
 
         let mut candlesticks: Vec<Vec<Candlestick>> = Vec::new();
+
+
         files_to_parse
             .into_par_iter()
             .map(|binary_trade_file| {
                 let bar = Arc::clone(&parse_candles_bar);
-                let configuration = candlestick_configuration.clone();
+                let parser = candlestick_generator.clone();
                 let candlesticks_current_file =
-                    parse_candles_from_file(binary_trade_file, configuration)
+                    parse_candles_from_file(binary_trade_file.to_string(), parser)
                         .expect("should not fail when parsing candlesticks from trades file");
                 let mut parse_progress_bar = bar.lock().unwrap();
                 parse_progress_bar.update();
@@ -744,11 +743,11 @@ impl<'a> TradingBacktester<'a> {
             qty_history_candles: candlesticks.len() as u64,
             qty_history_trades: candlesticks.iter()
                 .fold(0, |total, candle| total + candle.trades),
-            data_provider: DataProvider::new(candlesticks, candlestick_configuration),
+            data_provider: DataProvider::new(candlesticks),
         })
     }
 
-    fn add_context_to_strategy(&self, strategy: &mut impl CandlestickTradingStrategy, index_start_day_list: &mut Vec<usize>, offset_start_current_day: usize) {
+    fn add_context_to_strategy(&self, strategy: &mut Box<dyn CandlestickTradingStrategy>, index_start_day_list: &mut Vec<usize>, offset_start_current_day: usize) {
         index_start_day_list.push(offset_start_current_day);
         let context_size: usize = strategy.days_of_context() as usize;
 
@@ -964,7 +963,7 @@ fn download_binary_trades_file(
 
 fn parse_candles_from_file(
     binary_trades_file_full_path: String,
-    candlestick_configuration: CandlestickConfiguration,
+    mut candlestick_parser: Box<dyn CandlestickGenerator>,
 ) -> Result<Vec<Candlestick>, anyhow::Error> {
     let binary_trades_path = PathBuf::from(binary_trades_file_full_path.clone());
 
@@ -974,7 +973,6 @@ fn parse_candles_from_file(
     }
 
     let trades_file = TradeFile::new_from_binary_file(binary_trades_file_full_path.as_str())?;
-    let mut candlestick_parser = candlestick::select_candlestick_generator(candlestick_configuration.clone());
     let mut candlesticks: Vec<Candlestick> = Vec::new();
 
     for trade in trades_file {

@@ -4,15 +4,15 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 use crossbeam_channel::Receiver;
 use crate::models::action::{OrderAction, TradeAction};
-use crate::models::candlestick;
 use crate::models::market::Market;
 use crate::services::configuration::KateConfiguration;
 use crate::services::data_feed_reader;
 use crate::services::market_connector::MarketConnectorClient;
-use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name, CandlestickTradingStrategy};
-use crate::strategies::strategy::{HighResolutionTradingStrategy, StrategyInputData};
+use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name};
+use crate::strategies::strategy::{StrategyInputData};
 use crate::models::side::Side;
 use crate::models::trade::Trade;
+use crate::strategies::strategy;
 
 #[allow(unused)]
 pub trait OrderExecutor {
@@ -150,6 +150,7 @@ impl LiveStrategyExecutor {
         let strategy_name = execution_request.strategy_name
             .to_lowercase();
 
+
         match execution_request.strategy_input_data {
             StrategyInputData::CANDLESTICK => {
                 let strategy = get_candlestick_strategy_by_name(strategy_name.as_str());
@@ -174,9 +175,10 @@ impl LiveStrategyExecutor {
         let running = self.running_strategy_map.get(execution_key.as_str()).unwrap().clone();
 
         thread::spawn(move || {
-            let mut trading_strategy = get_candlestick_strategy_by_name(order_executor.strategy_id.as_str()).unwrap();
-            let mut candlestick_parser = candlestick::select_candlestick_generator(
-                trading_strategy.candlestick_configuration());
+            let strategy_name = order_executor.strategy_id.as_str();
+            let mut trading_strategy = get_candlestick_strategy_by_name(strategy_name).unwrap();
+            let mut candlestick_parser = strategy::get_candlestick_generator_for_strategy(strategy_name)
+                .expect("not null");
 
             while running.load(std::sync::atomic::Ordering::Relaxed) {
                 let new_trade = consumer_channel.recv().unwrap(); // this will block the thread until a new trade is available
