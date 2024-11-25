@@ -6,7 +6,6 @@ use std::fs::{File};
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use lazy_static::lazy_static;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
-use ta::Close;
 use crate::constants;
 use crate::services::backtest::DataPoint;
 
@@ -194,12 +193,6 @@ impl DataPoint for Trade {
     }
 
     fn current_price(&self) -> f64 {
-        self.price
-    }
-}
-
-impl Close for Trade {
-    fn close(&self) -> f64 {
         self.price
     }
 }
