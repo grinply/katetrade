@@ -24,7 +24,8 @@ use crate::models::asset::Asset;
 use crate::models::market::Market;
 use crate::models::side::Side;
 use crate::models::trade;
-use crate::services::{backtest, configuration};
+use crate::services::{configuration};
+use crate::services::backtest::backtest::TradingBacktester;
 use crate::services::configuration::{load_configuration, KateConfiguration};
 use crate::services::optimization::brkga::{run_brkga_optimization, BrkgaConfig};
 use crate::strategies::custom::trade_rule_strategy::optimization::fitness_optimizer_trade_rule_strategy;
@@ -116,6 +117,10 @@ fn cli() -> Command {
                     .num_args(0..=1))
                 .arg(arg!(--force_sequential_download <FORCE_SEQUENTIAL_DOWNLOAD> "if there is aby need to download historical data, the download will be executed sequentially (not concurrently)")
                     .default_value("false")
+                    .num_args(0..=1)
+                    .required(false))
+                .arg(arg!(--cache_on_memory <CACHE_ON_MEMORY> "select if the complete dataset used by the backtest should be stored in main memory ( will greatly increase execution speed at the cost of available memory)")
+                    .default_value("true")
                     .num_args(0..=1)
                     .required(false))
                 .arg(arg!(-q --qty_to_trade <QUANTITY_TO_TRADE> "base traded quantity to trade on each order sent to the market")
@@ -243,6 +248,11 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
         .expect("force_sequential_download is required")
         .parse().expect("force_sequential_download should be a bool");
 
+    let cache_on_memory: bool = sub_matches.get_one::<String>("cache_on_memory")
+        .expect("cache_on_memory is required")
+        .parse().expect("cache_on_memory should be a bool");
+
+
     let ticker = sub_matches.get_one::<String>("ticker").expect("required");
     let market = Market::from_str(sub_matches
         .get_one::<String>("market")
@@ -279,7 +289,7 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
     let candlestick_strategy = get_candlestick_strategy_by_name(strategy_name.as_str());
     let high_resolution_strategy = get_high_resolution_strategy_by_name(strategy_name);
 
-    if candlestick_strategy.is_none() && high_resolution_strategy.is_none(){
+    if candlestick_strategy.is_none() && high_resolution_strategy.is_none() {
         eprintln!("[ERROR] no strategy with name '{}' not found", strategy_name);
         return;
     }
@@ -292,7 +302,8 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
             asset.unwrap(),
             qty_to_trade,
             fixed_trade_qty,
-            force_sequential_download
+            force_sequential_download,
+            cache_on_memory,
         );
     }
 
@@ -305,7 +316,8 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
             asset.unwrap(),
             qty_to_trade,
             fixed_trade_qty,
-            force_sequential_download
+            force_sequential_download,
+            cache_on_memory,
         );
     }
 }
@@ -318,13 +330,15 @@ fn run_high_resolution_backtest(
     asset: &Asset,
     qty_to_trade: u32,
     fixed_trade_qty: bool,
-    force_sequential_download: bool
-){
+    force_sequential_download: bool,
+    cache_on_memory: bool,
+) {
     let start_load_data = Instant::now();
-    let backtester_engine = backtest::TradingBacktester::new(
+    let backtester_engine = TradingBacktester::new(
         &asset,
         begin,
         end,
+        cache_on_memory,
         None,
         force_sequential_download,
     );
@@ -348,7 +362,6 @@ fn run_high_resolution_backtest(
     let elapsed = now.elapsed();
     println!("backtest executed successfully in {:.2?}", elapsed);
     println!("{}", metrics);
-
 }
 
 fn run_candlestick_backtest(
@@ -359,17 +372,19 @@ fn run_candlestick_backtest(
     asset: &Asset,
     qty_to_trade: u32,
     fixed_trade_qty: bool,
-    force_sequential_download: bool
-){
+    force_sequential_download: bool,
+    cache_on_memory: bool,
+) {
     let candle_parser = strategy::get_candlestick_generator_for_strategy(strategy_name)
         .unwrap();
     let start_load_data = Instant::now();
-    let backtester_engine = backtest::TradingBacktester::new(
+    let backtester_engine = TradingBacktester::new(
         &asset,
         begin,
         end,
+        cache_on_memory,
         Some(candle_parser),
-        force_sequential_download
+        force_sequential_download,
     );
 
     let finish_load_data = start_load_data.elapsed();
@@ -387,7 +402,7 @@ fn run_candlestick_backtest(
     );
 
     let now = Instant::now();
-    let metrics = backtester.run_backtest(strategy, qty_to_trade, fixed_trade_qty);
+    let metrics = backtester.run_candlestick_backtest(strategy, qty_to_trade, fixed_trade_qty);
     let elapsed = now.elapsed();
     println!("backtest executed successfully in {:.2?}", elapsed);
     println!("{}", metrics);
