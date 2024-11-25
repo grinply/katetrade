@@ -775,7 +775,7 @@ impl<'a> TradingBacktester<'a> {
         }
 
         println!("parsing binary files with historical data from local disk");
-        let parse_candles_bar = Arc::new(Mutex::new(ProgressBar::default(files_to_parse.len() as u32, 100, false)));
+        let progress_bar = Arc::new(Mutex::new(ProgressBar::default(files_to_parse.len() as u32, 100, false)));
 
         let mut candlesticks: Vec<Vec<Candlestick>> = Vec::new();
         let mut trades: Vec<Vec<Trade>> = Vec::new();
@@ -784,7 +784,7 @@ impl<'a> TradingBacktester<'a> {
             files_to_parse
                 .into_par_iter()
                 .map(|binary_trade_file| {
-                    let bar = Arc::clone(&parse_candles_bar);
+                    let bar = Arc::clone(&progress_bar);
                     let parser = candle_generator.clone();
                     let candlesticks_current_file =
                         parse_candles_from_file(binary_trade_file.to_string(), parser)
@@ -797,7 +797,7 @@ impl<'a> TradingBacktester<'a> {
             files_to_parse
                 .into_par_iter()
                 .map(|binary_trade_file| {
-                    let bar = Arc::clone(&parse_candles_bar);
+                    let bar = Arc::clone(&progress_bar);
                     let trades_current_file =
                         parse_trades_from_file(binary_trade_file.to_string())
                             .expect("should not fail when parsing trades from file");
