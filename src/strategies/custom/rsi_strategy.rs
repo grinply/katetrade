@@ -68,12 +68,16 @@ impl CandlestickTradingStrategy for RsiOverboughtOversoldCandlestickStrategy {
         "rsi_overbought_oversold_candlestick_strategy"
     }
 
-    fn init_trading_day(&mut self, _: &Asset, _: &[Candlestick]) {
+    fn init_trading_day(&mut self, _: &Asset, candles: &[Candlestick]) {
         self.reset();
         // Initialize trading day logic
         self.day_period = false;
         self.rsi = RSI::new(14).unwrap();
         self.atr = ATR::new(14).unwrap();
+
+        for candle in candles.iter() {
+            self.rsi.next(candle.close);
+        }
     }
 
     fn candlestick_configuration(&self) -> CandlestickConfiguration {

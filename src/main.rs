@@ -21,7 +21,6 @@ use simple_bar::ProgressBar;
 use rayon::iter::ParallelIterator;
 use crate::constants::OPTIMIZE;
 use crate::models::asset::Asset;
-use crate::models::candlestick::CandlestickType;
 use crate::models::market::Market;
 use crate::models::side::Side;
 use crate::models::trade;
@@ -30,7 +29,8 @@ use crate::services::configuration::{load_configuration, KateConfiguration};
 use crate::services::optimization::brkga::{run_brkga_optimization, BrkgaConfig};
 use crate::strategies::custom::trade_rule_strategy::optimization::fitness_optimizer_trade_rule_strategy;
 use crate::strategies::execution_manager::{LiveStrategyExecutor, ExecutionRequest};
-use crate::strategies::strategy::{get_candlestick_strategy_by_name, CandlestickConfiguration, StrategyInputData};
+use crate::strategies::strategy;
+use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name, CandlestickTradingStrategy, HighResolutionTradingStrategy, StrategyInputData};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn cli() -> Command {
@@ -114,12 +114,6 @@ fn cli() -> Command {
                     .value_parser([constants::B3])
                     .default_value(constants::B3)
                     .num_args(0..=1))
-                .arg(arg!(--candle_type <CANDLE_TYPE> "Type of candlestick that will be used in the backtest'")
-                    .value_parser([constants::TIME, constants::TICK, constants::VOLUME])
-                    .default_value(constants::TICK)
-                    .num_args(0..=1))
-                .arg(arg!(--candle_configuration <END_DATE> "Input configuration for the type of candlestick selected (time range in minutes, ticks, total volume)")
-                    .default_value("50"))
                 .arg(arg!(--force_sequential_download <FORCE_SEQUENTIAL_DOWNLOAD> "if there is aby need to download historical data, the download will be executed sequentially (not concurrently)")
                     .default_value("false")
                     .num_args(0..=1)
@@ -244,19 +238,10 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
     let end: u32 = sub_matches.get_one::<String>("end").expect("required")
         .parse().expect("end should a positive number in the format yyyyMMdd");
 
-    let candle_type = CandlestickType::from_str(sub_matches
-        .get_one::<String>("candle_type")
-        .expect("candle_type is required")
-    ).unwrap();
-
     let force_sequential_download: bool = sub_matches
         .get_one::<String>("force_sequential_download")
         .expect("force_sequential_download is required")
         .parse().expect("force_sequential_download should be a bool");
-
-    let candle_input_parameter: u64 = sub_matches.get_one::<String>("candle_configuration")
-        .expect("required")
-        .parse().expect("candle_configuration should a positive number");
 
     let ticker = sub_matches.get_one::<String>("ticker").expect("required");
     let market = Market::from_str(sub_matches
@@ -291,24 +276,102 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
     }
 
     let strategy_name = sub_matches.get_one::<String>("strategy").expect("required");
-    let strategy = get_candlestick_strategy_by_name(strategy_name.as_str());
+    let candlestick_strategy = get_candlestick_strategy_by_name(strategy_name.as_str());
+    let high_resolution_strategy = get_high_resolution_strategy_by_name(strategy_name);
 
-    if strategy.is_none() {
-        eprintln!("[ERROR] candlestick strategy with name '{}' not found", strategy_name);
+    if candlestick_strategy.is_none() && high_resolution_strategy.is_none(){
+        eprintln!("[ERROR] no strategy with name '{}' not found", strategy_name);
         return;
     }
 
+    if let Some(strategy) = high_resolution_strategy {
+        run_high_resolution_backtest(
+            strategy,
+            begin,
+            end,
+            asset.unwrap(),
+            qty_to_trade,
+            fixed_trade_qty,
+            force_sequential_download
+        );
+    }
+
+    if let Some(strategy) = candlestick_strategy {
+        run_candlestick_backtest(
+            strategy,
+            strategy_name,
+            begin,
+            end,
+            asset.unwrap(),
+            qty_to_trade,
+            fixed_trade_qty,
+            force_sequential_download
+        );
+    }
+}
+
+
+fn run_high_resolution_backtest(
+    strategy: Box<dyn HighResolutionTradingStrategy>,
+    begin: u32,
+    end: u32,
+    asset: &Asset,
+    qty_to_trade: u32,
+    fixed_trade_qty: bool,
+    force_sequential_download: bool
+){
     let start_load_data = Instant::now();
     let backtester_engine = backtest::TradingBacktester::new(
-        &asset.unwrap(),
+        &asset,
         begin,
         end,
-        CandlestickConfiguration {
-            candle_type,
-            candle_input_parameter,
-        },
+        None,
         force_sequential_download,
     );
+
+    let finish_load_data = start_load_data.elapsed();
+    if backtester_engine.is_err() {
+        eprintln!("failed to initialize backtest engine. err: {}",
+                  backtester_engine.err().unwrap());
+        return;
+    }
+
+    print!("historical data loaded in {:.2?} | ", finish_load_data);
+    let backtester = backtester_engine.unwrap();
+    println!("{} trading days with generated from {} trades",
+             backtester.qty_history_trading_days,
+             backtester.qty_history_trades,
+    );
+
+    let now = Instant::now();
+    let metrics = backtester.run_high_resolution_backtest(strategy, qty_to_trade, fixed_trade_qty);
+    let elapsed = now.elapsed();
+    println!("backtest executed successfully in {:.2?}", elapsed);
+    println!("{}", metrics);
+
+}
+
+fn run_candlestick_backtest(
+    strategy: Box<dyn CandlestickTradingStrategy>,
+    strategy_name: &str,
+    begin: u32,
+    end: u32,
+    asset: &Asset,
+    qty_to_trade: u32,
+    fixed_trade_qty: bool,
+    force_sequential_download: bool
+){
+    let candle_parser = strategy::get_candlestick_generator_for_strategy(strategy_name)
+        .unwrap();
+    let start_load_data = Instant::now();
+    let backtester_engine = backtest::TradingBacktester::new(
+        &asset,
+        begin,
+        end,
+        Some(candle_parser),
+        force_sequential_download
+    );
+
     let finish_load_data = start_load_data.elapsed();
     if backtester_engine.is_err() {
         eprintln!("failed to initialize backtest engine. err: {}",
@@ -324,7 +387,7 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
     );
 
     let now = Instant::now();
-    let metrics = backtester.run_backtest(strategy.unwrap(), qty_to_trade, fixed_trade_qty);
+    let metrics = backtester.run_backtest(strategy, qty_to_trade, fixed_trade_qty);
     let elapsed = now.elapsed();
     println!("backtest executed successfully in {:.2?}", elapsed);
     println!("{}", metrics);

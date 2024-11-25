@@ -3,10 +3,10 @@ use std::f32;
 use crate::constants::CHROMOSOME_SIZE_TRADE_RULE;
 use crate::models::action::{OrderAction, TradeAction};
 use crate::models::asset::Asset;
-use crate::models::candlestick::{Candlestick, CandlestickType};
+use crate::models::candlestick::{Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
 use crate::models::side::Side;
 use crate::strategies::custom::trade_rule_strategy::trade_rule::{TradeRule};
-use crate::strategies::strategy::{CandlestickConfiguration, CandlestickTradingStrategy};
+use crate::strategies::strategy::{CandlestickTradingStrategy};
 use crate::utils::math::value_on_range;
 
 /// this is strategy is based upon the papers:
@@ -35,7 +35,7 @@ impl TradeRuleStrategy {
             }
         }
 
-        // you may wanna give control to the strategy for how many contracts it wants to trade
+        // you may want give control to the strategy for how many contracts it wants to trade
         let quantity_to_trade = value_on_range((1.0, 20.0), chromosome[0] as f64) as u32;
 
         TradeRuleStrategy {
@@ -52,13 +52,6 @@ impl TradeRuleStrategy {
     pub fn quantity_to_trade(&self) -> u32 {
         self.quantity_to_trade
     }
-
-    pub(crate) fn candlestick_configuration() -> CandlestickConfiguration {
-        CandlestickConfiguration{
-            candle_type: CandlestickType::TIME,
-            candle_input_parameter: 1,
-        }
-    }
 }
 
 impl CandlestickTradingStrategy for TradeRuleStrategy {
@@ -66,7 +59,7 @@ impl CandlestickTradingStrategy for TradeRuleStrategy {
         panic!("TradeRuleStrategy should not initialized from here")
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "trade_rule_strategy"
     }
 
@@ -86,8 +79,8 @@ impl CandlestickTradingStrategy for TradeRuleStrategy {
         }
     }
 
-    fn candlestick_configuration(&self) -> CandlestickConfiguration {
-        TradeRuleStrategy::candlestick_configuration()
+    fn candlestick_generator(&self) -> Box<dyn CandlestickGenerator> {
+        Box::new(TimeCandlestickGenerator::new(TimeUnit::Minutes, 1))
     }
 
     fn process_closed_candlestick(&mut self, new_candle: &Candlestick) -> TradeAction {

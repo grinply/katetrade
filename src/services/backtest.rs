@@ -1,24 +1,24 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{cmp};
+use std::cmp::max;
 use std::fmt::{Display, Formatter};
 use chrono::{Datelike, NaiveDate, Weekday};
 use itertools::{enumerate};
-use crate::models::candlestick::{Candlestick};
-use crate::models::{candlestick};
+use crate::models::candlestick::{Candlestick, CandlestickGenerator};
 use crate::models::action::{OrderAction, TradeAction};
 use crate::models::asset::Asset;
 use crate::models::pnl::Position;
 use crate::services::aws::AwsClient;
-use crate::services::backtest::TradeEvent::NewCandle;
+use crate::services::backtest::TradeEvent::{NewCandle, NewTrade};
 use crate::services::configuration::{kate_configuration_directory, S3_BUCKET_HISTORICAL_DATA};
-use crate::strategies::strategy::{CandlestickConfiguration, CandlestickTradingStrategy};
+use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
 use crate::utils::{date, math};
 use simple_bar::ProgressBar;
 use crate::models::side::Side;
 use rayon::prelude::*;
 use crate::models::market::Market;
-use crate::models::trade::TradeFile;
+use crate::models::trade::{Trade, TradeFile};
 
 pub const INITIAL_BALANCE: f64 = 10_000.0;
 const MINIMUM_BALANCE: f64 = 800.0;
@@ -124,7 +124,7 @@ pub struct TradingBacktester<'a> {
 #[allow(unused)]
 struct DataProvider {
     candlesticks: Vec<Candlestick>,
-    candle_configuration: CandlestickConfiguration,
+    trades: Vec<Trade>
 }
 
 #[allow(unused)]
@@ -140,27 +140,39 @@ struct ExchangeEventHandler<'a> {
     events: [TradeEvent<'a>; 4],
     event_index: usize,
     positions: Vec<Position>,
-    current_candlestick: Option<&'a Candlestick>,
     total_contracts_executed_current_month: u64,
     current_month_year: i32,
-    last_candlestick: Option<&'a Candlestick>,
+    current_datapoint: Option<Box<&'a dyn DataPoint>>,
+    last_datapoint: Option<Box<&'a dyn DataPoint>>,
     fixed_traded_qty: bool,
     removed_for_lack_of_margin: bool,
 }
 
 impl DataProvider {
-    fn new(candlesticks: Vec<Candlestick>, candle_configuration: CandlestickConfiguration) -> Self {
+    fn new(candlesticks: Vec<Candlestick>, trades: Vec<Trade>) -> Self {
         DataProvider {
             candlesticks,
-            candle_configuration,
+            trades
         }
     }
+}
+
+pub trait DataPoint {
+    fn date(&self) -> i32;
+
+    #[allow(unused)]
+    fn time(&self) -> i32;
+
+    fn exit_time(&self) -> i32;
+
+    fn current_price(&self) -> f64;
 }
 
 #[derive(Copy, Clone, Debug)]
 #[allow(unused)]
 enum TradeEvent<'a> {
     NewCandle(&'a Candlestick),
+    NewTrade(&'a Trade),
     ExecuteOrderLong,
     ExecuteOrderShort,
     ZeroPosition,
@@ -175,8 +187,8 @@ impl<'a> ExchangeEventHandler<'a> {
         ExchangeEventHandler {
             asset,
             current_position: None,
-            current_candlestick: None,
-            last_candlestick: None,
+            current_datapoint: None,
+            last_datapoint: None,
             current_balance: INITIAL_BALANCE,
             base_qty_per_order: base_qty_to_trade,
             initial_qty_per_order: base_qty_to_trade,
@@ -191,6 +203,11 @@ impl<'a> ExchangeEventHandler<'a> {
             fixed_traded_qty,
             removed_for_lack_of_margin: false,
         }
+    }
+
+    fn add_trade_event(&mut self, trade: &'a Trade) {
+        self.events[self.event_index] = NewTrade(trade);
+        self.event_index += 1;
     }
 
     fn add_candlestick_event(&mut self, candlestick: &'a Candlestick) {
@@ -213,17 +230,11 @@ impl<'a> ExchangeEventHandler<'a> {
     fn process_events(&mut self) {
         for event in self.events {
             match event {
+                NewTrade(trade) => {
+                    self.new_data_point(Box::new(trade));
+                }
                 NewCandle(candlestick) => {
-                    if let Some(existing_last_candle) = self.last_candlestick {
-                        self.track_mark_to_market(existing_last_candle, candlestick);
-                    }
-                    self.last_candlestick = self.current_candlestick;
-                    self.current_candlestick = Some(candlestick);
-                    self.track_current_month();
-
-                    self.should_updated_traded_qty(candlestick);
-                    self.check_compulsory_close_position(candlestick);
-                    self.check_scheduled_order_trigger(candlestick);
+                    self.new_data_point(Box::new(candlestick));
                 }
                 TradeEvent::ExecuteOrderLong => {
                     self.execute_market_long_order();
@@ -242,7 +253,6 @@ impl<'a> ExchangeEventHandler<'a> {
                     self.removed_for_lack_of_margin = true;
                 }
                 TradeEvent::None => (),
-
             }
         }
         for index in 0..self.events.len() {
@@ -251,9 +261,22 @@ impl<'a> ExchangeEventHandler<'a> {
         self.event_index = 0;
     }
 
-    fn track_mark_to_market(&mut self, last_candle: &Candlestick, new_candle: &Candlestick) {
+    fn new_data_point(&mut self, datapoint: Box<&'a (dyn DataPoint + 'a)>) {
+        self.last_datapoint = self.current_datapoint.to_owned();
+        self.current_datapoint = Some(datapoint.to_owned());
+
+        self.track_current_month();
+
+        self.should_updated_traded_qty(&datapoint);
+        self.check_compulsory_close_position(&datapoint);
+        self.check_scheduled_order_trigger(&datapoint);
+        self.track_mark_to_market(&datapoint);
+    }
+
+    fn track_mark_to_market(&mut self, new_datapoint: &Box<&dyn DataPoint>) {
         if let Some(open_position) = self.current_position.as_mut() {
-            let diff = new_candle.close.log10() - last_candle.close.log10();
+            let diff = new_datapoint.current_price().log10() - self.last_datapoint.as_ref()
+                .unwrap().current_price().log10();
 
             if diff < 0.0 {
                 if open_position.side == Side::BUY {
@@ -279,7 +302,7 @@ impl<'a> ExchangeEventHandler<'a> {
         }
     }
 
-    fn should_updated_traded_qty(&mut self, candlestick: &Candlestick) {
+    fn should_updated_traded_qty(&mut self, datapoint: &Box<&dyn DataPoint>) {
         if self.fixed_traded_qty {
             return;
         }
@@ -289,7 +312,7 @@ impl<'a> ExchangeEventHandler<'a> {
         // if the initial_qty_per_order is 5 contracts and given the initial balance of 10.000
         // if on the next trading day the current balance is 20.000 the traded qty will be 10 contracts
         // keeping the proportion as the balance changes
-        if self.last_candlestick.is_some() && candlestick.date != self.last_candlestick.unwrap().date {
+        if self.last_datapoint.is_some() && datapoint.date() != self.last_datapoint.as_ref().unwrap().date() {
             self.base_qty_per_order = (self.current_balance as u32 * self.initial_qty_per_order) / INITIAL_BALANCE as u32;
 
             // this is the minimum quantity to trade we will never trade less than this amount
@@ -304,7 +327,7 @@ impl<'a> ExchangeEventHandler<'a> {
     /// 1) the day is change and the position is open ( we don't allow overnight positions to be open )
     /// 2) the PNL of the position is negative and reached the minimum balance allowed
     /// a compulsory close fee of 25$ is applied if any such cases occur
-    fn check_compulsory_close_position(&mut self, candlestick: &Candlestick) {
+    fn check_compulsory_close_position(&mut self, datapoint: &Box<&dyn DataPoint>) {
         if self.current_position.is_none() {
             return;
         }
@@ -312,20 +335,20 @@ impl<'a> ExchangeEventHandler<'a> {
         let position = self.current_position.as_mut().unwrap();
 
         // use high or low instead of close
-        let gross_pnl = Self::calculate_gross_open_pnl(position, self.asset, candlestick.close);
+        let gross_pnl = Self::calculate_gross_open_pnl(position, self.asset, datapoint.current_price());
 
-        if candlestick.date != self.last_candlestick.unwrap().date ||
+        if datapoint.date() != self.last_datapoint.as_ref().unwrap().date() ||
             (gross_pnl < 0.0 && -1.0 * gross_pnl >= MINIMUM_BALANCE) {
             let open_qty = position.open_qty;
-            let last_candle = *self.last_candlestick.as_ref().unwrap();
+            let last_datapoint = self.last_datapoint.as_ref().unwrap();
             position.total_paid_in_fees += COMPULSORY_CLOSE_FEE;
             self.current_balance -= COMPULSORY_CLOSE_FEE;
-            self.decrease_position(last_candle.close, last_candle, open_qty);
+            self.decrease_position(last_datapoint.current_price(), last_datapoint.to_owned(), open_qty);
         }
     }
 
     #[allow(unused)]
-    fn check_scheduled_order_trigger(&mut self, candlestick: &Candlestick) {
+    fn check_scheduled_order_trigger(&mut self, candlestick: &Box<&dyn DataPoint>) {
         if self.scheduled_orders.len() > 0 {
             panic!("currently processing limit orders is not supported on backtests");
         }
@@ -340,15 +363,15 @@ impl<'a> ExchangeEventHandler<'a> {
     }
 
     fn execute_market_order(&mut self, direction: Side) {
-        let current_candle = self.current_candlestick.unwrap();
-        let entry_price = self.calculate_price_with_slippage(current_candle, direction.clone());
+        let datapoint = self.current_datapoint.as_ref().unwrap();
+        let entry_price = self.calculate_price_with_slippage(datapoint.current_price(), direction.clone());
         match &mut self.current_position {
-            None => self.open_new_position(entry_price, direction, current_candle),
+            None => self.open_new_position(entry_price, direction, datapoint.to_owned()),
             Some(position) => {
                 if position.side == direction {
                     self.increase_position(entry_price);
                 } else {
-                    self.decrease_position(entry_price, current_candle, self.base_qty_per_order as i32);
+                    self.decrease_position(entry_price, datapoint.to_owned(), self.base_qty_per_order as i32);
                 }
             }
         }
@@ -361,11 +384,11 @@ impl<'a> ExchangeEventHandler<'a> {
     /// slippage is a multiplier that makes the price bit worse when executing an order in the selected direction
     /// this aims to emulate the real behavior of the market, since between seen the price, executing the order and
     /// the conclusion in the exchange the actual execution price may ( and probably will be ) slight different
-    fn calculate_price_with_slippage(&self, candlestick: &Candlestick, side: Side) -> f64 {
+    fn calculate_price_with_slippage(&self, price: f64, side: Side) -> f64 {
         if side == Side::BUY {
-            candlestick.close + (self.slippage_multiplier * candlestick.close)
+            price + (self.slippage_multiplier * price)
         } else {
-            candlestick.close - (self.slippage_multiplier * candlestick.close)
+            price - (self.slippage_multiplier * price)
         }
     }
 
@@ -400,7 +423,7 @@ impl<'a> ExchangeEventHandler<'a> {
         self.asset.margin_per_contract * (self.base_qty_per_order as f64) < self.current_balance
     }
 
-    fn decrease_position(&mut self, current_exit_price: f64, candlestick: &Candlestick, quantity_to_decrease: i32) {
+    fn decrease_position(&mut self, current_exit_price: f64, datapoint: Box<&dyn DataPoint>, quantity_to_decrease: i32) {
         if !self.has_margin_execute_order() {
             self.removed_for_lack_of_margin = true;
             return;
@@ -424,14 +447,14 @@ impl<'a> ExchangeEventHandler<'a> {
 
         assert!(position.total_qty >= position.open_qty, "open quantity quantity cannot be greater than total quantity");
         if position.open_qty == 0 {
-            self.close_position(candlestick);
+            self.close_position(datapoint);
         }
     }
 
 
 
     fn track_current_month(&mut self) {
-        let current_month_year = self.current_candlestick.as_ref().unwrap().date / 100;
+        let current_month_year = self.current_datapoint.as_ref().unwrap().date() / 100;
         if self.current_month_year == -1 {
             self.current_month_year = current_month_year;
         }
@@ -442,15 +465,15 @@ impl<'a> ExchangeEventHandler<'a> {
         }
     }
 
-    fn open_new_position(&mut self, entry_price: f64, side: Side, candlestick: &Candlestick) {
+    fn open_new_position(&mut self, entry_price: f64, side: Side, datapoint: Box<&dyn DataPoint>) {
         assert!(self.current_position.is_none(), "sanity check, should not try open a position without closing the existing one");
         let fee_open_position = self.calculate_fees(self.base_qty_per_order as u64);
         let new_position = Position {
             side,
             avg_entry_price: entry_price,
             avg_exit_price: 0.0,
-            date: candlestick.date,
-            entry_time: candlestick.close_time,
+            date: datapoint.date(),
+            entry_time: datapoint.exit_time(),
             exit_time: -1,
             start_datapoint_number: self.total_candlesticks_processed as i32,
             end_datapoint_number: 0,
@@ -470,13 +493,13 @@ impl<'a> ExchangeEventHandler<'a> {
         self.total_contracts_executed_current_month += self.base_qty_per_order as u64;
     }
 
-    fn close_position(&mut self, candlestick: &Candlestick) {
+    fn close_position(&mut self, datapoint: Box<&dyn DataPoint>) {
         assert!(self.current_position.is_some(), "sanity check, should not try to close a position that doesnt exit");
         let mut closed_position = self.current_position.as_ref().unwrap().clone();
         assert_eq!(0, closed_position.open_qty, "cant close a position that has open contracts/shares in the market");
 
         closed_position.is_closed = true;
-        closed_position.exit_time = candlestick.close_time;
+        closed_position.exit_time = datapoint.exit_time();
         closed_position.gross_pnl = Self::calculate_gross_realized_pnl(&closed_position, self.asset);
         closed_position.liquid_pnl = closed_position.gross_pnl - closed_position.total_paid_in_fees;
         closed_position.end_datapoint_number = self.total_candlesticks_processed as i32;
@@ -558,18 +581,51 @@ fn add_orders_event(event_handler: &mut ExchangeEventHandler, action: TradeActio
 }
 
 impl<'a> TradingBacktester<'a> {
-    pub fn run_backtest(&self, mut strategy: impl CandlestickTradingStrategy, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
+    pub fn run_high_resolution_backtest(&self, mut strategy: Box<dyn HighResolutionTradingStrategy>, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
         let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
 
         let mut index_list_each_start_trading_day = vec![];
-        self.add_context_to_strategy(&mut strategy, &mut index_list_each_start_trading_day, 0);
+        self.add_context_to_high_resolution_strategy(&mut strategy, &mut index_list_each_start_trading_day, 0);
+
+        let index_first_actual_trading_day = *index_list_each_start_trading_day.last().unwrap();
+        let mut current_day = self.data_provider.trades.get(index_first_actual_trading_day).unwrap().date;
+
+        for (index, trade) in enumerate(self.data_provider.trades.iter().skip(index_first_actual_trading_day)) {
+            if current_day != trade.date {
+                self.add_context_to_high_resolution_strategy(
+                    &mut strategy,
+                    &mut index_list_each_start_trading_day,
+                    index_first_actual_trading_day + index,
+                );
+                current_day = trade.date;
+            }
+
+            let trade_action = strategy.process_new_trade(trade);
+            event_handler.add_trade_event(&trade);
+            add_orders_event(&mut event_handler, trade_action);
+            event_handler.process_events();
+
+            if event_handler.current_balance <= MINIMUM_BALANCE || event_handler.removed_for_lack_of_margin {
+                event_handler.removed_for_lack_of_margin = true;
+                break;
+            }
+        }
+
+        self.calculate_backtest_results(&event_handler)
+    }
+
+    pub fn run_backtest(&self, mut strategy: Box<dyn CandlestickTradingStrategy>, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
+        let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
+
+        let mut index_list_each_start_trading_day = vec![];
+        self.add_context_to_candle_strategy(&mut strategy, &mut index_list_each_start_trading_day, 0);
 
         let index_first_actual_trading_day = *index_list_each_start_trading_day.last().unwrap();
         let mut current_day = self.data_provider.candlesticks.get(index_first_actual_trading_day).unwrap().date;
 
         for (index, candlestick) in enumerate(self.data_provider.candlesticks.iter().skip(index_first_actual_trading_day)) {
             if current_day != candlestick.date {
-                self.add_context_to_strategy(
+                self.add_context_to_candle_strategy(
                     &mut strategy,
                     &mut index_list_each_start_trading_day,
                     index_first_actual_trading_day + index,
@@ -597,7 +653,7 @@ impl<'a> TradingBacktester<'a> {
         asset: &Asset,
         start_date: u32,
         end_date: u32,
-        candlestick_configuration: CandlestickConfiguration,
+        candlestick_generator: Option<Box<dyn CandlestickGenerator>>,
         no_download: bool,
     ) -> Result<TradingBacktester, anyhow::Error> {
         let start_date = date::convert_to_naive_date(start_date)?;
@@ -720,35 +776,56 @@ impl<'a> TradingBacktester<'a> {
         }
 
         println!("parsing binary files with historical data from local disk");
-        let parse_candles_bar = Arc::new(Mutex::new(ProgressBar::default(files_to_parse.len() as u32, 100, false)));
+        let progress_bar = Arc::new(Mutex::new(ProgressBar::default(files_to_parse.len() as u32, 100, false)));
 
         let mut candlesticks: Vec<Vec<Candlestick>> = Vec::new();
-        files_to_parse
-            .into_par_iter()
-            .map(|binary_trade_file| {
-                let bar = Arc::clone(&parse_candles_bar);
-                let configuration = candlestick_configuration.clone();
-                let candlesticks_current_file =
-                    parse_candles_from_file(binary_trade_file, configuration)
-                        .expect("should not fail when parsing candlesticks from trades file");
-                let mut parse_progress_bar = bar.lock().unwrap();
-                parse_progress_bar.update();
-                candlesticks_current_file
-            }).collect_into_vec(&mut candlesticks);
+        let mut trades: Vec<Vec<Trade>> = Vec::new();
+
+        if let Some(candle_generator) =  candlestick_generator {
+            files_to_parse
+                .into_par_iter()
+                .map(|binary_trade_file| {
+                    let bar = Arc::clone(&progress_bar);
+                    let parser = candle_generator.clone();
+                    let candlesticks_current_file =
+                        parse_candles_from_file(binary_trade_file.to_string(), parser)
+                            .expect("should not fail when parsing candlesticks from trades file");
+                    let mut parse_progress_bar = bar.lock().unwrap();
+                    parse_progress_bar.update();
+                    candlesticks_current_file
+                }).collect_into_vec(&mut candlesticks);
+        }else{
+            files_to_parse
+                .into_par_iter()
+                .map(|binary_trade_file| {
+                    let bar = Arc::clone(&progress_bar);
+                    let trades_current_file =
+                        parse_trades_from_file(binary_trade_file.to_string())
+                            .expect("should not fail when parsing trades from file");
+                    let mut parse_progress_bar = bar.lock().unwrap();
+                    parse_progress_bar.update();
+                    trades_current_file
+                }).collect_into_vec(&mut trades);
+        }
 
         let candlesticks: Vec<Candlestick> = candlesticks.into_iter().flatten().collect();
+        let trades: Vec<Trade> = trades.into_iter().flatten().collect();
 
         Ok(TradingBacktester {
             asset,
             qty_history_trading_days: trading_days,
             qty_history_candles: candlesticks.len() as u64,
-            qty_history_trades: candlesticks.iter()
-                .fold(0, |total, candle| total + candle.trades),
-            data_provider: DataProvider::new(candlesticks, candlestick_configuration),
+            qty_history_trades: max(
+                trades.len() as u64,
+                candlesticks.iter()
+                    .fold(0, |total, candle| total + candle.trades)
+            ),
+            data_provider: DataProvider::new(candlesticks, trades),
         })
     }
 
-    fn add_context_to_strategy(&self, strategy: &mut impl CandlestickTradingStrategy, index_start_day_list: &mut Vec<usize>, offset_start_current_day: usize) {
+
+    fn add_context_to_candle_strategy(&self, strategy: &mut Box<dyn CandlestickTradingStrategy>, index_start_day_list: &mut Vec<usize>, offset_start_current_day: usize) {
         index_start_day_list.push(offset_start_current_day);
         let context_size: usize = strategy.days_of_context() as usize;
 
@@ -777,6 +854,38 @@ impl<'a> TradingBacktester<'a> {
         strategy.init_trading_day(
             self.asset,
             &self.data_provider.candlesticks[start_index..end_index],
+        );
+    }
+
+    fn add_context_to_high_resolution_strategy(&self, strategy: &mut Box<dyn HighResolutionTradingStrategy>, index_start_day_list: &mut Vec<usize>, offset_start_current_day: usize) {
+        index_start_day_list.push(offset_start_current_day);
+        let context_size: usize = strategy.days_of_context() as usize;
+
+        if context_size == 0 {
+            return;
+        }
+
+        if index_start_day_list.len() <= context_size {
+            let mut days_of_context = context_size;
+            let mut current_day = self.data_provider.trades.get(offset_start_current_day).unwrap().date;
+            for (index, initialization_trade) in self.data_provider.trades.iter().skip(offset_start_current_day).enumerate() {
+                if initialization_trade.date != current_day {
+                    index_start_day_list.push(index + offset_start_current_day);
+                    current_day = initialization_trade.date;
+                    days_of_context -= 1;
+                    if days_of_context == 0 {
+                        break;
+                    }
+                }
+            }
+        }
+
+        let start_index: usize = *index_start_day_list.get(index_start_day_list.len() - context_size - 1).unwrap();
+        let end_index: usize = *index_start_day_list.last().unwrap();
+
+        strategy.init_trading_day(
+            self.asset,
+            &self.data_provider.trades[start_index..end_index],
         );
     }
 
@@ -961,10 +1070,26 @@ fn download_binary_trades_file(
     file_download_result
 }
 
+fn parse_trades_from_file(binary_trades_file_full_path: String) -> Result<Vec<Trade>, anyhow::Error> {
+    let binary_trades_path = PathBuf::from(binary_trades_file_full_path.clone());
+
+    if !binary_trades_path.exists() {
+        anyhow::bail!("binary trades file {} doesnt exist on disk",
+            binary_trades_path.to_str().unwrap());
+    }
+
+    let trades_file = TradeFile::new_from_binary_file(binary_trades_file_full_path.as_str())?;
+    let mut trades: Vec<Trade> = Vec::new();
+
+    for trade in trades_file {
+        trades.push(trade)
+    }
+    Ok(trades)
+}
 
 fn parse_candles_from_file(
     binary_trades_file_full_path: String,
-    candlestick_configuration: CandlestickConfiguration,
+    mut candlestick_parser: Box<dyn CandlestickGenerator>,
 ) -> Result<Vec<Candlestick>, anyhow::Error> {
     let binary_trades_path = PathBuf::from(binary_trades_file_full_path.clone());
 
@@ -974,7 +1099,6 @@ fn parse_candles_from_file(
     }
 
     let trades_file = TradeFile::new_from_binary_file(binary_trades_file_full_path.as_str())?;
-    let mut candlestick_parser = candlestick::select_candlestick_generator(candlestick_configuration.clone());
     let mut candlesticks: Vec<Candlestick> = Vec::new();
 
     for trade in trades_file {
