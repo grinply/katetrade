@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::cmp::max;
+use std::fmt::{Display, Formatter};
 use chrono::{Datelike, NaiveDate, Weekday};
 use itertools::{enumerate};
 use crate::models::candlestick::{Candlestick, CandlestickGenerator};
@@ -20,9 +21,9 @@ use crate::services::backtest::metrics::BacktestMetrics;
 #[derive(Debug)]
 #[allow(unused)]
 pub struct TradingBacktester<'a> {
-    pub qty_history_trading_days: u64,
-    pub qty_history_candles: u64,
-    pub qty_history_trades: u64,
+    qty_history_trading_days: u64,
+    qty_history_candles: u64,
+    qty_history_trades: u64,
     asset: &'a Asset,
     data_provider: DataProvider,
 }
@@ -32,35 +33,42 @@ pub struct TradingBacktester<'a> {
 struct DataProvider {
     candlesticks: Vec<Candlestick>,
     trades: Vec<Trade>,
-    data_files: Vec<String>
+    data_files: Vec<String>,
+}
+
+struct BacktestDataFiles {
+    trading_days: usize,
+    files_to_parse: Vec<String>,
+    files_to_download: Vec<String>,
 }
 
 impl DataProvider {
-    fn new(candlesticks: Vec<Candlestick>, trades: Vec<Trade>, data_files: Vec<String>) -> Self {
+    fn new(candlesticks: Vec<Candlestick>, trades: Vec<Trade>) -> Self {
         DataProvider {
             candlesticks,
             trades,
-            data_files
+            data_files: vec![],
+        }
+    }
+
+    fn from_files(data_files: Vec<String>) -> Self{
+        DataProvider {
+            candlesticks: vec![],
+            trades: vec![],
+            data_files,
         }
     }
 }
 
-fn add_orders_event(event_handler: &mut ExchangeEventHandler, action: TradeAction) {
-    if let Some(enter_order) = action.enter_market_action {
-        event_handler.add_order_event(enter_order);
-    }
-
-    if let Some(stop_order) = action.stop_loss_action {
-        event_handler.add_order_event(stop_order);
-    }
-
-    if let Some(profit_order) = action.take_profit_action {
-        event_handler.add_order_event(profit_order);
+impl Display for TradingBacktester<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{} trading days with {} candlesticks generated from {} trades",
+                 self.qty_history_trading_days,
+                 self.qty_history_candles,
+                 self.qty_history_trades)
     }
 }
-
 impl<'a> TradingBacktester<'a> {
-
     /// Starts the execution of a Backtest ( trading simulation ) where each datapoint is a [Trade]
     ///
     /// [HighResolutionTradingStrategy] defines how and when to send orders to buy and sell the asset being traded
@@ -160,162 +168,48 @@ impl<'a> TradingBacktester<'a> {
             std::fs::create_dir_all(&history_trades_folder_path)?;
         }
 
-        let exchange = asset.exchange.clone();
-        let market = asset.market.clone();
-
-        let mut trading_days = 0;
-        let mut files_to_parse: Vec<String> = vec![];
-
-        let uppercase_ticker = asset.ticker.to_ascii_uppercase();
-        let mut files_to_download: Vec<String> = vec![];
 
         println!("checking for missing trade files on local disk between {} and {}", start_date, end_date);
-        for year in start_date.year()..=end_date.year() {
-            let begin_month = if year == start_date.year() {
-                start_date.month()
-            } else {
-                1
-            };
-
-            let finish_month = if year == end_date.year() {
-                end_date.month()
-            } else {
-                12
-            };
-
-            for month in begin_month..=finish_month {
-                let begin_day = if year == start_date.year() && month == start_date.month() {
-                    start_date.day()
-                } else {
-                    1
-                };
-
-                let finish_day = if year == end_date.year() && month == end_date.month() {
-                    end_date.day()
-                } else {
-                    31
-                };
-
-                for day in begin_day..=finish_day {
-                    let naive_date = NaiveDate::from_ymd_opt(year, month, day);
-                    if naive_date.is_none() {
-                        continue;
-                    }
-                    let day_of_week = NaiveDate::from_ymd_opt(year, month, day).unwrap().weekday();
-                    if day_of_week == Weekday::Sat || day_of_week == Weekday::Sun {
-                        continue; // there is no trading on weekends
-                    }
-
-                    let formatted_day = if day < 10 {
-                        format!("0{}", day)
-                    } else {
-                        format!("{}", day)
-                    };
-
-                    let formatted_month = if month < 10 {
-                        format!("0{}", month)
-                    } else {
-                        format!("{}", month)
-                    };
-
-                    //TRADE-B3-FUTURES-IND-20240722
-                    let binary_trades_file_name = format!("TRADE-{exchange}-{market}-{uppercase_ticker}-{year}{formatted_month}{formatted_day}");
-                    let binary_trades_file_full_path = history_trades_folder_path.join(binary_trades_file_name.as_str());
-
-                    //trades/IND/TRADE-B3-FUTURES-IND-20240722
-                    let file_path_on_s3 = format!("trades/{}/{}", uppercase_ticker, binary_trades_file_name);
-                    if binary_trades_file_full_path.exists() {
-                        trading_days += 1;
-                        files_to_parse.push(binary_trades_file_full_path.to_str().unwrap().to_string());
-                    } else if !no_download {
-                        if AwsClient::new("sa-east-1".to_string())?.file_exists_on_s3(S3_BUCKET_HISTORICAL_DATA, file_path_on_s3.as_str())? == true {
-                            trading_days += 1;
-                            files_to_download.push(binary_trades_file_name);
-                            files_to_parse.push(binary_trades_file_full_path.to_str().unwrap().to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        if !no_download && files_to_download.len() > 0 {
-            let number_of_threads = rayon::current_num_threads();
-            println!("download in parallel missing files with historical data from aws s3 using {} threads", number_of_threads);
-            let mut bar = ProgressBar::default(files_to_download.len() as u32 + 1, 100, false);
-            bar.update();
-            let download_files_bar = Arc::new(Mutex::new(bar));
-            let values_to_process: Vec<(&String, Arc<Mutex<ProgressBar>>)> = files_to_download.iter().map(|files_to_download| {
-                (files_to_download, Arc::clone(&download_files_bar))
-            }).collect();
-
-            let aws_client = Arc::new(AwsClient::new("sa-east-1".to_string())?);
-            values_to_process.into_par_iter().for_each(|tuple| {
-                let file_to_download = tuple.0;
-                let progress_bar = tuple.1;
-                download_binary_trades_file(
-                    aws_client.clone(),
-                    format!("trades/{}/{}", uppercase_ticker, file_to_download),
-                    history_trades_folder_path.to_str().unwrap().to_string(),
-                    file_to_download.as_str(),
-                ).expect(format!("failed to download file {}", file_to_download).as_str());
-
-                let mut download_progress_bar = progress_bar.lock().unwrap();
-                download_progress_bar.update();
-            })
-        }
-
-        println!("parsing binary files with historical data from local disk");
-        let progress_bar = Arc::new(Mutex::new(ProgressBar::default(files_to_parse.len() as u32, 100, false)));
-
-        let mut candlesticks: Vec<Vec<Candlestick>> = Vec::new();
-        let mut trades: Vec<Vec<Trade>> = Vec::new();
-
-        if cache_in_memory {
-            if let Some(candle_generator) =  candlestick_generator {
-                files_to_parse.clone()
-                    .into_par_iter()
-                    .map(|binary_trade_file| {
-                        let bar = Arc::clone(&progress_bar);
-                        let parser = candle_generator.clone();
-                        let candlesticks_current_file =
-                            parse_candles_from_file(binary_trade_file.to_string(), parser)
-                                .expect("should not fail when parsing candlesticks from trades file");
-                        let mut parse_progress_bar = bar.lock().unwrap();
-                        parse_progress_bar.update();
-                        candlesticks_current_file
-                    }).collect_into_vec(&mut candlesticks);
-            }else{
-                files_to_parse.clone()
-                    .into_par_iter()
-                    .map(|binary_trade_file| {
-                        let bar = Arc::clone(&progress_bar);
-                        let trades_current_file =
-                            parse_trades_from_file(binary_trade_file.to_string())
-                                .expect("should not fail when parsing trades from file");
-                        let mut parse_progress_bar = bar.lock().unwrap();
-                        parse_progress_bar.update();
-                        trades_current_file
-                    }).collect_into_vec(&mut trades);
-            }
-        }
-
-
-        let candlesticks: Vec<Candlestick> = candlesticks.into_iter().flatten().collect();
-        let trades: Vec<Trade> = trades.into_iter().flatten().collect();
-
-        Ok(TradingBacktester {
+        let backtest_files_metadata = get_backtest_files_metadata(
             asset,
-            qty_history_trading_days: trading_days,
-            qty_history_candles: candlesticks.len() as u64,
-            qty_history_trades: max(
-                trades.len() as u64,
-                candlesticks.iter()
-                    .fold(0, |total, candle| total + candle.trades)
-            ),
-            data_provider: DataProvider::new(candlesticks, trades, files_to_parse),
-        })
-    }
+            start_date,
+            end_date,
+            &history_trades_folder_path,
+            !no_download
+        )?;
 
+
+        if !no_download && backtest_files_metadata.files_to_download.len() > 0 {
+            println!("download in parallel missing files with historical data from aws s3 using {} threads", rayon::current_num_threads());
+            backtest_files_metadata.download_missing_files(asset, &history_trades_folder_path)?;
+        }
+
+        let backtester = if cache_in_memory {
+            println!("parsing binary files with historical data from local disk");
+            let (candles,trades) = backtest_files_metadata.parse_data_from_files(candlestick_generator);
+            TradingBacktester {
+                asset,
+                qty_history_trading_days: backtest_files_metadata.trading_days as u64,
+                qty_history_candles: candles.len() as u64,
+                qty_history_trades: max(
+                    trades.len() as u64,
+                    candles.iter().fold(0, |total, candle| total + candle.trades),
+                ),
+                data_provider: DataProvider::new(candles, trades),
+            }
+        }else{
+            TradingBacktester {
+                asset,
+                qty_history_trading_days: backtest_files_metadata.trading_days as u64,
+                qty_history_candles: 0,
+                qty_history_trades: 0,
+                data_provider: DataProvider::from_files(backtest_files_metadata.files_to_parse),
+            }
+        };
+
+
+        Ok(backtester)
+    }
 
     fn add_context_to_candle_strategy(&self, strategy: &mut Box<dyn CandlestickTradingStrategy>, index_start_day_list: &mut Vec<usize>, offset_start_current_day: usize) {
         index_start_day_list.push(offset_start_current_day);
@@ -380,8 +274,74 @@ impl<'a> TradingBacktester<'a> {
             &self.data_provider.trades[start_index..end_index],
         );
     }
+}
 
+impl BacktestDataFiles {
+    fn download_missing_files(&self, asset: &Asset, history_trades_folder_path: &PathBuf) -> Result<(), anyhow::Error>{
+        let mut bar = ProgressBar::default(self.files_to_download.len() as u32 + 1, 100, false);
+        bar.update();
+        let download_files_bar = Arc::new(Mutex::new(bar));
+        let values_to_process: Vec<(&String, Arc<Mutex<ProgressBar>>)> = self.files_to_download.iter().map(|files_to_download| {
+            (files_to_download, Arc::clone(&download_files_bar))
+        }).collect();
 
+        let uppercase_ticker = asset.ticker.to_ascii_uppercase();
+        let aws_client = Arc::new(AwsClient::new("sa-east-1".to_string())?);
+
+        values_to_process.into_par_iter().for_each(|tuple| {
+            let file_to_download = tuple.0;
+            let progress_bar = tuple.1;
+            download_binary_trades_file(
+                aws_client.clone(),
+                format!("trades/{}/{}", uppercase_ticker, file_to_download),
+                history_trades_folder_path.to_str().unwrap().to_string(),
+                file_to_download.as_str(),
+            ).expect(format!("failed to download file {}", file_to_download).as_str());
+
+            let mut download_progress_bar = progress_bar.lock().unwrap();
+            download_progress_bar.update();
+        });
+
+        Ok(())
+    }
+
+    fn parse_data_from_files(&self, candlestick_generator: Option<Box<dyn CandlestickGenerator>>) -> (Vec<Candlestick>,Vec<Trade>){
+        let progress_bar = Arc::new(Mutex::new(ProgressBar::default(self.files_to_parse.len() as u32, 100, false)));
+        let mut candlesticks: Vec<Vec<Candlestick>> = Vec::new();
+        let mut trades: Vec<Vec<Trade>> = Vec::new();
+
+        if let Some(candle_generator) = candlestick_generator {
+            self.files_to_parse.clone()
+                .into_par_iter()
+                .map(|binary_trade_file| {
+                    let bar = Arc::clone(&progress_bar);
+                    let parser = candle_generator.clone();
+                    let candlesticks_current_file =
+                        parse_candles_from_file(binary_trade_file.to_string(), parser)
+                            .expect("should not fail when parsing candlesticks from trades file");
+                    let mut parse_progress_bar = bar.lock().unwrap();
+                    parse_progress_bar.update();
+                    candlesticks_current_file
+                }).collect_into_vec(&mut candlesticks);
+        } else {
+            self.files_to_parse.clone()
+                .into_par_iter()
+                .map(|binary_trade_file| {
+                    let bar = Arc::clone(&progress_bar);
+                    let trades_current_file =
+                        parse_trades_from_file(binary_trade_file.to_string())
+                            .expect("should not fail when parsing trades from file");
+                    let mut parse_progress_bar = bar.lock().unwrap();
+                    parse_progress_bar.update();
+                    trades_current_file
+                }).collect_into_vec(&mut trades);
+        }
+
+        let candlesticks: Vec<Candlestick> = candlesticks.into_iter().flatten().collect();
+        let trades: Vec<Trade> = trades.into_iter().flatten().collect();
+
+        (candlesticks, trades)
+    }
 }
 
 fn download_binary_trades_file(
@@ -418,6 +378,7 @@ fn parse_trades_from_file(binary_trades_file_full_path: String) -> Result<Vec<Tr
     Ok(trades)
 }
 
+/// parse the binary data from a file containing only [Trade], into a [Vec] of [Candlestick]
 fn parse_candles_from_file(
     binary_trades_file_full_path: String,
     mut candlestick_parser: Box<dyn CandlestickGenerator>,
@@ -440,3 +401,108 @@ fn parse_candles_from_file(
     Ok(candlesticks)
 }
 
+fn get_backtest_files_metadata(
+    asset: &Asset,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+    history_trades_folder_path: &PathBuf,
+    download_missing_files: bool,
+) -> Result<BacktestDataFiles, anyhow::Error> {
+    let mut trading_days = 0;
+    let mut files_to_parse = Vec::new();
+    let mut files_to_download = Vec::new();
+    let uppercase_ticker = asset.ticker.to_ascii_uppercase();
+
+    let market = asset.market.to_string().to_uppercase();
+    let exchange = asset.exchange.to_string().to_uppercase();
+
+    for year in start_date.year()..=end_date.year() {
+        let begin_month = if year == start_date.year() {
+            start_date.month()
+        } else {
+            1
+        };
+
+        let finish_month = if year == end_date.year() {
+            end_date.month()
+        } else {
+            12
+        };
+
+        for month in begin_month..=finish_month {
+            let begin_day = if year == start_date.year() && month == start_date.month() {
+                start_date.day()
+            } else {
+                1
+            };
+
+            let finish_day = if year == end_date.year() && month == end_date.month() {
+                end_date.day()
+            } else {
+                31
+            };
+
+            for day in begin_day..=finish_day {
+                let naive_date = NaiveDate::from_ymd_opt(year, month, day);
+                if naive_date.is_none() {
+                    continue;
+                }
+                let day_of_week = NaiveDate::from_ymd_opt(year, month, day).unwrap().weekday();
+                if day_of_week == Weekday::Sat || day_of_week == Weekday::Sun {
+                    continue; // there is no trading on weekends
+                }
+
+                let formatted_day = if day < 10 {
+                    format!("0{}", day)
+                } else {
+                    format!("{}", day)
+                };
+
+                let formatted_month = if month < 10 {
+                    format!("0{}", month)
+                } else {
+                    format!("{}", month)
+                };
+
+                //TRADE-B3-FUTURES-IND-20240722
+                let binary_trades_file_name = format!("TRADE-{exchange}-{market}-{uppercase_ticker}-{year}{formatted_month}{formatted_day}");
+                let binary_trades_file_full_path = history_trades_folder_path.join(binary_trades_file_name.as_str());
+
+                //trades/IND/TRADE-B3-FUTURES-IND-20240722
+                let file_path_on_s3 = format!("trades/{}/{}", uppercase_ticker, binary_trades_file_name);
+                if binary_trades_file_full_path.exists() {
+                    trading_days += 1;
+                    files_to_parse.push(binary_trades_file_full_path.to_str().unwrap().to_string());
+                } else if download_missing_files {
+                    if AwsClient::new("sa-east-1".to_string())?.file_exists_on_s3(S3_BUCKET_HISTORICAL_DATA, file_path_on_s3.as_str())? == true {
+                        trading_days += 1;
+                        files_to_download.push(binary_trades_file_name);
+                        files_to_parse.push(binary_trades_file_full_path.to_str().unwrap().to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(
+        BacktestDataFiles {
+            trading_days,
+            files_to_parse,
+            files_to_download,
+        }
+    )
+}
+
+fn add_orders_event(event_handler: &mut ExchangeEventHandler, action: TradeAction) {
+    if let Some(enter_order) = action.enter_market_action {
+        event_handler.add_order_event(enter_order);
+    }
+
+    if let Some(stop_order) = action.stop_loss_action {
+        event_handler.add_order_event(stop_order);
+    }
+
+    if let Some(profit_order) = action.take_profit_action {
+        event_handler.add_order_event(profit_order);
+    }
+}
