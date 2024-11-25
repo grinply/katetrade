@@ -2,6 +2,7 @@ use dyn_clone::DynClone;
 use strum_macros::EnumString;
 use ta::{Close, High, Low, Open, Volume};
 use crate::models::trade::Trade;
+use crate::services::backtest::DataPoint;
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
@@ -95,6 +96,24 @@ impl Close for Candlestick {
 impl Volume for Candlestick {
     fn volume(&self) -> f64 {
         self.volume
+    }
+}
+
+impl DataPoint for Candlestick {
+    fn date(&self) -> i32 {
+        self.date
+    }
+
+    fn time(&self) -> i32 {
+        self.start_time
+    }
+
+    fn exit_time(&self) -> i32 {
+        self.close_time
+    }
+
+    fn current_price(&self) -> f64 {
+        self.close
     }
 }
 

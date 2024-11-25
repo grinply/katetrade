@@ -21,11 +21,11 @@ pub trait HighResolutionTradingStrategy {
     }
 
     /// starts the trading day providing the context necessary to know what is going to be traded
-    fn init_trading_day(&mut self, asset: &Asset, context_trades: &Vec<Trade>);
+    fn init_trading_day(&mut self, asset: &Asset, context_trades: &[Trade]);
 
     /// process a new trade/datapoint that occurred in the market.
     /// the strategy can make an action to decide to buy, exit or do nothing
-    fn process_new_trade(&mut self, new_trade: Trade) -> TradeAction;
+    fn process_new_trade(&mut self, new_trade: &Trade) -> TradeAction;
 }
 
 

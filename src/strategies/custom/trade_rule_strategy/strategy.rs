@@ -35,7 +35,7 @@ impl TradeRuleStrategy {
             }
         }
 
-        // you may wanna give control to the strategy for how many contracts it wants to trade
+        // you may want give control to the strategy for how many contracts it wants to trade
         let quantity_to_trade = value_on_range((1.0, 20.0), chromosome[0] as f64) as u32;
 
         TradeRuleStrategy {

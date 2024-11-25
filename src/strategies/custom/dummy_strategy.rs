@@ -26,11 +26,11 @@ impl HighResolutionTradingStrategy for DummyHighResolutionStrategy {
         "dummy_high_resolution_strategy"
     }
 
-    fn init_trading_day(&mut self, _: &Asset, _: &Vec<Trade>) {
+    fn init_trading_day(&mut self, _: &Asset, _: &[Trade]) {
         // Initialize trading day logic
     }
 
-    fn process_new_trade(&mut self, _: Trade) -> TradeAction {
+    fn process_new_trade(&mut self, _: &Trade) -> TradeAction {
         self.counter += 1;
 
         if self.counter == 50 {
