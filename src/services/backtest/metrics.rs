@@ -4,7 +4,7 @@ use crate::models::side::Side;
 use crate::services::backtest::exchange_event_handler::{ExchangeEventHandler, INITIAL_BALANCE};
 use crate::utils::math;
 
-const YEARLY_RISK_FREE_RATE: f64 = 10.5; // Avg yield for the Brazillian Selic BOND from 2009 to 2024
+const YEARLY_RISK_FREE_RATE: f64 = 10.5; // Avg yield for the Brazilian SELIC BOND from 2009 to 2024
 const TRADING_DAYS_IN_A_YEAR: u32 = 250;
 const DAILY_RISK_FREE_RATE: f64 = YEARLY_RISK_FREE_RATE / TRADING_DAYS_IN_A_YEAR as f64;
 

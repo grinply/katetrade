@@ -51,13 +51,48 @@ impl DataProvider {
         }
     }
 
-    fn from_files(data_files: Vec<String>) -> Self{
+    fn from_files(data_files: Vec<String>) -> Self {
         DataProvider {
             candlesticks: vec![],
             trades: vec![],
             data_files,
         }
     }
+
+    #[allow(unused)]
+    fn datapoint_iterator(&self) -> DataProviderReader {
+        let reader_mode = if self.candlesticks.len() > 0 {
+            ReaderMode::CachedCandlestick
+        }else if self.trades.len() > 0 {
+            ReaderMode::CachedTrade
+        }else{
+            ReaderMode::TradeFromFile
+        };
+
+        DataProviderReader {
+            data_provider: Box::new(&self),
+            load_mode: reader_mode,
+            file_index: 0,
+            index: 0,
+            data_buffer: Vec::new(),
+        }
+    }
+}
+
+#[allow(unused)]
+enum ReaderMode {
+    CachedCandlestick,
+    CachedTrade,
+    TradeFromFile,
+}
+
+#[allow(unused)]
+struct DataProviderReader<'a> {
+    data_provider: Box<&'a DataProvider>,
+    load_mode: ReaderMode,
+    file_index: usize,
+    index: usize,
+    data_buffer: Vec<Trade>,
 }
 
 impl Display for TradingBacktester<'_> {
@@ -175,7 +210,7 @@ impl<'a> TradingBacktester<'a> {
             start_date,
             end_date,
             &history_trades_folder_path,
-            !no_download
+            !no_download,
         )?;
 
 
@@ -186,7 +221,7 @@ impl<'a> TradingBacktester<'a> {
 
         let backtester = if cache_in_memory {
             println!("parsing binary files with historical data from local disk");
-            let (candles,trades) = backtest_files_metadata.parse_data_from_files(candlestick_generator);
+            let (candles, trades) = backtest_files_metadata.parse_data_from_files(candlestick_generator);
             TradingBacktester {
                 asset,
                 qty_history_trading_days: backtest_files_metadata.trading_days as u64,
@@ -197,7 +232,7 @@ impl<'a> TradingBacktester<'a> {
                 ),
                 data_provider: DataProvider::new(candles, trades),
             }
-        }else{
+        } else {
             TradingBacktester {
                 asset,
                 qty_history_trading_days: backtest_files_metadata.trading_days as u64,
@@ -277,7 +312,7 @@ impl<'a> TradingBacktester<'a> {
 }
 
 impl BacktestDataFiles {
-    fn download_missing_files(&self, asset: &Asset, history_trades_folder_path: &PathBuf) -> Result<(), anyhow::Error>{
+    fn download_missing_files(&self, asset: &Asset, history_trades_folder_path: &PathBuf) -> Result<(), anyhow::Error> {
         let mut bar = ProgressBar::default(self.files_to_download.len() as u32 + 1, 100, false);
         bar.update();
         let download_files_bar = Arc::new(Mutex::new(bar));
@@ -305,7 +340,7 @@ impl BacktestDataFiles {
         Ok(())
     }
 
-    fn parse_data_from_files(&self, candlestick_generator: Option<Box<dyn CandlestickGenerator>>) -> (Vec<Candlestick>,Vec<Trade>){
+    fn parse_data_from_files(&self, candlestick_generator: Option<Box<dyn CandlestickGenerator>>) -> (Vec<Candlestick>, Vec<Trade>) {
         let progress_bar = Arc::new(Mutex::new(ProgressBar::default(self.files_to_parse.len() as u32, 100, false)));
         let mut candlesticks: Vec<Vec<Candlestick>> = Vec::new();
         let mut trades: Vec<Vec<Trade>> = Vec::new();

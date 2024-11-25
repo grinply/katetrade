@@ -3,7 +3,7 @@ use chrono::NaiveTime;
 use crate::models::action::OrderAction::{MarketLong, MarketShort};
 use crate::models::action::{TradeAction};
 use crate::models::asset::Asset;
-use crate::models::candlestick::{Candlestick, CandlestickGenerator, TickCandlestickGenerator};
+use crate::models::candlestick::{Candlestick, CandlestickGenerator, TickCandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
 use crate::strategies::strategy::{CandlestickTradingStrategy};
 
 
@@ -164,7 +164,7 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
     }
 
     fn candlestick_generator(&self) -> Box<dyn CandlestickGenerator> {
-        Box::new(TickCandlestickGenerator::new(1000))
+        Box::new(TimeCandlestickGenerator::new(TimeUnit::Minutes, 1))
     }
 }
 
