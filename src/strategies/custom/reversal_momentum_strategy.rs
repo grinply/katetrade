@@ -3,8 +3,8 @@ use chrono::NaiveTime;
 use crate::models::action::OrderAction::{MarketLong, MarketShort};
 use crate::models::action::{TradeAction};
 use crate::models::asset::Asset;
-use crate::models::candlestick::{Candlestick, CandlestickType};
-use crate::strategies::strategy::{CandlestickConfiguration, CandlestickTradingStrategy};
+use crate::models::candlestick::{Candlestick, CandlestickGenerator, TickCandlestickGenerator};
+use crate::strategies::strategy::{CandlestickTradingStrategy};
 
 
 #[derive(Debug, PartialEq)]
@@ -127,7 +127,7 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
         }
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "reversal_momentum_candlestick_strategy"
     }
     fn days_of_context(&self) -> u32 {
@@ -147,16 +147,8 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
             self.entry_price_range = get_entry_price(last_candlestick, self.signal.as_ref().unwrap(),self.entry_price_range_percentage, true);
             // println!("DEBUG: Day {} with Signal LONG {}", last_candlestick.date, self.signal == Some(Signal::LONG));
         }
-
-
     }
 
-    fn candlestick_configuration(&self) -> CandlestickConfiguration {
-        CandlestickConfiguration {
-            candle_type: CandlestickType::TICK,
-            candle_input_parameter: 1000,
-        }
-    }
 
     fn process_closed_candlestick(&mut self, closed_candle: &Candlestick) -> TradeAction {
         let actual_time = parse_time(closed_candle.close_time);
@@ -167,8 +159,12 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
             if actual_time.gt(&NaiveTime::from_hms_opt(17, 0, 0).unwrap()) {
                 return TradeAction::do_nothing();
             }
-            return self.check_and_place_new_order(closed_candle);
+            self.check_and_place_new_order(closed_candle)
         }
+    }
+
+    fn candlestick_generator(&self) -> Box<dyn CandlestickGenerator> {
+        Box::new(TickCandlestickGenerator::new(1000))
     }
 }
 
@@ -284,7 +280,7 @@ impl CandlestickTradingStrategy for ClassicReversalMomentumCandlestickStrategy {
         }
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "classic_reversal_momentum_candlestick_strategy"
     }
 
@@ -303,23 +299,20 @@ impl CandlestickTradingStrategy for ClassicReversalMomentumCandlestickStrategy {
         }
     }
 
-    fn candlestick_configuration(&self) -> CandlestickConfiguration {
-        CandlestickConfiguration {
-            candle_type: CandlestickType::TICK,
-            candle_input_parameter: 1000,
-        }
+    fn candlestick_generator(&self) -> Box<dyn CandlestickGenerator> {
+        Box::new(TickCandlestickGenerator::new(1000))
     }
 
     fn process_closed_candlestick(&mut self, closed_candle: &Candlestick) -> TradeAction {
         let actual_time = parse_time(closed_candle.close_time);
 
         if self.order_active {
-            return self.handle_active_order(&actual_time, &closed_candle);
+            self.handle_active_order(&actual_time, &closed_candle)
         } else {
             if actual_time.gt(&NaiveTime::from_hms_opt(17, 0, 0).unwrap()) {
                 return TradeAction::do_nothing();
             }
-            return self.check_and_place_new_order(closed_candle);
+            self.check_and_place_new_order(closed_candle)
         }
     }
 }

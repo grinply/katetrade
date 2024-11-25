@@ -1,7 +1,7 @@
+use dyn_clone::DynClone;
 use strum_macros::EnumString;
 use ta::{Close, High, Low, Open, Volume};
 use crate::models::trade::Trade;
-use crate::strategies::strategy::CandlestickConfiguration;
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
@@ -27,7 +27,7 @@ pub enum CandlestickType {
 }
 
 #[allow(unused)]
-pub trait CandlestickGenerator {
+pub trait CandlestickGenerator: DynClone + Send + Sync {
     fn description(&self) -> String;
 
     /// generates a brand-new Candlestick for every new trade, representing the still open candle
@@ -39,15 +39,21 @@ pub trait CandlestickGenerator {
     fn parse_only_closed_candles(&mut self, new_trade: &Trade) -> Option<Candlestick>;
 }
 
+// implement required cloning traits to allow dyn objects to be cloned
+dyn_clone::clone_trait_object!(CandlestickGenerator);
+
 #[allow(unused)]
+#[derive(Clone)]
 pub struct TimeCandlestickGenerator {
     last_day: i32,
     last_price: f64,
-    period_minutes: u8,
+    unit: TimeUnit,
+    period: u8,
     last_candle: Option<Candlestick>,
 }
 
 #[allow(unused)]
+#[derive(Clone)]
 pub struct TickCandlestickGenerator {
     ticks_per_candle: u64,
     last_candle: Option<Candlestick>,
@@ -55,17 +61,10 @@ pub struct TickCandlestickGenerator {
 }
 
 #[allow(unused)]
+#[derive(Clone)]
 pub struct VolumeCandlestickGenerator {
     volume_per_candle: f64,
     last_candle: Option<Candlestick>,
-}
-
-pub fn select_candlestick_generator(configuration: CandlestickConfiguration) -> Box<dyn CandlestickGenerator> {
-    match configuration.candle_type {
-        CandlestickType::TIME => Box::new(TimeCandlestickGenerator::new(configuration.candle_input_parameter)),
-        CandlestickType::TICK => Box::new(TickCandlestickGenerator::new(configuration.candle_input_parameter)),
-        CandlestickType::VOLUME => Box::new(TickCandlestickGenerator::new(configuration.candle_input_parameter))
-    }
 }
 
 // implementing OHLCV trait from technical analysis library to use existing simple_moving_average
@@ -117,7 +116,7 @@ impl Candlestick {
 }
 
 impl TickCandlestickGenerator {
-    fn new(input_configuration: u64) -> impl CandlestickGenerator {
+    pub(crate) fn new(input_configuration: u64) -> impl CandlestickGenerator {
         TickCandlestickGenerator {
             ticks_per_candle: input_configuration,
             last_candle: None,
@@ -183,9 +182,8 @@ impl CandlestickGenerator for TickCandlestickGenerator {
 
 impl CandlestickGenerator for TimeCandlestickGenerator {
 
-
     fn description(&self) -> String {
-        String::from(format!("candlesticks based on time slices of {} minutes", self.period_minutes))
+        String::from(format!("candlesticks based on time slices of {} minutes", self.period))
     }
 
     fn parse_with_open_candles(&mut self, new_trade: &Trade) -> Candlestick {
@@ -197,17 +195,26 @@ impl CandlestickGenerator for TimeCandlestickGenerator {
     }
 }
 
+#[derive(Clone)]
+#[allow(unused)]
+pub enum TimeUnit {
+    Seconds,
+    Minutes,
+    Hours
+}
+
 
 impl TimeCandlestickGenerator {
-    fn new(input_configuration: u64) -> impl CandlestickGenerator {
-        if input_configuration == 0 || input_configuration > 60 {
-            panic!("Invalid candlestick period, the period must be between 1 and 60 minutes");
+    pub fn new(time_unit: TimeUnit, frequency: u64) -> impl CandlestickGenerator {
+        if frequency == 0 || frequency > 60 {
+            panic!("Invalid candlestick frequency, the period must be between 1 and 60");
         }
         TimeCandlestickGenerator {
             last_price: 0.0,
             last_day: 0,
-            period_minutes: input_configuration as u8,
+            period: frequency as u8,
             last_candle: None,
+            unit: time_unit,
         }
     }
 
@@ -262,7 +269,7 @@ impl TimeCandlestickGenerator {
         let shift_current_time: i32 = 10i32.pow(digits_to_remove_current_time);
         let shift_start_time: i32 = 10i32.pow(digits_to_remove_start_time);
 
-        let is_candle_closed = (new_trade.time / shift_current_time) >= (existing_candle.start_time / shift_start_time) + (self.period_minutes as i32);
+        let is_candle_closed = (new_trade.time / shift_current_time) >= (existing_candle.start_time / shift_start_time) + (self.period as i32);
 
         if !is_candle_closed {
             existing_candle.trades += 1;
@@ -308,9 +315,9 @@ impl TimeCandlestickGenerator {
 
     fn add_close_time_to_time_based_candlestick(&self, candlestick: &mut Candlestick){
         if candlestick.start_time < 99_99_99 {
-            candlestick.close_time = candlestick.start_time + self.period_minutes as i32 * 100;
+            candlestick.close_time = candlestick.start_time + self.period as i32 * 100;
         }else{
-            candlestick.close_time = candlestick.start_time + self.period_minutes as i32 * 100000;
+            candlestick.close_time = candlestick.start_time + self.period as i32 * 100000;
         }
     }
 }
@@ -334,7 +341,7 @@ mod tests {
         let trades_file = TradeFile::new_from_binary_file(binary_trades_path.as_path().to_str().unwrap())
             .unwrap();
 
-        let mut generator = TimeCandlestickGenerator::new(1);
+        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes,1);
         let mut candlesticks: Vec<Candlestick> = vec![];
 
         for trade in trades_file {
@@ -352,7 +359,7 @@ mod tests {
 
     #[test]
     fn time_candlesticks_generator_should_correctly_create_candles_of_one_minute_including_not_closed_candles() {
-        let mut generator = TimeCandlestickGenerator::new(1);
+        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes,1);
         let trades = mock_trades_list();
         let mut result_candlesticks: Vec<Candlestick> = vec![];
 
@@ -393,7 +400,7 @@ mod tests {
     }
     #[test]
     fn time_candlesticks_generator_should_correctly_create_closed_only_candles_of_one_minute() {
-        let mut generator = TimeCandlestickGenerator::new(1);
+        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes,1);
         let trades = mock_trades_list();
         let mut result_candlesticks: Vec<Candlestick> = vec![];
 
@@ -430,7 +437,7 @@ mod tests {
 
     #[test]
     fn time_candlesticks_generator_handles_day_change() {
-        let mut generator = TimeCandlestickGenerator::new(1);
+        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes,1);
         let trades = vec![
             create_mock_trade(131175.0, 1, 200.0, 23_59_50, 2024_10_14),
             create_mock_trade(131180.0, 2, 200.0, 23_59_59, 2024_10_14),
@@ -450,7 +457,7 @@ mod tests {
 
     #[test]
     fn time_candlesticks_generator_handles_boundary_trades() {
-        let mut generator = TimeCandlestickGenerator::new(1);
+        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let trades = vec![
             create_mock_trade(131000.0, 1, 200.0, 09_00_59, 2024_10_14),
             create_mock_trade(131005.0, 2, 200.0, 09_01_00, 2024_10_14), // Exactly at boundary
@@ -470,7 +477,7 @@ mod tests {
 
     #[test]
     fn time_candlesticks_generator_handles_no_trades_in_period() {
-        let mut generator = TimeCandlestickGenerator::new(1);
+        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let trades = vec![
             create_mock_trade(131000.0, 1, 200.0, 09_00_00, 2024_10_14),
             // Gap of 2 minutes with no trades
@@ -491,7 +498,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Trade price should be greater than 0, received -131000")]
     fn time_candlesticks_generator_handles_invalid_trades() {
-        let mut generator = TimeCandlestickGenerator::new(1);
+        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let trades = vec![
             create_mock_trade(-131000.0, 1, 200.0, 09_00_00, 2024_10_14), // Negative price
         ];
@@ -503,7 +510,7 @@ mod tests {
 
     #[test]
     fn time_candlesticks_generator_handles_high_volume() {
-        let mut generator = TimeCandlestickGenerator::new(1);
+        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let mut trades = vec![];
         for i in 0..10_000 {
             trades.push(create_mock_trade(
@@ -525,7 +532,7 @@ mod tests {
 
     #[test]
     fn time_candlesticks_generator_handles_extreme_fluctuations() {
-        let mut generator = TimeCandlestickGenerator::new(1);
+        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let trades = vec![
             create_mock_trade(131000.0, 1, 200.0, 09_00_00, 2024_10_14),
             create_mock_trade(131500.0, 2, 200.0, 09_00_15, 2024_10_14),
@@ -547,11 +554,12 @@ mod tests {
 
     #[test]
     fn time_candlesticks_generator_with_five_minute_period() {
-        let mut generator =TimeCandlestickGenerator {
+        let mut generator = TimeCandlestickGenerator {
             last_price: 0.0,
             last_day: 0,
-            period_minutes: 5,
+            period: 5,
             last_candle: None,
+            unit: TimeUnit::Minutes,
         };
 
         let trades = mock_trades_list_for_five_minute_period(); // Get the mock trades data
