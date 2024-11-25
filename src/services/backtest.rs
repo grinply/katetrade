@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{cmp};
+use std::cmp::max;
 use std::fmt::{Display, Formatter};
 use chrono::{Datelike, NaiveDate, Weekday};
 use itertools::{enumerate};
@@ -814,8 +815,11 @@ impl<'a> TradingBacktester<'a> {
             asset,
             qty_history_trading_days: trading_days,
             qty_history_candles: candlesticks.len() as u64,
-            qty_history_trades: candlesticks.iter()
-                .fold(0, |total, candle| total + candle.trades),
+            qty_history_trades: max(
+                trades.len() as u64,
+                candlesticks.iter()
+                    .fold(0, |total, candle| total + candle.trades)
+            ),
             data_provider: DataProvider::new(candlesticks, trades),
         })
     }
