@@ -199,7 +199,7 @@ impl LiveStrategyExecutor {
 
             while running.load(std::sync::atomic::Ordering::Relaxed) {
                 let new_trade = consumer_channel.recv().unwrap(); // this will block the thread until a new trade is available
-                let order_action: TradeAction = trading_strategy.process_new_trade(new_trade);
+                let order_action: TradeAction = trading_strategy.process_new_trade(&new_trade);
                 order_executor.execute_order_action(order_action);
             }
         });

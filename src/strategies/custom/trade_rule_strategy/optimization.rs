@@ -21,7 +21,7 @@ pub fn fitness_optimizer_trade_rule_strategy(
         asset_to_trade,
         training_start_date,
         training_end_date,
-        Box::new(TimeCandlestickGenerator::new(TimeUnit::Minutes, 1)),
+        Some(Box::new(TimeCandlestickGenerator::new(TimeUnit::Minutes, 1))),
         false,
     ).unwrap();
 
@@ -29,7 +29,7 @@ pub fn fitness_optimizer_trade_rule_strategy(
         asset_to_trade,
         validation_start_date,
         validation_end_date,
-        Box::new(TimeCandlestickGenerator::new(TimeUnit::Minutes, 1)),
+        Some(Box::new(TimeCandlestickGenerator::new(TimeUnit::Minutes, 1))),
         false,
     ).unwrap();
 

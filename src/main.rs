@@ -30,7 +30,7 @@ use crate::services::optimization::brkga::{run_brkga_optimization, BrkgaConfig};
 use crate::strategies::custom::trade_rule_strategy::optimization::fitness_optimizer_trade_rule_strategy;
 use crate::strategies::execution_manager::{LiveStrategyExecutor, ExecutionRequest};
 use crate::strategies::strategy;
-use crate::strategies::strategy::{get_candlestick_strategy_by_name, StrategyInputData};
+use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name, CandlestickTradingStrategy, HighResolutionTradingStrategy, StrategyInputData};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn cli() -> Command {
@@ -276,24 +276,102 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
     }
 
     let strategy_name = sub_matches.get_one::<String>("strategy").expect("required");
-    let strategy = get_candlestick_strategy_by_name(strategy_name.as_str());
+    let candlestick_strategy = get_candlestick_strategy_by_name(strategy_name.as_str());
+    let high_resolution_strategy = get_high_resolution_strategy_by_name(strategy_name);
 
-    if strategy.is_none() {
-        eprintln!("[ERROR] candlestick strategy with name '{}' not found", strategy_name);
+    if candlestick_strategy.is_none() && high_resolution_strategy.is_none(){
+        eprintln!("[ERROR] no strategy with name '{}' not found", strategy_name);
         return;
     }
 
-    let strategy = strategy.unwrap();
+    if let Some(strategy) = high_resolution_strategy {
+        run_high_resolution_backtest(
+            strategy,
+            begin,
+            end,
+            asset.unwrap(),
+            qty_to_trade,
+            fixed_trade_qty,
+            force_sequential_download
+        );
+    }
+
+    if let Some(strategy) = candlestick_strategy {
+        run_candlestick_backtest(
+            strategy,
+            strategy_name,
+            begin,
+            end,
+            asset.unwrap(),
+            qty_to_trade,
+            fixed_trade_qty,
+            force_sequential_download
+        );
+    }
+}
+
+
+fn run_high_resolution_backtest(
+    strategy: Box<dyn HighResolutionTradingStrategy>,
+    begin: u32,
+    end: u32,
+    asset: &Asset,
+    qty_to_trade: u32,
+    fixed_trade_qty: bool,
+    force_sequential_download: bool
+){
+    let start_load_data = Instant::now();
+    let backtester_engine = backtest::TradingBacktester::new(
+        &asset,
+        begin,
+        end,
+        None,
+        force_sequential_download,
+    );
+
+    let finish_load_data = start_load_data.elapsed();
+    if backtester_engine.is_err() {
+        eprintln!("failed to initialize backtest engine. err: {}",
+                  backtester_engine.err().unwrap());
+        return;
+    }
+
+    print!("historical data loaded in {:.2?} | ", finish_load_data);
+    let backtester = backtester_engine.unwrap();
+    println!("{} trading days with generated from {} trades",
+             backtester.qty_history_trading_days,
+             backtester.qty_history_trades,
+    );
+
+    let now = Instant::now();
+    let metrics = backtester.run_high_resolution_backtest(strategy, qty_to_trade, fixed_trade_qty);
+    let elapsed = now.elapsed();
+    println!("backtest executed successfully in {:.2?}", elapsed);
+    println!("{}", metrics);
+
+}
+
+fn run_candlestick_backtest(
+    strategy: Box<dyn CandlestickTradingStrategy>,
+    strategy_name: &str,
+    begin: u32,
+    end: u32,
+    asset: &Asset,
+    qty_to_trade: u32,
+    fixed_trade_qty: bool,
+    force_sequential_download: bool
+){
     let candle_parser = strategy::get_candlestick_generator_for_strategy(strategy_name)
         .unwrap();
     let start_load_data = Instant::now();
     let backtester_engine = backtest::TradingBacktester::new(
-        &asset.unwrap(),
+        &asset,
         begin,
         end,
-        candle_parser,
-        force_sequential_download,
+        Some(candle_parser),
+        force_sequential_download
     );
+
     let finish_load_data = start_load_data.elapsed();
     if backtester_engine.is_err() {
         eprintln!("failed to initialize backtest engine. err: {}",
