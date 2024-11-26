@@ -2,7 +2,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{cmp};
 use std::cmp::max;
+use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
+use std::io::Read;
 use chrono::{Datelike, NaiveDate, Weekday};
 use itertools::{enumerate};
 use crate::models::candlestick::{Candlestick, CandlestickGenerator};
@@ -18,6 +20,7 @@ use simple_bar::ProgressBar;
 use crate::models::side::Side;
 use rayon::prelude::*;
 use crate::models::market::Market;
+use crate::models::trade;
 use crate::models::trade::{Trade, TradeFile};
 
 pub const INITIAL_BALANCE: f64 = 10_000.0;
@@ -61,14 +64,14 @@ pub struct BacktestMetrics {
     pub avg_winning_trade: f64,
     pub avg_losing_trade: f64,
     pub profit_factor: f64,
-    pub profit_factor_log_sum: f64
+    pub profit_factor_log_sum: f64,
 }
 
 impl Display for BacktestMetrics {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let avg_contracts_traded = if self.total_trades == 0 {
             0
-        }else{
+        } else {
             self.quantity_of_contracts / (2 * self.total_trades)
         };
 
@@ -124,7 +127,7 @@ pub struct TradingBacktester<'a> {
 #[allow(unused)]
 struct DataProvider {
     candlesticks: Vec<Candlestick>,
-    trades: Vec<Trade>
+    trades: Vec<Trade>,
 }
 
 #[allow(unused)]
@@ -152,10 +155,34 @@ impl DataProvider {
     fn new(candlesticks: Vec<Candlestick>, trades: Vec<Trade>) -> Self {
         DataProvider {
             candlesticks,
-            trades
+            trades,
         }
     }
 }
+
+struct TradeDataReader {
+    buffer: VecDeque<Trade>, // VecDeque::new()
+    files: Vec<String>,
+    file_index: usize,
+    item_index: usize,
+}
+
+impl Iterator for TradeDataReader {
+    type Item = Trade;
+    fn next(&mut self) -> Option<Trade> {
+        if self.file_index >= self.files.len() && self.buffer.is_empty() {
+            return None;
+        }
+        if self.buffer.is_empty() {
+            let file = self.files.get(self.file_index).unwrap();
+            self.buffer = trade::read_trades_from_binary_file(file).unwrap();
+            self.file_index += 1;
+        }
+        let trade = self.buffer.pop_front();
+        trade
+    }
+}
+
 
 pub trait DataPoint {
     fn date(&self) -> i32;
@@ -281,22 +308,22 @@ impl<'a> ExchangeEventHandler<'a> {
             if diff < 0.0 {
                 if open_position.side == Side::BUY {
                     // price decrease is a loss for long positions
-                    open_position.sum_per_candle_log_lose_returns+=-1.0*diff;
-                    open_position.sum_per_candle_total_log_returns+=diff;
-                }else{
+                    open_position.sum_per_candle_log_lose_returns += -1.0 * diff;
+                    open_position.sum_per_candle_total_log_returns += diff;
+                } else {
                     // price decrease is a win for short positions
-                    open_position.sum_per_candle_log_win_returns+=-1.0*diff;
-                    open_position.sum_per_candle_total_log_returns+=-1.0*diff;
+                    open_position.sum_per_candle_log_win_returns += -1.0 * diff;
+                    open_position.sum_per_candle_total_log_returns += -1.0 * diff;
                 }
-            }else{
+            } else {
                 if open_position.side == Side::BUY {
                     // price increase is a win for long positions
-                    open_position.sum_per_candle_log_win_returns+=diff;
-                    open_position.sum_per_candle_total_log_returns+=diff;
-                }else{
+                    open_position.sum_per_candle_log_win_returns += diff;
+                    open_position.sum_per_candle_total_log_returns += diff;
+                } else {
                     // price increase is a loss for short positions
-                    open_position.sum_per_candle_log_lose_returns+=diff;
-                    open_position.sum_per_candle_total_log_returns-=diff;
+                    open_position.sum_per_candle_log_lose_returns += diff;
+                    open_position.sum_per_candle_total_log_returns -= diff;
                 }
             }
         }
@@ -435,7 +462,7 @@ impl<'a> ExchangeEventHandler<'a> {
         assert!(quantity_to_decrease <= position.open_qty, "can´t decrease a position more contracts/shares than it has");
 
         let executed_qty = position.total_qty - position.open_qty;
-        position.avg_exit_price = ((position.avg_exit_price * executed_qty as f64) + (current_exit_price * quantity_to_decrease as f64)) / (executed_qty + quantity_to_decrease ) as f64;
+        position.avg_exit_price = ((position.avg_exit_price * executed_qty as f64) + (current_exit_price * quantity_to_decrease as f64)) / (executed_qty + quantity_to_decrease) as f64;
 
         assert!(position.avg_exit_price > 0.0);
         position.open_qty -= quantity_to_decrease;
@@ -450,7 +477,6 @@ impl<'a> ExchangeEventHandler<'a> {
             self.close_position(datapoint);
         }
     }
-
 
 
     fn track_current_month(&mut self) {
@@ -781,7 +807,7 @@ impl<'a> TradingBacktester<'a> {
         let mut candlesticks: Vec<Vec<Candlestick>> = Vec::new();
         let mut trades: Vec<Vec<Trade>> = Vec::new();
 
-        if let Some(candle_generator) =  candlestick_generator {
+        if let Some(candle_generator) = candlestick_generator {
             files_to_parse
                 .into_par_iter()
                 .map(|binary_trade_file| {
@@ -794,7 +820,7 @@ impl<'a> TradingBacktester<'a> {
                     parse_progress_bar.update();
                     candlesticks_current_file
                 }).collect_into_vec(&mut candlesticks);
-        }else{
+        } else {
             files_to_parse
                 .into_par_iter()
                 .map(|binary_trade_file| {
@@ -818,7 +844,7 @@ impl<'a> TradingBacktester<'a> {
             qty_history_trades: max(
                 trades.len() as u64,
                 candlesticks.iter()
-                    .fold(0, |total, candle| total + candle.trades)
+                    .fold(0, |total, candle| total + candle.trades),
             ),
             data_provider: DataProvider::new(candlesticks, trades),
         })
@@ -949,16 +975,16 @@ impl<'a> TradingBacktester<'a> {
 
 
             if position.side == Side::BUY {
-                total_long_trades+=1;
-                avg_long_trade_pnl+=position.liquid_pnl;
-            }else{
-                total_short_trades+=1;
-                avg_short_trade_pnl+=position.liquid_pnl;
+                total_long_trades += 1;
+                avg_long_trade_pnl += position.liquid_pnl;
+            } else {
+                total_short_trades += 1;
+                avg_short_trade_pnl += position.liquid_pnl;
             }
 
             if position.liquid_pnl > 0.0 {
                 total_wins += 1;
-                sum_winning_trades+= position.liquid_pnl;
+                sum_winning_trades += position.liquid_pnl;
                 if current_win_lose_streak < 0 {
                     max_lose_streak = cmp::max(max_lose_streak, -current_win_lose_streak);
                     current_win_lose_streak = 1;
@@ -968,7 +994,7 @@ impl<'a> TradingBacktester<'a> {
                 }
             } else {
                 total_loses += 1;
-                sum_losing_trades+= position.liquid_pnl;
+                sum_losing_trades += position.liquid_pnl;
                 if current_win_lose_streak > 0 {
                     max_win_streak = cmp::max(max_win_streak, current_win_lose_streak);
                     current_win_lose_streak = -1;
@@ -1040,8 +1066,8 @@ impl<'a> TradingBacktester<'a> {
             sharp_ratio,
             avg_winning_trade: sum_winning_trades / total_wins as f64,
             avg_losing_trade: sum_losing_trades / total_loses as f64,
-            profit_factor: sum_winning_trades/(-1.0*sum_losing_trades),
-            profit_factor_log_sum
+            profit_factor: sum_winning_trades / (-1.0 * sum_losing_trades),
+            profit_factor_log_sum,
         }
     }
 }

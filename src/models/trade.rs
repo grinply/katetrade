@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::convert::TryInto;
 use anyhow;
 use anyhow::bail;
@@ -349,12 +349,12 @@ pub fn write_to_binary_file(trades: &[Trade], output_file_path: &str) -> Result<
 }
 
 #[allow(unused)]
-pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
+pub fn read_trades_from_binary_file(file_path: &str) -> Result<VecDeque<Trade>, anyhow::Error> {
     let file = File::open(file_path)?;
     file.sync_all()?;
     let file_size_bytes = file.metadata()?.len();
     let trade_count = (file_size_bytes / Trade::size_in_bytes() as u64) as usize;
-    let mut trades = Vec::with_capacity(trade_count);
+    let mut trades = VecDeque::with_capacity(trade_count);
 
     let mut file_reader = io::BufReader::new(File::open(file_path)?);
 
@@ -364,7 +364,7 @@ pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, anyho
             break;
         }
         let trade = Trade::from_bytes(buffer.as_slice())?;
-        trades.push(trade);
+        trades.push_back(trade);
     }
 
     Ok(trades)
