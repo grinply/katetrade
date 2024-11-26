@@ -2,9 +2,8 @@ use dyn_clone::DynClone;
 use strum_macros::EnumString;
 use ta::{Close, High, Low, Open, Volume};
 use crate::models::trade::Trade;
-use crate::services::backtest::DataPoint;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 #[allow(unused)]
 pub struct Candlestick {
     pub open: f64,
@@ -99,24 +98,6 @@ impl Volume for Candlestick {
     }
 }
 
-impl DataPoint for Candlestick {
-    fn date(&self) -> i32 {
-        self.date
-    }
-
-    fn time(&self) -> i32 {
-        self.start_time
-    }
-
-    fn exit_time(&self) -> i32 {
-        self.close_time
-    }
-
-    fn current_price(&self) -> f64 {
-        self.close
-    }
-}
-
 impl Candlestick {
     fn new(first_trade: &Trade) -> Candlestick {
         Candlestick {
@@ -130,6 +111,21 @@ impl Candlestick {
             close_time: -1,
             is_closed: false,
             trades: 1,
+        }
+    }
+
+    pub(crate) fn default() -> Self {
+        Candlestick {
+            open: 0.0,
+            high: 0.0,
+            low: 0.0,
+            close: 0.0,
+            volume: 0.0,
+            date: 0,
+            start_time: -1,
+            close_time: -1,
+            is_closed: false,
+            trades: 0,
         }
     }
 }

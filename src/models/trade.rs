@@ -7,13 +7,12 @@ use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use lazy_static::lazy_static;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use crate::constants;
-use crate::services::backtest::DataPoint;
 
 const ONE_HUNDRED_KB_IN_BYTES: u64 = 100_000;
 const TRADES_CSV_HEADER_LINE: &str = "<ticker>,<date>,<time>,<trade_number>,<price>,<qty>,<vol>,<buy_agent>,<sell_agent>,<trade_type>,<aft>";
 
 /// Trade struct to match the Java data sent from market-connector
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 #[allow(unused)]
 pub struct Trade {
     pub trade_number: i32,
@@ -176,24 +175,6 @@ impl Trade {
             self.qty,
             self.volume
         )
-    }
-}
-
-impl DataPoint for Trade {
-    fn date(&self) -> i32 {
-        self.date
-    }
-
-    fn time(&self) -> i32 {
-        self.time
-    }
-
-    fn exit_time(&self) -> i32 {
-        self.time
-    }
-
-    fn current_price(&self) -> f64 {
-        self.price
     }
 }
 
