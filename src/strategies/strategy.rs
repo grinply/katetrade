@@ -3,14 +3,9 @@ use crate::models::candlestick::{Candlestick, CandlestickGenerator};
 use crate::models::action::TradeAction;
 use crate::models::asset::Asset;
 use crate::models::trade::Trade;
-<<<<<<< HEAD
-use crate::strategies::custom::dummy_strategy::{DummyHighResolutionStrategy};
-use crate::strategies::custom::reversal_momentum_strategy::ReversalMomentumCandlestickStrategy;
-use crate::strategies::custom::rsi_strategy::RsiOverboughtOversoldCandlestickStrategy;
-=======
 use crate::strategies::custom::dummy_strategy::{DummyCandlestickStrategy, DummyHighResolutionStrategy};
 use crate::strategies::custom::reversal_momentum_strategy::{ClassicReversalMomentumCandlestickStrategy, ReversalMomentumCandlestickStrategy};
->>>>>>> ff8759c78c917865e8038183ba1ddcc6f2a2fffd
+use crate::strategies::custom::rsi_strategy::RsiOverboughtOversoldCandlestickStrategy;
 
 /// algorithmic trading strategy to operate in the capital markets using raw Trade data
 #[allow(unused)]
@@ -70,16 +65,10 @@ pub enum StrategyInputData {
 
 fn list_all_candlestick_strategies() -> Vec<Box<dyn CandlestickTradingStrategy>> {
     vec![
-<<<<<<< HEAD
-        // DummyCandlestickStrategy::new(),
-        // ReversalMomentumCandlestickStrategy::new()
-        // ClassicReversalMomentumCandlestickStrategy::new()
-        RsiOverboughtOversoldCandlestickStrategy::new()
-=======
+        Box::new(RsiOverboughtOversoldCandlestickStrategy::new()),
         Box::new(DummyCandlestickStrategy::new()),
         Box::new(ReversalMomentumCandlestickStrategy::new()),
         Box::new(ClassicReversalMomentumCandlestickStrategy::new())
->>>>>>> ff8759c78c917865e8038183ba1ddcc6f2a2fffd
     ]
 }
 

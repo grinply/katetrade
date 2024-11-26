@@ -1,12 +1,12 @@
 
 use crate::models::action::TradeAction;
 use crate::models::asset::Asset;
-use crate::models::candlestick::{Candlestick, CandlestickType};
+use crate::models::candlestick::{Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
 use ta::indicators::RelativeStrengthIndex as RSI;
 use ta::indicators::AverageTrueRange as ATR;
 use ta::{Next, Reset};
 use crate::models::action::OrderAction::{MarketLong, MarketShort};
-use crate::strategies::strategy::{CandlestickConfiguration, CandlestickTradingStrategy, HighResolutionTradingStrategy};
+use crate::strategies::strategy::{CandlestickTradingStrategy};
 
 #[derive(Debug, PartialEq)]
 enum Signal {
@@ -54,7 +54,7 @@ impl RsiOverboughtOversoldCandlestickStrategy {
 
 impl CandlestickTradingStrategy for RsiOverboughtOversoldCandlestickStrategy {
     fn new() -> Self {
-        RsiOverboughtOversoldCandlestickStrategy {
+        RsiOverboughtOversoldCandlestickStrategy{
             day_period: false,
             rsi: RSI::new(14).unwrap(),
             atr: ATR::new(14).unwrap(),
@@ -64,7 +64,7 @@ impl CandlestickTradingStrategy for RsiOverboughtOversoldCandlestickStrategy {
         }
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "rsi_overbought_oversold_candlestick_strategy"
     }
 
@@ -80,11 +80,8 @@ impl CandlestickTradingStrategy for RsiOverboughtOversoldCandlestickStrategy {
         }
     }
 
-    fn candlestick_configuration(&self) -> CandlestickConfiguration {
-        CandlestickConfiguration {
-            candle_type: CandlestickType::TIME,
-            candle_input_parameter: 5,
-        }
+    fn candlestick_generator(&self) -> Box<dyn CandlestickGenerator> {
+        Box::new(TimeCandlestickGenerator::new(TimeUnit::Minutes, 5))
     }
 
     fn process_closed_candlestick(&mut self, closed_candle: &Candlestick) -> TradeAction {
@@ -97,17 +94,18 @@ impl CandlestickTradingStrategy for RsiOverboughtOversoldCandlestickStrategy {
 
         let take_stop = self.calculate_stop_and_take(atr_value);
 
+        println!("CLOSE {}, RSI {}, Datetime {}-{}", closed_candle.close, rsi_value, closed_candle.date, closed_candle.close_time);
         match self.is_order_active {
             None => {
-                if rsi_value > 70.0 {
+                if rsi_value > 70.0 && closed_candle.start_time < 17_00_00_000 {
                     self.is_order_active = Some(Signal::SHORT);
                     self.entry_price = closed_candle.close;
-                    println!("COMPRANDO, RSI {}, ENTRY_PRICE {}", rsi_value, self.entry_price);
+                    println!("COMPRANDO, RSI {}, ENTRY_PRICE {}, DateTime {}-{}", rsi_value, self.entry_price, closed_candle.date, closed_candle.close_time);
                     return TradeAction::send_order(MarketShort);
-                } else if rsi_value < 30.0 {
+                } else if rsi_value < 30.0 && closed_candle.start_time < 17_00_00_000 {
                     self.is_order_active = Some(Signal::LONG);
                     self.entry_price = closed_candle.close;
-                    println!("COMPRANDO, RSI {}, ENTRY_PRICE {}", rsi_value, self.entry_price);
+                    println!("COMPRANDO, RSI {}, ENTRY_PRICE {}, DateTime {}-{}", rsi_value, self.entry_price, closed_candle.date, closed_candle.close_time);
                     return TradeAction::send_order(MarketLong);
                 }
             }
@@ -115,12 +113,12 @@ impl CandlestickTradingStrategy for RsiOverboughtOversoldCandlestickStrategy {
                 assert_ne!(take_stop.0, 0.0);
                 assert_ne!(take_stop.1, 0.0);
 
-                if rsi_value <= 30.0
+                if rsi_value <= 50.0
                     // || closed_candle.close <= take_stop.0
                     // || closed_candle.close >= take_stop.1
-                    || closed_candle.start_time > 17_40_00 {
+                    || closed_candle.start_time > 17_40_00_000 {
                     // println!("{} {} {} {}", rsi_value <= 50.0, closed_candle.close <= take_stop.0, closed_candle.close >= take_stop.1, closed_candle.start_time > 17_40_00);
-                    println!("VENDENDO SHORT, RSI {}, BALANCE {}", rsi_value, closed_candle.close - self.entry_price);
+                    println!("VENDENDO SHORT, RSI {}, BALANCE {}, DateTime {}-{}", rsi_value, closed_candle.close - self.entry_price, closed_candle.date, closed_candle.close_time);
                     self.is_order_active = None;
                     self.entry_price = 0.0;
                     return TradeAction::send_order(MarketLong);
@@ -130,12 +128,12 @@ impl CandlestickTradingStrategy for RsiOverboughtOversoldCandlestickStrategy {
                 assert_ne!(take_stop.0, 0.0);
                 assert_ne!(take_stop.1, 0.0);
 
-                if rsi_value >= 70.0 ||
+                if rsi_value >= 50.0 ||
                     // closed_candle.close >= take_stop.0 ||
                     // closed_candle.close <= take_stop.1 ||
                     closed_candle.start_time > 17_40_00 {
                     // println!("{} {} {} {}", rsi_value >= 50.0, closed_candle.close >= take_stop.0, closed_candle.close <= take_stop.1, closed_candle.start_time > 17_40_00);
-                    println!("VENDENDO LONG, RSI {}, BALANCE {}", rsi_value, self.entry_price - closed_candle.close);
+                    println!("VENDENDO LONG, RSI {}, BALANCE {}, DateTime {}-{}", rsi_value, self.entry_price - closed_candle.close, closed_candle.date, closed_candle.close_time);
                     self.is_order_active = None;
                     self.entry_price = 0.0;
                     return TradeAction::send_order(MarketShort);
