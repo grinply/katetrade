@@ -82,6 +82,7 @@ impl fmt::Display for ExponentialMovingAverage {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::date;
     use super::*;
 
     #[test]
@@ -123,8 +124,8 @@ mod tests {
             close,
             volume: 0.0,
             date: 0,
-            start_time: 0,
-            close_time: 0,
+            start_time: date::convert_to_naive_time(09_00_00).unwrap(),
+            close_time: None,
             is_closed: false,
             trades: 0,
         }

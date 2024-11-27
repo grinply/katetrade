@@ -1,3 +1,4 @@
+use chrono::{NaiveTime, Timelike, Utc};
 use dyn_clone::DynClone;
 use strum_macros::EnumString;
 use ta::{Close, High, Low, Open, Volume};
@@ -13,8 +14,8 @@ pub struct Candlestick {
     pub close: f64,
     pub volume: f64,
     pub date: i32,
-    pub start_time: i32,
-    pub close_time: i32,
+    pub start_time: NaiveTime,
+    pub close_time: Option<NaiveTime>,
     pub is_closed: bool,
     pub trades: u64,
 }
@@ -30,6 +31,8 @@ pub enum CandlestickType {
 #[allow(unused)]
 pub trait CandlestickGenerator: DynClone + Send + Sync {
     fn description(&self) -> String;
+
+    fn evaluate_closed_candlestick(&mut self, current_time: NaiveTime) -> Option<Candlestick>;
 
     /// generates a brand-new Candlestick for every new trade, representing the still open candle
     /// it and also the closed when they finally do close.
@@ -108,8 +111,9 @@ impl Candlestick {
             close: first_trade.price,
             volume: first_trade.volume,
             date: first_trade.date,
-            start_time: first_trade.time,
-            close_time: -1,
+            start_time: date::convert_to_naive_time(first_trade.time)
+                .expect("time used in the candlestick should be valid"),
+            close_time: None,
             is_closed: false,
             trades: 1,
         }
@@ -123,8 +127,8 @@ impl Candlestick {
             close: 0.0,
             volume: 0.0,
             date: 0,
-            start_time: -1,
-            close_time: -1,
+            start_time: NaiveTime::default(),
+            close_time: None,
             is_closed: false,
             trades: 0,
         }
@@ -146,6 +150,10 @@ impl CandlestickGenerator for TickCandlestickGenerator {
         "Candlestick grouped by quantity of trades".to_string()
     }
 
+    fn evaluate_closed_candlestick(&mut self, current_time: NaiveTime) -> Option<Candlestick> {
+        None
+    }
+
     fn parse_with_open_candles(&mut self, new_trade: &Trade) -> Candlestick {
         if self.last_candle.is_none() {
             self.last_candle = Some(Candlestick::new(new_trade));
@@ -160,7 +168,8 @@ impl CandlestickGenerator for TickCandlestickGenerator {
         }
 
         let existing_candle = self.last_candle.as_mut().unwrap();
-        existing_candle.close_time = new_trade.time;
+        existing_candle.close_time = Some(date::convert_to_naive_time(new_trade.time)
+            .expect("candlestick close_time should be a valid value"));
 
         existing_candle.volume += new_trade.volume;
 
@@ -182,7 +191,6 @@ impl CandlestickGenerator for TickCandlestickGenerator {
             result_candle.is_closed = true;
             self.last_candle = None;
         }
-
         result_candle
     }
 
@@ -197,9 +205,20 @@ impl CandlestickGenerator for TickCandlestickGenerator {
 }
 
 impl CandlestickGenerator for TimeCandlestickGenerator {
-
     fn description(&self) -> String {
         String::from(format!("candlesticks based on time slices of {} minutes", self.period))
+    }
+
+    fn evaluate_closed_candlestick(&mut self, current_time: NaiveTime) -> Option<Candlestick> {
+        if self.last_candle.is_none() {
+            return None;
+        }
+
+        match self.unit {
+            TimeUnit::Seconds => None,
+            TimeUnit::Minutes => None,
+            TimeUnit::Hours => None
+        }
     }
 
     fn parse_with_open_candles(&mut self, new_trade: &Trade) -> Candlestick {
@@ -211,20 +230,25 @@ impl CandlestickGenerator for TimeCandlestickGenerator {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[allow(unused)]
 pub enum TimeUnit {
     Seconds,
     Minutes,
-    Hours
+    Hours,
 }
 
 
 impl TimeCandlestickGenerator {
     pub fn new(time_unit: TimeUnit, frequency: u64) -> impl CandlestickGenerator {
-        if frequency == 0 || frequency > 60 {
-            panic!("Invalid candlestick frequency, the period must be between 1 and 60");
+        if time_unit == TimeUnit::Seconds || time_unit == TimeUnit::Minutes {
+            assert_eq!(60 % frequency, 0,
+                       "the period used in candlesticks with unit of minutes or seconds should be divisible by 60");
+        }else{
+            assert_eq!(24 % frequency, 0,
+                       "the period used in candlesticks with unit of hours should be divisible by 24");
         }
+
         TimeCandlestickGenerator {
             last_price: 0.0,
             last_day: 0,
@@ -244,9 +268,8 @@ impl TimeCandlestickGenerator {
             self.last_day = new_trade.date;
             self.last_price = new_trade.price;
             let mut new_candle = Candlestick::new(new_trade);
+            new_candle.start_time = round_start_time(new_candle.start_time, self.unit, self.period);
             self.add_close_time_to_time_based_candlestick(&mut new_candle);
-            new_candle.start_time = date::format_time(new_candle.start_time)
-                .expect("time should be valid");
             self.last_candle = Some(new_candle);
             return Some(self.last_candle.clone()?);
         }
@@ -256,8 +279,7 @@ impl TimeCandlestickGenerator {
         if self.last_candle.is_none() { // the very start when no trade was parsed yet
             self.last_price = new_trade.price;
             let mut new_candle = Candlestick::new(new_trade);
-            new_candle.start_time = date::format_time(new_candle.start_time)
-                .expect("time should be valid");
+            new_candle.start_time = round_start_time(new_candle.start_time, self.unit, self.period);
             self.add_close_time_to_time_based_candlestick(&mut new_candle);
             self.last_candle = Some(new_candle.clone());
 
@@ -269,25 +291,9 @@ impl TimeCandlestickGenerator {
         }
         let existing_candle = self.last_candle.as_mut()?;
 
-        // time is represented as a number with format HHmmSS or HHmmSSsss
-        // we do some math to calculate to make all values beyond the minute zero values to better
-        // calculate the candlestick close
-        let digits_to_remove_current_time: u32 = if new_trade.time < 99_99_99 {
-            2
-        } else {
-            5
-        };
-
-        let digits_to_remove_start_time: u32 = if existing_candle.start_time < 99_99_99 {
-            2
-        } else {
-            5
-        };
-
-        let shift_current_time: i32 = 10i32.pow(digits_to_remove_current_time);
-        let shift_start_time: i32 = 10i32.pow(digits_to_remove_start_time);
-
-        let is_candle_closed = (new_trade.time / shift_current_time) >= (existing_candle.start_time / shift_start_time) + (self.period as i32);
+        let current_time = date::convert_to_naive_time(new_trade.time)?;
+        let end_time = date::increase_time(&existing_candle.start_time, self.period, self.unit);
+        let is_candle_closed = current_time.ge(&end_time);
 
         if !is_candle_closed {
             existing_candle.trades += 1;
@@ -316,34 +322,107 @@ impl TimeCandlestickGenerator {
 
         if existing_candle.is_closed {
             let mut new_candle = Candlestick::new(new_trade);
+            new_candle.start_time = round_start_time(new_candle.start_time, self.unit, self.period);
             self.add_close_time_to_time_based_candlestick(&mut new_candle);
-            new_candle.start_time = date::format_time(new_candle.start_time)
-                .expect("time should be valid");
             self.last_candle = Some(new_candle);
         }
         Some(result_candle)
     }
 
-    fn add_close_time_to_time_based_candlestick(&self, candlestick: &mut Candlestick){
-        if candlestick.start_time < 99_99_99 {
-            candlestick.close_time = candlestick.start_time + self.period as i32 * 100;
-        }else{
-            candlestick.close_time = candlestick.start_time + self.period as i32 * 100000;
-        }
-        candlestick.close_time = date::format_time(candlestick.close_time)
-            .expect("time should be valid");
+    fn add_close_time_to_time_based_candlestick(&self, candlestick: &mut Candlestick) {
+        let close_time = date::increase_time(&candlestick.start_time, self.period, self.unit);
+        candlestick.close_time = Some(close_time);
     }
 }
 
-
-
+fn round_start_time(start_time: NaiveTime, time_unit: TimeUnit, period: u8) -> NaiveTime {
+    match time_unit {
+        TimeUnit::Seconds => {
+            let seconds_start = start_time.second() - (start_time.second() % period as u32);
+            NaiveTime::from_hms_opt(start_time.hour(), start_time.minute(), seconds_start)
+                .unwrap()
+        }
+        TimeUnit::Minutes => {
+            let minutes_start = start_time.minute() - (start_time.minute() % period as u32);
+            NaiveTime::from_hms_opt(start_time.hour(), minutes_start, 0)
+                .unwrap()
+        }
+        TimeUnit::Hours => {
+            let hour_start = start_time.hour() - (start_time.hour() % period as u32);
+            NaiveTime::from_hms_opt(hour_start, 0, 0)
+                .unwrap()
+        }
+    }
+}
 
 
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use crate::models::candlestick::TimeUnit::{Hours, Minutes, Seconds};
     use crate::models::trade::TradeFile;
+    use crate::utils::date::{convert_to_naive_time, increase_time};
     use super::*;
+
+    #[test]
+    fn should_round_candlestick_start_time_correctly() {
+        let tests:Vec<(i32, u8, TimeUnit, i32)> = vec![
+            (09_10_17, 15, Seconds, 09_10_15),
+            (09_10_05, 2, Seconds, 09_10_04),
+            (09_10_15, 30, Minutes, 09_00_00),
+            (09_40_15, 10, Hours, 00_00_00),
+            (09_40_15, 15, Seconds, 09_40_15),
+
+            (11_01_00, 5, Minutes, 11_00_00),
+            (11_06_00, 5, Minutes, 11_05_00),
+            (11_13_00, 5, Minutes, 11_10_00),
+            (11_17_00, 5, Minutes, 11_15_00),
+            (11_22_00, 5, Minutes, 11_20_00),
+            (11_26_00, 5, Minutes, 11_25_00),
+            (11_32_00, 5, Minutes, 11_30_00),
+            (11_37_00, 5, Minutes, 11_35_00),
+            (11_42_00, 5, Minutes, 11_40_00),
+            (11_48_00, 5, Minutes, 11_45_00),
+            (11_53_00, 5, Minutes, 11_50_00),
+            (11_59_00, 5, Minutes, 11_55_00),
+
+            (11_00_01, 5, Seconds, 11_00_00),
+            (11_00_06, 5, Seconds, 11_00_05),
+            (11_00_13, 5, Seconds, 11_00_10),
+            (11_00_17, 5, Seconds, 11_00_15),
+            (11_00_22, 5, Seconds, 11_00_20),
+            (11_00_26, 5, Seconds, 11_00_25),
+            (11_00_32, 5, Seconds, 11_00_30),
+            (11_00_37, 5, Seconds, 11_00_35),
+            (11_00_42, 5, Seconds, 11_00_40),
+            (11_00_48, 5, Seconds, 11_00_45),
+            (11_00_53, 5, Seconds, 11_00_50),
+            (11_00_59, 5, Seconds, 11_00_55),
+
+            (00_00_00, 6, Hours, 00_00_00),
+            (01_00_00, 6, Hours, 00_00_00),
+            (03_00_00, 6, Hours, 00_00_00),
+            (06_00_00, 6, Hours, 06_00_00),
+            (07_00_00, 6, Hours, 06_00_00),
+            (08_00_00, 6, Hours, 06_00_00),
+            (12_00_00, 6, Hours, 12_00_00),
+            (13_00_00, 6, Hours, 12_00_00),
+            (14_00_00, 6, Hours, 12_00_00),
+            (19_00_00, 6, Hours, 18_00_00),
+            (20_00_00, 6, Hours, 18_00_00),
+            (21_00_00, 6, Hours, 18_00_00),
+            (22_00_00, 6, Hours, 18_00_00),
+        ];
+
+        for (input_time, period, time_unit, expected_time) in tests {
+            let input_value = convert_to_naive_time(input_time).unwrap();
+            let expected_value = convert_to_naive_time(expected_time).unwrap();
+            let result = round_start_time(input_value, time_unit, period);
+            assert_eq!(expected_value, result,
+                       "given the increment of {} {:?} in the time {}, the expected value is {}, but the result was {}",
+                       period, time_unit, input_value, expected_value, result);
+        }
+    }
 
     #[test]
     fn parse_correct_amount_of_time_based_candlesticks() {
@@ -354,7 +433,9 @@ mod tests {
         let trades_file = TradeFile::new_from_binary_file(binary_trades_path.as_path().to_str().unwrap())
             .unwrap();
 
-        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes,1);
+        let time_unit = TimeUnit::Minutes;
+        let period = 1;
+        let mut generator = TimeCandlestickGenerator::new(time_unit, period);
         let mut candlesticks: Vec<Candlestick> = vec![];
 
         for trade in trades_file {
@@ -363,16 +444,28 @@ mod tests {
             }
         }
         assert_eq!(candlesticks.first().unwrap().date, 2015_01_02);
-        assert_eq!(candlesticks.first().unwrap().start_time, 09_00_00);
+
+        let expected_start_time = date::convert_to_naive_time(09_00_00).unwrap();
+        let actual_start_time = candlesticks.first().unwrap().start_time;
+
+        assert_eq!(
+            actual_start_time,
+            expected_start_time,
+            "the expected start time is {} given a period of {} {:?} for time based candlesticks, but received {}",
+            expected_start_time,
+            period,
+            time_unit,
+            actual_start_time
+        );
 
         assert_eq!(candlesticks.last().unwrap().date, 2015_01_02);
-        assert_eq!(candlesticks.last().unwrap().start_time, 17_54_00);
+        assert_eq!(candlesticks.last().unwrap().start_time, date::convert_to_naive_time(17_54_00).unwrap());
         assert_eq!(535, candlesticks.len());
     }
 
     #[test]
     fn time_candlesticks_generator_should_correctly_create_candles_of_one_minute_including_not_closed_candles() {
-        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes,1);
+        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let trades = mock_trades_list();
         let mut result_candlesticks: Vec<Candlestick> = vec![];
 
@@ -390,7 +483,7 @@ mod tests {
         assert_eq!(131010.0, first_closed_candle.low);
         assert_eq!(131095.0, first_closed_candle.close);
         assert_eq!(6, first_closed_candle.trades);
-        assert_eq!(09_00_00, first_closed_candle.start_time);
+        assert_eq!(date::convert_to_naive_time(09_00_00).unwrap(), first_closed_candle.start_time);
 
         let second_closed_candle = result_candlesticks.get(11).unwrap();
         assert_eq!(true, second_closed_candle.is_closed);
@@ -399,7 +492,7 @@ mod tests {
         assert_eq!(131000.0, second_closed_candle.low);
         assert_eq!(131200.0, second_closed_candle.close);
         assert_eq!(5, second_closed_candle.trades);
-        assert_eq!(09_01_00_000, second_closed_candle.start_time);
+        assert_eq!(date::convert_to_naive_time(09_01_00_000).unwrap(), second_closed_candle.start_time);
 
         let last_candle = result_candlesticks.last().unwrap();
 
@@ -409,11 +502,11 @@ mod tests {
         assert_eq!(131210.0, last_candle.low);
         assert_eq!(131225.0, last_candle.close);
         assert_eq!(3, last_candle.trades);
-        assert_eq!(09_02_00, last_candle.start_time);
+        assert_eq!(date::convert_to_naive_time(09_02_00).unwrap(), last_candle.start_time);
     }
     #[test]
     fn time_candlesticks_generator_should_correctly_create_closed_only_candles_of_one_minute() {
-        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes,1);
+        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let trades = mock_trades_list();
         let mut result_candlesticks: Vec<Candlestick> = vec![];
 
@@ -435,7 +528,7 @@ mod tests {
         assert_eq!(131010.0, first_candle.low);
         assert_eq!(131095.0, first_candle.close);
         assert_eq!(6, first_candle.trades);
-        assert_eq!(09_00_00, first_candle.start_time);
+        assert_eq!(date::convert_to_naive_time(09_00_00).unwrap(), first_candle.start_time);
 
         let second_candle = result_candlesticks.last().unwrap();
 
@@ -445,12 +538,12 @@ mod tests {
         assert_eq!(131000.0, second_candle.low);
         assert_eq!(131200.0, second_candle.close);
         assert_eq!(5, second_candle.trades);
-        assert_eq!(09_01_00_000, second_candle.start_time);
+        assert_eq!(date::convert_to_naive_time(09_01_00_000).unwrap(), second_candle.start_time);
     }
 
     #[test]
     fn time_candlesticks_generator_handles_day_change() {
-        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes,1);
+        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let trades = vec![
             create_mock_trade(131175.0, 1, 200.0, 23_59_50, 2024_10_14),
             create_mock_trade(131180.0, 2, 200.0, 23_59_59, 2024_10_14),
@@ -465,7 +558,7 @@ mod tests {
 
         // Verify that a new candle started after midnight
         assert_eq!(result_candlesticks[2].date, 2024_10_15);
-        assert_eq!(result_candlesticks[2].start_time, 00_00_00);
+        assert_eq!(result_candlesticks[2].start_time, date::convert_to_naive_time(00_00_00).unwrap());
     }
 
     #[test]
@@ -484,8 +577,8 @@ mod tests {
 
         // Verify if the trade at 09:01:00 starts a new candle
         assert!(result_candlesticks[1].is_closed);
-        assert_eq!(result_candlesticks[1].start_time, 09_00_00);
-        assert_eq!(result_candlesticks[1].close_time, 09_01_00);
+        assert_eq!(result_candlesticks[1].start_time, date::convert_to_naive_time(09_00_00).unwrap());
+        assert_eq!(result_candlesticks[1].close_time.unwrap(), date::convert_to_naive_time(09_01_00).unwrap());
     }
 
     #[test]
@@ -595,7 +688,7 @@ mod tests {
         // Verify the first closed candle (09:00:00 - 09:04:59)
         let first_candle = &result_candlesticks[0];
         assert_eq!(first_candle.is_closed, true);
-        assert_eq!(first_candle.start_time, 09_00_00);
+        assert_eq!(first_candle.start_time, date::convert_to_naive_time(09_00_00).unwrap());
         assert_eq!(first_candle.open, 131000.0);
         assert_eq!(first_candle.high, 131075.0);
         assert_eq!(first_candle.low, 131000.0);
@@ -609,7 +702,7 @@ mod tests {
         // Verify the second closed candle (09:05:00 - 09:09:59)
         let second_candle = &result_candlesticks[1];
         assert_eq!(second_candle.is_closed, true);
-        assert_eq!(second_candle.start_time, 09_05_00);
+        assert_eq!(second_candle.start_time, date::convert_to_naive_time(09_05_00).unwrap());
         assert_eq!(second_candle.open, 131100.0);
         assert_eq!(second_candle.high, 131130.0);
         assert_eq!(second_candle.low, 131080.0);
@@ -624,7 +717,7 @@ mod tests {
         // Verify that the last candle is open and has correct data
         if let Some(last_candle) = &generator.last_candle {
             assert_eq!(last_candle.is_closed, false);
-            assert_eq!(last_candle.start_time, 09_10_00);
+            assert_eq!(last_candle.start_time, date::convert_to_naive_time(09_10_00).unwrap());
             assert_eq!(last_candle.open, 131110.0);
             assert_eq!(last_candle.high, 131150.0);
             assert_eq!(last_candle.low, 131070.0);

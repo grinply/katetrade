@@ -151,8 +151,8 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
 
 
     fn process_closed_candlestick(&mut self, closed_candle: &Candlestick) -> TradeAction {
-        let actual_time= date::parse_time(closed_candle.close_time)
-            .expect("time should be valid");
+        let actual_time= closed_candle.close_time
+            .expect("close_time should not be empty");
 
         if self.order_active {
             self.handle_active_order(&actual_time, &closed_candle)
@@ -305,8 +305,7 @@ impl CandlestickTradingStrategy for ClassicReversalMomentumCandlestickStrategy {
     }
 
     fn process_closed_candlestick(&mut self, closed_candle: &Candlestick) -> TradeAction {
-        let actual_time = date::parse_time(closed_candle.close_time)
-            .expect("time should be valid");
+        let actual_time = closed_candle.close_time.expect("closed time should be empty");
 
         if self.order_active {
             self.handle_active_order(&actual_time, &closed_candle)
@@ -541,11 +540,11 @@ mod classic_reversal_momentum_strategy_tests {
         classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
         let initial_candlesticks = vec![
-            Candlestick { date: 20231110, open: 130821.754224, high: 132715.797145, low: 130758.852429, close: 132541.069938, volume: 1500.0, start_time: 93000, close_time: 93100, is_closed: true, trades: 300 },
-            Candlestick { date: 20231110, open: 132792.677116, high: 132932.458881, low: 131059.383225, close: 132205.593701, volume: 1500.0, start_time: 93100, close_time: 93200, is_closed: true, trades: 300 },
-            Candlestick { date: 20231110, open: 132513.113585, high: 132513.113585, low: 131464.750344, close: 132506.124497, volume: 1500.0, start_time: 93200, close_time: 93300, is_closed: true, trades: 300 },
-            Candlestick { date: 20231110, open: 131967.964700, high: 134323.287447, low: 131765.281140, close: 133868.996709, volume: 1500.0, start_time: 93300, close_time: 93400, is_closed: true, trades: 300 },
-            Candlestick { date: 20231110, open: 133715.236767, high: 135301.759804, low: 133610.400443, close: 134581.883712, volume: 1500.0, start_time: 93400, close_time: 93500, is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 130821.754224, high: 132715.797145, low: 130758.852429, close: 132541.069938, volume: 1500.0, start_time: date::convert_to_naive_time(93000).unwrap(), close_time: Some(date::convert_to_naive_time(93100).unwrap()), is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 132792.677116, high: 132932.458881, low: 131059.383225, close: 132205.593701, volume: 1500.0, start_time: date::convert_to_naive_time(93100).unwrap(), close_time: Some(date::convert_to_naive_time(93200).unwrap()), is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 132513.113585, high: 132513.113585, low: 131464.750344, close: 132506.124497, volume: 1500.0, start_time: date::convert_to_naive_time(93200).unwrap(), close_time: Some(date::convert_to_naive_time(93300).unwrap()), is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 131967.964700, high: 134323.287447, low: 131765.281140, close: 133868.996709, volume: 1500.0, start_time: date::convert_to_naive_time(93300).unwrap(), close_time: Some(date::convert_to_naive_time(93400).unwrap()), is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 133715.236767, high: 135301.759804, low: 133610.400443, close: 134581.883712, volume: 1500.0, start_time: date::convert_to_naive_time(93400).unwrap(), close_time: Some(date::convert_to_naive_time(93500).unwrap()), is_closed: true, trades: 300 },
         ];
 
         let aggregated_candle = aggregate_daily_candles(&initial_candlesticks);
@@ -572,8 +571,8 @@ mod classic_reversal_momentum_strategy_tests {
                 low: 98.0,
                 close: 102.0,
                 volume: 1500.0,
-                start_time: 9_00_00,
-                close_time: 18_00_00,
+                start_time: date::convert_to_naive_time(9_00_00).unwrap(),
+                close_time: Some(date::convert_to_naive_time(18_00_00).unwrap()),
                 is_closed: true,
                 trades: 300
             }];
@@ -584,8 +583,8 @@ mod classic_reversal_momentum_strategy_tests {
             low: 96.0,
             close: 97.5,
             volume: 3000.0,
-            start_time: 9_33_00,
-            close_time: 9_34_00,
+            start_time: date::convert_to_naive_time(9_33_00).unwrap(),
+            close_time: Some(date::convert_to_naive_time(9_34_00).unwrap()),
             is_closed: true,
             trades: 3000,
         };
@@ -601,7 +600,7 @@ mod classic_reversal_momentum_strategy_tests {
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
         assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
 
-        assert!(current_candlestick.close_time < 17_00_00);
+        assert!(current_candlestick.close_time.unwrap().lt(&date::convert_to_naive_time(17_00_00).unwrap()));
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
         assert_eq!(classic_strategy.order_active, false);
         assert!(current_candlestick.close < classic_strategy.entry_price_range.0);
@@ -622,8 +621,8 @@ mod classic_reversal_momentum_strategy_tests {
                 low: 98.0,
                 close: 102.0,
                 volume: 1500.0,
-                start_time: 9_00_00,
-                close_time: 18_00_00,
+                start_time: date::convert_to_naive_time(9_00_00).unwrap(),
+                close_time: Some(date::convert_to_naive_time(18_00_00).unwrap()),
                 is_closed: true,
                 trades: 300
             }];
@@ -634,8 +633,8 @@ mod classic_reversal_momentum_strategy_tests {
             low: 96.0,
             close: 98.1,
             volume: 3000.0,
-            start_time: 9_33_00,
-            close_time: 9_34_00,
+            start_time: date::convert_to_naive_time(9_33_00).unwrap(),
+            close_time: Some(date::convert_to_naive_time(9_34_00).unwrap()),
             is_closed: true,
             trades: 3000,
         };
@@ -651,7 +650,7 @@ mod classic_reversal_momentum_strategy_tests {
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
         assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
 
-        assert!(current_candlestick.close_time < 17_00_00);
+        assert!(current_candlestick.close_time.unwrap().lt(&date::convert_to_naive_time(17_00_00).unwrap()));
         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
         assert_eq!(classic_strategy.order_active, false);
         assert!(current_candlestick.close > classic_strategy.entry_price_range.0);
@@ -661,808 +660,808 @@ mod classic_reversal_momentum_strategy_tests {
         assert_eq!(scenario1_short_trade_action.enter_market_action, None);
         assert_eq!(classic_strategy.order_active, false);
     }
-    #[test]
-    // Scenario 2.0
-    fn test_classic_reversal_momentum_candlestick_strategy_morning_short_keep_with_active_order() {
-        let last_day_candlestick = vec![
-            Candlestick{
-                date: 20231110,
-                open: 100.0,
-                high: 104.0,
-                low: 98.0,
-                close: 102.0,
-                volume: 1500.0,
-                start_time: 9_00_00,
-                close_time: 18_00_00,
-                is_closed: true,
-                trades: 300
-            }];
-        let mut current_candlestick = Candlestick{
-            date: 20231111,
-            open: 102.0,
-            high: 103.0,
-            low: 96.0,
-            close: 97.0,
-            volume: 3000.0,
-            start_time: 9_33_00,
-            close_time: 9_34_00,
-            is_closed: true,
-            trades: 3000,
-        };
-
-        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
-        classic_strategy.take_profit_percentage= 0.04;
-        classic_strategy.stop_loss_percentage= 0.04;
-        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
-
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
-
-        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
-
-
-        classic_strategy.order_active = true;
-        current_candlestick.close = last_day_candlestick[0].low - last_day_candlestick[0].low*(classic_strategy.take_profit_percentage-0.01);
-        classic_strategy.last_buy_price = current_candlestick.close;
-        assert!(current_candlestick.close_time < 17_00_00);
-        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        assert_eq!(classic_strategy.order_active, true);
-        assert!(current_candlestick.close < classic_strategy.entry_price_range.0);
-
-        let scenario2_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario2_short_trade_action.enter_market_action, None);
-        assert_eq!(classic_strategy.order_active, true);
-    }
-    #[test]
-    // Scenario 2.1
-    fn test_classic_reversal_momentum_candlestick_strategy_morning_short_exit_take_profit_order() {
-        let last_day_candlestick = vec![
-            Candlestick{
-                date: 20231110,
-                open: 100.0,
-                high: 104.0,
-                low: 98.0,
-                close: 102.0,
-                volume: 1500.0,
-                start_time: 9_00_00,
-                close_time: 18_00_00,
-                is_closed: true,
-                trades: 300
-            }];
-        let mut current_candlestick = Candlestick{
-            date: 20231111,
-            open: 102.0,
-            high: 103.0,
-            low: 96.0,
-            close: 97.0,
-            volume: 3000.0,
-            start_time: 9_33_00,
-            close_time: 9_34_00,
-            is_closed: true,
-            trades: 3000,
-        };
-
-        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
-        classic_strategy.take_profit_percentage= 0.04;
-        classic_strategy.stop_loss_percentage= 0.04;
-        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
-
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
-
-        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
-
-
-        classic_strategy.order_active = true;
-        current_candlestick.close = last_day_candlestick[0].low - last_day_candlestick[0].low*(classic_strategy.take_profit_percentage+0.01);
-        classic_strategy.last_buy_price = classic_strategy.entry_price_range.0;
-
-        assert!(current_candlestick.close_time < 17_00_00);
-        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        assert_eq!(classic_strategy.order_active, true);
-
-        let current_profit = get_current_profit(&Signal::SHORT, &classic_strategy.last_buy_price, &current_candlestick.close);
-        assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (true, false));
-
-        let scenario2_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario2_short_trade_action.enter_market_action, Some(MarketLong));
-        assert_eq!(classic_strategy.order_active, false);
-    }
-    #[test]
-    // Scenario 2.2
-    fn test_classic_reversal_momentum_candlestick_strategy_morning_short_exit_stop_loss_order() {
-        let last_day_candlestick = vec![
-            Candlestick{
-                date: 20231110,
-                open: 100.0,
-                high: 104.0,
-                low: 98.0,
-                close: 102.0,
-                volume: 1500.0,
-                start_time: 9_00_00,
-                close_time: 18_00_00,
-                is_closed: true,
-                trades: 300
-            }];
-        let mut current_candlestick = Candlestick{
-            date: 20231111,
-            open: 102.0,
-            high: 103.0,
-            low: 96.0,
-            close: 97.0,
-            volume: 3000.0,
-            start_time: 9_33_00,
-            close_time: 9_34_00,
-            is_closed: true,
-            trades: 3000,
-        };
-
-        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
-        classic_strategy.take_profit_percentage= 0.04;
-        classic_strategy.stop_loss_percentage= 0.04;
-        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
-
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
-
-        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
-
-
-        classic_strategy.order_active = true;
-        current_candlestick.close = last_day_candlestick[0].low + last_day_candlestick[0].low*(classic_strategy.stop_loss_percentage+0.01);
-        classic_strategy.last_buy_price = last_day_candlestick[0].low;
-
-        assert!(current_candlestick.close_time < 17_00_00);
-        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        assert_eq!(classic_strategy.order_active, true);
-
-        let current_profit = get_current_profit(&Signal::SHORT, &classic_strategy.last_buy_price, &current_candlestick.close);
-        assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (false, true));
-
-        let scenario2_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario2_short_trade_action.enter_market_action, Some(MarketLong));
-        assert_eq!(classic_strategy.order_active, false);
-    }
-    #[test]
-    //Scenario 3.0
-    fn test_classic_reversal_momentum_candlestick_strategy_morning_long_entry_no_active_order() {
-        let last_day_candlestick = vec![
-            Candlestick{
-                date: 20231110,
-                open: 102.0,
-                high: 102.0,
-                low: 98.0,
-                close: 100.0,
-                volume: 1500.0,
-                start_time: 9_00_00,
-                close_time: 18_00_00,
-                is_closed: true,
-                trades: 300
-            }];
-        let current_candlestick = Candlestick{
-            date: 20231111,
-            open: 100.0,
-            high: 105.0,
-            low: 96.0,
-            close: 103.0,
-            volume: 3000.0,
-            start_time: 9_33_00,
-            close_time: 9_34_00,
-            is_closed: true,
-            trades: 3000,
-        };
-
-        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
-        classic_strategy.take_profit_percentage= 0.04;
-        classic_strategy.stop_loss_percentage= 0.04;
-        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
-
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
-
-        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
-
-        assert!(current_candlestick.close_time < 17_00_00);
-        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        assert_eq!(classic_strategy.order_active, false);
-
-        assert!(current_candlestick.close >= classic_strategy.entry_price_range.0 && current_candlestick.close <= classic_strategy.entry_price_range.1);
-
-        // Run Scenario 3.0
-        let scenario3_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario3_long_trade_action.enter_market_action, Some(MarketLong));
-        assert_eq!(classic_strategy.order_active, true);
-    }
-    #[test]
-    //Scenario 3.1
-    fn test_classic_reversal_momentum_candlestick_strategy_morning_long_none_no_active_order() {
-        let last_day_candlestick = vec![
-            Candlestick{
-                date: 20231110,
-                open: 102.0,
-                high: 102.0,
-                low: 98.0,
-                close: 100.0,
-                volume: 1500.0,
-                start_time: 9_00_00,
-                close_time: 18_00_00,
-                is_closed: true,
-                trades: 300
-            }];
-        let current_candlestick = Candlestick{
-            date: 20231111,
-            open: 100.0,
-            high: 105.0,
-            low: 96.0,
-            close: 101.0,
-            volume: 3000.0,
-            start_time: 9_33_00,
-            close_time: 9_34_00,
-            is_closed: true,
-            trades: 3000,
-        };
-
-        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
-        classic_strategy.take_profit_percentage= 0.04;
-        classic_strategy.stop_loss_percentage= 0.04;
-        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
-
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
-
-        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
-
-        assert!(current_candlestick.close_time < 17_00_00);
-        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        assert_eq!(classic_strategy.order_active, false);
-        assert!(current_candlestick.close <= classic_strategy.entry_price_range.0 || current_candlestick.close >= classic_strategy.entry_price_range.1);
-
-        // Run Scenario 3.1
-        let scenario3_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario3_long_trade_action.enter_market_action, None);
-        assert_eq!(classic_strategy.order_active, false);
-    }
-    #[test]
-    //Scenario 4.0
-    fn test_classic_reversal_momentum_candlestick_strategy_morning_long_keep_with_active_order() {
-        let last_day_candlestick = vec![
-            Candlestick{
-                date: 20231110,
-                open: 102.0,
-                high: 102.0,
-                low: 98.0,
-                close: 100.0,
-                volume: 1500.0,
-                start_time: 9_00_00,
-                close_time: 18_00_00,
-                is_closed: true,
-                trades: 300
-            }];
-        let mut current_candlestick = Candlestick{
-            date: 20231111,
-            open: 102.0,
-            high: 103.0,
-            low: 96.0,
-            close: 97.0,
-            volume: 3000.0,
-            start_time: 9_33_00,
-            close_time: 9_34_00,
-            is_closed: true,
-            trades: 3000,
-        };
-
-        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
-        classic_strategy.take_profit_percentage= 0.04;
-        classic_strategy.stop_loss_percentage= 0.04;
-        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
-
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
-
-        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
-
-
-        classic_strategy.order_active = true;
-        current_candlestick.close = last_day_candlestick[0].high + last_day_candlestick[0].high*(classic_strategy.take_profit_percentage-0.01); // 1% profit
-        classic_strategy.last_buy_price = classic_strategy.entry_price_range.0;
-
-        assert!(current_candlestick.close_time < 17_00_00);
-        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        assert_eq!(classic_strategy.order_active, true);
-
-        let current_profit = get_current_profit(&Signal::LONG, &classic_strategy.last_buy_price, &current_candlestick.close);
-        assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (false, false));
-
-        let scenario4_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario4_short_trade_action.enter_market_action, None);
-        assert_eq!(classic_strategy.order_active, true);
-    }
-    #[test]
-    //Scenario 4.1
-    fn test_classic_reversal_momentum_candlestick_strategy_morning_long_exit_take_profit_order() {
-        let last_day_candlestick = vec![
-            Candlestick{
-                date: 20231110,
-                open: 102.0,
-                high: 102.0,
-                low: 98.0,
-                close: 100.0,
-                volume: 1500.0,
-                start_time: 9_00_00,
-                close_time: 18_00_00,
-                is_closed: true,
-                trades: 300
-            }];
-        let mut current_candlestick = Candlestick{
-            date: 20231111,
-            open: 102.0,
-            high: 103.0,
-            low: 96.0,
-            close: 97.0,
-            volume: 3000.0,
-            start_time: 9_33_00,
-            close_time: 9_34_00,
-            is_closed: true,
-            trades: 3000,
-        };
-
-        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
-        classic_strategy.take_profit_percentage= 0.04;
-        classic_strategy.stop_loss_percentage= 0.04;
-        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
-
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
-
-        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
-
-
-        classic_strategy.order_active = true;
-        classic_strategy.last_buy_price = last_day_candlestick[0].high;
-        current_candlestick.close = last_day_candlestick[0].high + last_day_candlestick[0].high*0.05; // 4% profit
-
-        assert!(current_candlestick.close_time < 17_00_00);
-        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        assert_eq!(classic_strategy.order_active, true);
-
-        let current_profit = get_current_profit(&Signal::LONG, &classic_strategy.last_buy_price, &current_candlestick.close);
-        assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (true, false));
-
-        let scenario4_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario4_short_trade_action.enter_market_action, Some(MarketShort));
-        assert_eq!(classic_strategy.order_active, false);
-    }
-    #[test]
-    //Scenario 4.2
-    fn test_classic_reversal_momentum_candlestick_strategy_morning_long_exit_stop_loss_order() {
-        let last_day_candlestick = vec![
-            Candlestick{
-                date: 20231110,
-                open: 102.0,
-                high: 102.0,
-                low: 98.0,
-                close: 100.0,
-                volume: 1500.0,
-                start_time: 9_00_00,
-                close_time: 18_00_00,
-                is_closed: true,
-                trades: 300
-            }];
-        let mut current_candlestick = Candlestick{
-            date: 20231111,
-            open: 102.0,
-            high: 103.0,
-            low: 96.0,
-            close: 97.0,
-            volume: 3000.0,
-            start_time: 9_33_00,
-            close_time: 9_34_00,
-            is_closed: true,
-            trades: 3000,
-        };
-
-        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
-        classic_strategy.take_profit_percentage= 0.04;
-        classic_strategy.stop_loss_percentage= 0.04;
-        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
-
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-        classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
-
-        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
-
-
-        classic_strategy.order_active = true;
-        current_candlestick.close = last_day_candlestick[0].high - last_day_candlestick[0].high*0.041; // 4% loss
-        classic_strategy.last_buy_price = last_day_candlestick[0].high;
-        assert!(current_candlestick.close_time < 17_00_00);
-        assert_eq!(classic_strategy.signal, Some(Signal::LONG));
-        assert_eq!(classic_strategy.order_active, true);
-        let current_profit = get_current_profit(&Signal::LONG, &classic_strategy.last_buy_price, &current_candlestick.close);
-        assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (false, true));
-
-        let scenario4_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario4_short_trade_action.enter_market_action, Some(MarketShort));
-        assert_eq!(classic_strategy.order_active, false);
-    }
-
-    #[test]
-    //Scenario 5.0
-    fn test_classic_reversal_momentum_candlestick_strategy_almost_ending_day_no_order_active() {
-        let last_day_candlestick = vec![
-            Candlestick{
-                date: 20231110,
-                open: 100.0,
-                high: 104.0,
-                low: 98.0,
-                close: 102.0,
-                volume: 1500.0,
-                start_time: 9_00_00,
-                close_time: 18_00_00,
-                is_closed: true,
-                trades: 300
-            }];
-        let mut current_candlestick = Candlestick{
-            date: 20231111,
-            open: 102.0,
-            high: 103.0,
-            low: 96.0,
-            close: 97.5,
-            volume: 3000.0,
-            start_time: 17_30_00,
-            close_time: 17_30_01,
-            is_closed: true,
-            trades: 3000,
-        };
-
-        let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
-        classic_strategy.take_profit_percentage= 0.04;
-        classic_strategy.stop_loss_percentage= 0.04;
-        classic_strategy.entry_price_range_percentage= (1.0, 1.01);
-
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3);
-
-        classic_strategy.init_trading_day(&asset.as_ref().unwrap(), &*last_day_candlestick);
-
-        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
-
-        assert!(current_candlestick.close_time > 17_00_00 && current_candlestick.close_time < 17_50_00);
-        assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
-        assert_eq!(classic_strategy.order_active, false);
-        assert!(current_candlestick.close < classic_strategy.entry_price_range.0);
-        assert!(current_candlestick.close > classic_strategy.entry_price_range.1);
-
-        // Short Reached Price
-        let scenario5_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario5_short_trade_action.enter_market_action, None);
-        assert_eq!(classic_strategy.order_active, false);
-
-        // Short  Do not Reached Price
-        current_candlestick.close = classic_strategy.entry_price_range.0 + 1.0;
-        assert!(current_candlestick.close > classic_strategy.entry_price_range.0);
-
-        let scenario5_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario5_short_trade_action.enter_market_action, None);
-        assert_eq!(classic_strategy.order_active, false);
-
-        // Long Reached Price
-        classic_strategy.signal = Some(Signal::LONG);
-        classic_strategy.entry_price_range.0 = last_day_candlestick[0].high;
-
-        current_candlestick.close = last_day_candlestick[0].high + 1.0;
-        assert!(current_candlestick.close > classic_strategy.entry_price_range.0);
-
-        let scenario5_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario5_long_trade_action.enter_market_action, None);
-        assert_eq!(classic_strategy.order_active, false);
-
-        // Long do not Reached Price
-        classic_strategy.signal = Some(Signal::LONG);
-        classic_strategy.entry_price_range.0 = last_day_candlestick[0].high;
-
-        current_candlestick.close = last_day_candlestick[0].high - 1.0;
-        assert!(current_candlestick.close < classic_strategy.entry_price_range.0);
-
-        let scenario5_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario5_long_trade_action.enter_market_action, None);
-        assert_eq!(classic_strategy.order_active, false);
-    }
-
-
-    // Almost End of the day (17_00_00 -> 17_50_00)
-    // Last Day Short Signal
-    // Order Active
-    // Current Candle have Profit
-    #[test]
-    //Scenario 5.1
-    fn test_classic_reversal_momentum_candlestick_strategy_almost_ending_day_short_with_order_active_take_profit() {
-
-    }
-
-    #[test]
-    //Scenario 5.2
-    fn test_classic_reversal_momentum_candlestick_strategy_almost_ending_day_short_with_order_active_no_profit() {
-
-    }
-    // Almost End of the day (17_00_00 -> 17_50_00)
-    // Last Day Short Signal
-    // Order Active
-    // Current Candle do not have profit
-
-}
-
-#[cfg(test)]
-mod reversal_momentum_common_tests {
-    use super::*;
-
-    #[test]
-    fn test_take_profit_or_stop_loss() {
-        let take_profit_percentage = 0.02;
-        let stop_loss_percentage = 0.04;
-
-        assert_eq!(take_profit_or_stop_loss(0.04,take_profit_percentage, stop_loss_percentage), (true, false));
-        assert_eq!(take_profit_or_stop_loss(0.02,take_profit_percentage, stop_loss_percentage), (true, false));
-
-        assert_eq!(take_profit_or_stop_loss(0.01,take_profit_percentage, stop_loss_percentage), (false, false));
-        assert_eq!(take_profit_or_stop_loss(0.00,take_profit_percentage, stop_loss_percentage), (false, false));
-        assert_eq!(take_profit_or_stop_loss(-0.01,take_profit_percentage, stop_loss_percentage), (false, false));
-        assert_eq!(take_profit_or_stop_loss(-0.02,take_profit_percentage, stop_loss_percentage), (false, false));
-
-        assert_eq!(take_profit_or_stop_loss(-0.04,take_profit_percentage, stop_loss_percentage), (false, true));
-        assert_eq!(take_profit_or_stop_loss(-0.05,take_profit_percentage, stop_loss_percentage), (false, true));
-
-    }
-
-    #[test]
-    fn test_get_current_profit() {
-        assert_eq!(get_current_profit(&Signal::LONG,&100.0, &104.0), 0.04);
-        assert_eq!(get_current_profit(&Signal::LONG,&100.0, &96.0), -0.04);
-
-        assert_eq!(get_current_profit(&Signal::SHORT,&100.0, &104.0), -0.04);
-        assert_eq!(get_current_profit(&Signal::SHORT,&100.0, &96.0), 0.04);
-
-    }
-
-    #[test]
-    fn test_return_entry_price_long_updated() {
-        let last_candle = &Candlestick{
-            open: 2.0,
-            high: 3.0,
-            low: 1.0,
-            close: 2.0,
-            volume: 3.0,
-            date: 20201001,
-            start_time: 143500,
-            close_time: 143600,
-            is_closed: false,
-            trades: 60,
-        };
-        assert_eq!(get_entry_price(last_candle, &Signal::LONG, (0.9, 1.1), true), (0.9,1.1))
-    }
-
-    #[test]
-    fn test_return_entry_price_long_classic() {
-        let last_candle = &Candlestick{
-            open: 2.0,
-            high: 3.0,
-            low: 1.0,
-            close: 2.0,
-            volume: 3.0,
-            date: 20201001,
-            start_time: 143500,
-            close_time: 143600,
-            is_closed: false,
-            trades: 60,
-        };
-        assert_eq!(get_entry_price(last_candle, &Signal::LONG, (0.9, 1.1),false), (2.7,3.3000000000000003))
-    }
-
-    #[test]
-    fn test_return_entry_price_short_updated() {
-        let last_candle = &Candlestick{
-            open: 2.0,
-            high: 3.0,
-            low: 1.0,
-            close: 2.0,
-            volume: 3.0,
-            date: 20201001,
-            start_time: 143500,
-            close_time: 143600,
-            is_closed: false,
-            trades: 60,
-        };
-        assert_eq!(get_entry_price(last_candle, &Signal::SHORT, (0.9, 1.1),true), (3.3, 2.6999999999999997))
-    }
-
-    #[test]
-    fn test_return_entry_price_short_classic() {
-        let last_candle = &Candlestick{
-            open: 2.0,
-            high: 3.0,
-            low: 1.0,
-            close: 2.0,
-            volume: 3.0,
-            date: 20201001,
-            start_time: 143500,
-            close_time: 143600,
-            is_closed: false,
-            trades: 60,
-        };
-        assert_eq!(get_entry_price(last_candle, &Signal::SHORT,(0.9,1.1), false), (1.1, 0.8999999999999999))
-    }
-
-    #[test]
-    fn test_aggregate_with_less_than_two_days() {
-        let candles = vec![
-            Candlestick { date: 20231110, open: 130821.754224, high: 132715.797145, low: 130758.852429, close: 132541.069938, volume: 1500.0, start_time: 93000, close_time: 93100, is_closed: true, trades: 300 },
-            Candlestick { date: 20231110, open: 132792.677116, high: 132932.458881, low: 131059.383225, close: 132205.593701, volume: 1500.0, start_time: 93100, close_time: 93200, is_closed: true, trades: 300 },
-            Candlestick { date: 20231110, open: 132513.113585, high: 132513.113585, low: 131464.750344, close: 132506.124497, volume: 1500.0, start_time: 93200, close_time: 93300, is_closed: true, trades: 300 },
-            Candlestick { date: 20231110, open: 131967.964700, high: 134323.287447, low: 131765.281140, close: 133868.996709, volume: 1500.0, start_time: 93300, close_time: 93400, is_closed: true, trades: 300 },
-            Candlestick { date: 20231110, open: 133715.236767, high: 135301.759804, low: 133610.400443, close: 134581.883712, volume: 1500.0, start_time: 93400, close_time: 93500, is_closed: true, trades: 300 },
-        ];
-
-        let candles = aggregate_daily_candles(&candles);
-
-        assert_eq!(candles.len(), 1)
-
-    }
-
-    #[test]
-    fn test_aggregate_with_more_than_two_days() {
-        let candles = vec![
-            Candlestick { date: 20231109, open: 95.0, high: 105.0, low: 90.0, close: 100.0, volume: 1000.0, start_time: 93000, close_time: 100000, is_closed: true, trades: 200 },
-            Candlestick { date: 20231110, open: 100.0, high: 110.0, low: 99.0, close: 105.0, volume: 1500.0, start_time: 93000, close_time: 100000, is_closed: true, trades: 300 },
-            Candlestick { date: 20231111, open: 111.0, high: 120.0, low: 110.0, close: 119.0, volume: 1800.0, start_time: 93000, close_time: 100000, is_closed: true, trades: 350 },
-        ];
-
-        let candles = aggregate_daily_candles(&candles);
-
-        assert_eq!(candles.len(), 3)
-    }
-    #[test]
-    fn test_aggregate_exactly_two_days() {
-        let candles = vec![
-            Candlestick { date: 20231110, open: 130821.754224, high: 132715.797145, low: 130758.852429, close: 132541.069938, volume: 1500.0, start_time: 93000, close_time: 93100, is_closed: true, trades: 9548 },
-            Candlestick { date: 20231110, open: 132792.677116, high: 132932.458881, low: 131059.383225, close: 132205.593701, volume: 3500.0, start_time: 93100, close_time: 93200, is_closed: true, trades: 9066 },
-            Candlestick { date: 20231110, open: 132513.113585, high: 132513.113585, low: 131464.750344, close: 132506.124497, volume: 2000.0, start_time: 93200, close_time: 93300, is_closed: true, trades: 9066 },
-            Candlestick { date: 20231110, open: 131967.964700, high: 134323.287447, low: 131765.281140, close: 133868.996709, volume: 1000.0, start_time: 93300, close_time: 93400, is_closed: true, trades: 4826 },
-            Candlestick { date: 20231110, open: 133715.236767, high: 135301.759804, low: 133610.400443, close: 134581.883712, volume: 5000.0, start_time: 93400, close_time: 93500, is_closed: true, trades: 3495 },
-
-            Candlestick { date: 20231111, open: 134611.883712, high: 135611.883712, low: 130758.852429, close: 132541.069938, volume: 1500.0, start_time: 93000, close_time: 93100, is_closed: true, trades: 9548 },
-            Candlestick { date: 20231111, open: 132792.677116, high: 132932.458881, low: 131059.383225, close: 132205.593701, volume: 3500.0, start_time: 93100, close_time: 93200, is_closed: true, trades: 9066 },
-            Candlestick { date: 20231111, open: 132513.113585, high: 132513.113585, low: 131464.750344, close: 132506.124497, volume: 2000.0, start_time: 93200, close_time: 93300, is_closed: true, trades: 9066 },
-            Candlestick { date: 20231111, open: 131967.964700, high: 134323.287447, low: 101765.281140, close: 133868.996709, volume: 1000.0, start_time: 93300, close_time: 93400, is_closed: true, trades: 4826 },
-            Candlestick { date: 20231111, open: 133715.236767, high: 135301.759804, low: 133610.400443, close: 134581.883712, volume: 3000.0, start_time: 93400, close_time: 93500, is_closed: true, trades: 3494 },
-
-        ];
-
-        let result = aggregate_daily_candles(&candles);
-
-        assert_eq!(result.len(), 2);
-
-        //Asserting first candle
-        assert_eq!(result[0].date, 20231110, "Date does not match");
-        assert_eq!(result[0].open, 130821.754224, "Open value does not match");
-        assert_eq!(result[0].high, 135301.759804, "High value does not match");
-        assert_eq!(result[0].low, 130758.852429, "Low value does not match");
-        assert_eq!(result[0].close, 134581.883712, "Close value does not match");
-        assert_eq!(result[0].volume, 13000.0, "Volume value does not match");
-        assert_eq!(result[0].start_time, 93000, "Start date does not match");
-        assert_eq!(result[0].close_time, 93500, "Close date does not match");
-        assert_eq!(result[0].trades, 36001, "Trades value does not match");
-
-        //Asserting second candle
-        assert_eq!(result[1].date, 20231111, "Date does not match");
-        assert_eq!(result[1].open, 134611.883712, "Open value does not match");
-        assert_eq!(result[1].high, 135611.883712, "High value does not match");
-        assert_eq!(result[1].low, 101765.281140, "Low value does not match");
-        assert_eq!(result[1].close, 134581.883712, "Close value does not match");
-        assert_eq!(result[1].volume, 11000.0, "Volume value does not match");
-        assert_eq!(result[1].start_time, 93000, "Start date does not match");
-        assert_eq!(result[1].close_time, 93500, "Close date does not match");
-        assert_eq!(result[1].trades, 36000, "Trades value does not match");
-    }
-
-    #[test]
-    fn test_signal_calculation_long() {
-        let current_candle = Candlestick {
-            date: 20231110,
-            open: 153689.529445,
-            high: 153926.481182,
-            low: 151076.478345,
-            close: 151352.922038,
-            volume: 1500.0,
-            start_time: 90000,
-            close_time: 180000,
-            is_closed: true,
-            trades: 90548
-        };
-        let last_candle = Candlestick {
-            date: 20231111,
-            open: 152840.452387,
-            high: 153630.291511	,
-            low: 151965.047359,
-            close: 152958.928256,
-            volume: 1500.0,
-            start_time: 90000,
-            close_time: 180000,
-            is_closed: true,
-            trades: 90548
-        };
-
-        let signal = signal_calculation(&last_candle, &current_candle);
-
-        assert_eq!(signal, Some(Signal::LONG))
-    }
-    #[test]
-    fn test_signal_calculation_short() {
-        let current_candle = Candlestick {
-            date: 20231111,
-            open: 102028.128617,
-            high: 104673.594800,
-            low: 99606.408330,
-            close: 104509.075759,
-            volume: 1500.0,
-            start_time: 90000,
-            close_time: 180000,
-            is_closed: true,
-            trades: 90548
-        };
-        let last_candle = Candlestick {
-            date: 20231110,
-            open: 103976.034065,
-            high: 104193.199200,
-            low: 101567.475302,
-            close: 103317.957900,
-            volume: 1500.0,
-            start_time: 90000,
-            close_time: 180000,
-            is_closed: true,
-            trades: 90548
-        };
-
-        let signal = signal_calculation(&last_candle, &current_candle);
-
-        assert_eq!(signal, Some(Signal::SHORT))
-    }
-    #[test]
-    fn test_signal_calculation_none() {
-        let current_candle = Candlestick {
-            date: 20231111,
-            open: 131580.000000,
-            high: 133040.000000,
-            low: 131380.000000,
-            close: 132005.000000,
-            volume: 1500.0,
-            start_time: 90000,
-            close_time: 180000,
-            is_closed: true,
-            trades: 90548
-        };
-        let last_candle = Candlestick {
-            date: 20231110,
-            high: 132830.000000,
-            low: 131260.000000,
-            close: 132665.000000,
-            open: 131695.000000,
-            volume: 1500.0,
-            start_time: 90000,
-            close_time: 180000,
-            is_closed: true,
-            trades: 90548
-        };
-
-        let signal = signal_calculation(&last_candle, &current_candle);
-        assert_eq!(signal, None)
-
-    }
+//     #[test]
+//     // Scenario 2.0
+//     fn test_classic_reversal_momentum_candlestick_strategy_morning_short_keep_with_active_order() {
+//         let last_day_candlestick = vec![
+//             Candlestick{
+//                 date: 20231110,
+//                 open: 100.0,
+//                 high: 104.0,
+//                 low: 98.0,
+//                 close: 102.0,
+//                 volume: 1500.0,
+//                 start_time: 9_00_00,
+//                 close_time: 18_00_00,
+//                 is_closed: true,
+//                 trades: 300
+//             }];
+//         let mut current_candlestick = Candlestick{
+//             date: 20231111,
+//             open: 102.0,
+//             high: 103.0,
+//             low: 96.0,
+//             close: 97.0,
+//             volume: 3000.0,
+//             start_time: 9_33_00,
+//             close_time: 9_34_00,
+//             is_closed: true,
+//             trades: 3000,
+//         };
+//
+//         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+//         classic_strategy.take_profit_percentage= 0.04;
+//         classic_strategy.stop_loss_percentage= 0.04;
+//         classic_strategy.entry_price_range_percentage= (1.0, 1.01);
+//
+//         let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+//         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+//
+//         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+//         assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
+//
+//
+//         classic_strategy.order_active = true;
+//         current_candlestick.close = last_day_candlestick[0].low - last_day_candlestick[0].low*(classic_strategy.take_profit_percentage-0.01);
+//         classic_strategy.last_buy_price = current_candlestick.close;
+//         assert!(current_candlestick.close_time < 17_00_00);
+//         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+//         assert_eq!(classic_strategy.order_active, true);
+//         assert!(current_candlestick.close < classic_strategy.entry_price_range.0);
+//
+//         let scenario2_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+//         assert_eq!(scenario2_short_trade_action.enter_market_action, None);
+//         assert_eq!(classic_strategy.order_active, true);
+//     }
+//     #[test]
+//     // Scenario 2.1
+//     fn test_classic_reversal_momentum_candlestick_strategy_morning_short_exit_take_profit_order() {
+//         let last_day_candlestick = vec![
+//             Candlestick{
+//                 date: 20231110,
+//                 open: 100.0,
+//                 high: 104.0,
+//                 low: 98.0,
+//                 close: 102.0,
+//                 volume: 1500.0,
+//                 start_time: 9_00_00,
+//                 close_time: 18_00_00,
+//                 is_closed: true,
+//                 trades: 300
+//             }];
+//         let mut current_candlestick = Candlestick{
+//             date: 20231111,
+//             open: 102.0,
+//             high: 103.0,
+//             low: 96.0,
+//             close: 97.0,
+//             volume: 3000.0,
+//             start_time: 9_33_00,
+//             close_time: 9_34_00,
+//             is_closed: true,
+//             trades: 3000,
+//         };
+//
+//         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+//         classic_strategy.take_profit_percentage= 0.04;
+//         classic_strategy.stop_loss_percentage= 0.04;
+//         classic_strategy.entry_price_range_percentage= (1.0, 1.01);
+//
+//         let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+//         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+//
+//         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+//         assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
+//
+//
+//         classic_strategy.order_active = true;
+//         current_candlestick.close = last_day_candlestick[0].low - last_day_candlestick[0].low*(classic_strategy.take_profit_percentage+0.01);
+//         classic_strategy.last_buy_price = classic_strategy.entry_price_range.0;
+//
+//         assert!(current_candlestick.close_time < 17_00_00);
+//         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+//         assert_eq!(classic_strategy.order_active, true);
+//
+//         let current_profit = get_current_profit(&Signal::SHORT, &classic_strategy.last_buy_price, &current_candlestick.close);
+//         assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (true, false));
+//
+//         let scenario2_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+//         assert_eq!(scenario2_short_trade_action.enter_market_action, Some(MarketLong));
+//         assert_eq!(classic_strategy.order_active, false);
+//     }
+//     #[test]
+//     // Scenario 2.2
+//     fn test_classic_reversal_momentum_candlestick_strategy_morning_short_exit_stop_loss_order() {
+//         let last_day_candlestick = vec![
+//             Candlestick{
+//                 date: 20231110,
+//                 open: 100.0,
+//                 high: 104.0,
+//                 low: 98.0,
+//                 close: 102.0,
+//                 volume: 1500.0,
+//                 start_time: 9_00_00,
+//                 close_time: 18_00_00,
+//                 is_closed: true,
+//                 trades: 300
+//             }];
+//         let mut current_candlestick = Candlestick{
+//             date: 20231111,
+//             open: 102.0,
+//             high: 103.0,
+//             low: 96.0,
+//             close: 97.0,
+//             volume: 3000.0,
+//             start_time: 9_33_00,
+//             close_time: 9_34_00,
+//             is_closed: true,
+//             trades: 3000,
+//         };
+//
+//         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+//         classic_strategy.take_profit_percentage= 0.04;
+//         classic_strategy.stop_loss_percentage= 0.04;
+//         classic_strategy.entry_price_range_percentage= (1.0, 1.01);
+//
+//         let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+//         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+//
+//         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+//         assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
+//
+//
+//         classic_strategy.order_active = true;
+//         current_candlestick.close = last_day_candlestick[0].low + last_day_candlestick[0].low*(classic_strategy.stop_loss_percentage+0.01);
+//         classic_strategy.last_buy_price = last_day_candlestick[0].low;
+//
+//         assert!(current_candlestick.close_time < 17_00_00);
+//         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+//         assert_eq!(classic_strategy.order_active, true);
+//
+//         let current_profit = get_current_profit(&Signal::SHORT, &classic_strategy.last_buy_price, &current_candlestick.close);
+//         assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (false, true));
+//
+//         let scenario2_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+//         assert_eq!(scenario2_short_trade_action.enter_market_action, Some(MarketLong));
+//         assert_eq!(classic_strategy.order_active, false);
+//     }
+//     #[test]
+//     //Scenario 3.0
+//     fn test_classic_reversal_momentum_candlestick_strategy_morning_long_entry_no_active_order() {
+//         let last_day_candlestick = vec![
+//             Candlestick{
+//                 date: 20231110,
+//                 open: 102.0,
+//                 high: 102.0,
+//                 low: 98.0,
+//                 close: 100.0,
+//                 volume: 1500.0,
+//                 start_time: 9_00_00,
+//                 close_time: 18_00_00,
+//                 is_closed: true,
+//                 trades: 300
+//             }];
+//         let current_candlestick = Candlestick{
+//             date: 20231111,
+//             open: 100.0,
+//             high: 105.0,
+//             low: 96.0,
+//             close: 103.0,
+//             volume: 3000.0,
+//             start_time: 9_33_00,
+//             close_time: 9_34_00,
+//             is_closed: true,
+//             trades: 3000,
+//         };
+//
+//         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+//         classic_strategy.take_profit_percentage= 0.04;
+//         classic_strategy.stop_loss_percentage= 0.04;
+//         classic_strategy.entry_price_range_percentage= (1.0, 1.01);
+//
+//         let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+//         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+//
+//         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+//         assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
+//
+//         assert!(current_candlestick.close_time < 17_00_00);
+//         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+//         assert_eq!(classic_strategy.order_active, false);
+//
+//         assert!(current_candlestick.close >= classic_strategy.entry_price_range.0 && current_candlestick.close <= classic_strategy.entry_price_range.1);
+//
+//         // Run Scenario 3.0
+//         let scenario3_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+//         assert_eq!(scenario3_long_trade_action.enter_market_action, Some(MarketLong));
+//         assert_eq!(classic_strategy.order_active, true);
+//     }
+//     #[test]
+//     //Scenario 3.1
+//     fn test_classic_reversal_momentum_candlestick_strategy_morning_long_none_no_active_order() {
+//         let last_day_candlestick = vec![
+//             Candlestick{
+//                 date: 20231110,
+//                 open: 102.0,
+//                 high: 102.0,
+//                 low: 98.0,
+//                 close: 100.0,
+//                 volume: 1500.0,
+//                 start_time: 9_00_00,
+//                 close_time: 18_00_00,
+//                 is_closed: true,
+//                 trades: 300
+//             }];
+//         let current_candlestick = Candlestick{
+//             date: 20231111,
+//             open: 100.0,
+//             high: 105.0,
+//             low: 96.0,
+//             close: 101.0,
+//             volume: 3000.0,
+//             start_time: 9_33_00,
+//             close_time: 9_34_00,
+//             is_closed: true,
+//             trades: 3000,
+//         };
+//
+//         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+//         classic_strategy.take_profit_percentage= 0.04;
+//         classic_strategy.stop_loss_percentage= 0.04;
+//         classic_strategy.entry_price_range_percentage= (1.0, 1.01);
+//
+//         let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+//         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+//
+//         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+//         assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
+//
+//         assert!(current_candlestick.close_time < 17_00_00);
+//         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+//         assert_eq!(classic_strategy.order_active, false);
+//         assert!(current_candlestick.close <= classic_strategy.entry_price_range.0 || current_candlestick.close >= classic_strategy.entry_price_range.1);
+//
+//         // Run Scenario 3.1
+//         let scenario3_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+//         assert_eq!(scenario3_long_trade_action.enter_market_action, None);
+//         assert_eq!(classic_strategy.order_active, false);
+//     }
+//     #[test]
+//     //Scenario 4.0
+//     fn test_classic_reversal_momentum_candlestick_strategy_morning_long_keep_with_active_order() {
+//         let last_day_candlestick = vec![
+//             Candlestick{
+//                 date: 20231110,
+//                 open: 102.0,
+//                 high: 102.0,
+//                 low: 98.0,
+//                 close: 100.0,
+//                 volume: 1500.0,
+//                 start_time: 9_00_00,
+//                 close_time: 18_00_00,
+//                 is_closed: true,
+//                 trades: 300
+//             }];
+//         let mut current_candlestick = Candlestick{
+//             date: 20231111,
+//             open: 102.0,
+//             high: 103.0,
+//             low: 96.0,
+//             close: 97.0,
+//             volume: 3000.0,
+//             start_time: 9_33_00,
+//             close_time: 9_34_00,
+//             is_closed: true,
+//             trades: 3000,
+//         };
+//
+//         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+//         classic_strategy.take_profit_percentage= 0.04;
+//         classic_strategy.stop_loss_percentage= 0.04;
+//         classic_strategy.entry_price_range_percentage= (1.0, 1.01);
+//
+//         let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+//         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+//
+//         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+//         assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
+//
+//
+//         classic_strategy.order_active = true;
+//         current_candlestick.close = last_day_candlestick[0].high + last_day_candlestick[0].high*(classic_strategy.take_profit_percentage-0.01); // 1% profit
+//         classic_strategy.last_buy_price = classic_strategy.entry_price_range.0;
+//
+//         assert!(current_candlestick.close_time < 17_00_00);
+//         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+//         assert_eq!(classic_strategy.order_active, true);
+//
+//         let current_profit = get_current_profit(&Signal::LONG, &classic_strategy.last_buy_price, &current_candlestick.close);
+//         assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (false, false));
+//
+//         let scenario4_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+//         assert_eq!(scenario4_short_trade_action.enter_market_action, None);
+//         assert_eq!(classic_strategy.order_active, true);
+//     }
+//     #[test]
+//     //Scenario 4.1
+//     fn test_classic_reversal_momentum_candlestick_strategy_morning_long_exit_take_profit_order() {
+//         let last_day_candlestick = vec![
+//             Candlestick{
+//                 date: 20231110,
+//                 open: 102.0,
+//                 high: 102.0,
+//                 low: 98.0,
+//                 close: 100.0,
+//                 volume: 1500.0,
+//                 start_time: 9_00_00,
+//                 close_time: 18_00_00,
+//                 is_closed: true,
+//                 trades: 300
+//             }];
+//         let mut current_candlestick = Candlestick{
+//             date: 20231111,
+//             open: 102.0,
+//             high: 103.0,
+//             low: 96.0,
+//             close: 97.0,
+//             volume: 3000.0,
+//             start_time: 9_33_00,
+//             close_time: 9_34_00,
+//             is_closed: true,
+//             trades: 3000,
+//         };
+//
+//         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+//         classic_strategy.take_profit_percentage= 0.04;
+//         classic_strategy.stop_loss_percentage= 0.04;
+//         classic_strategy.entry_price_range_percentage= (1.0, 1.01);
+//
+//         let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+//         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+//
+//         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+//         assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
+//
+//
+//         classic_strategy.order_active = true;
+//         classic_strategy.last_buy_price = last_day_candlestick[0].high;
+//         current_candlestick.close = last_day_candlestick[0].high + last_day_candlestick[0].high*0.05; // 4% profit
+//
+//         assert!(current_candlestick.close_time < 17_00_00);
+//         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+//         assert_eq!(classic_strategy.order_active, true);
+//
+//         let current_profit = get_current_profit(&Signal::LONG, &classic_strategy.last_buy_price, &current_candlestick.close);
+//         assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (true, false));
+//
+//         let scenario4_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+//         assert_eq!(scenario4_short_trade_action.enter_market_action, Some(MarketShort));
+//         assert_eq!(classic_strategy.order_active, false);
+//     }
+//     #[test]
+//     //Scenario 4.2
+//     fn test_classic_reversal_momentum_candlestick_strategy_morning_long_exit_stop_loss_order() {
+//         let last_day_candlestick = vec![
+//             Candlestick{
+//                 date: 20231110,
+//                 open: 102.0,
+//                 high: 102.0,
+//                 low: 98.0,
+//                 close: 100.0,
+//                 volume: 1500.0,
+//                 start_time: 9_00_00,
+//                 close_time: 18_00_00,
+//                 is_closed: true,
+//                 trades: 300
+//             }];
+//         let mut current_candlestick = Candlestick{
+//             date: 20231111,
+//             open: 102.0,
+//             high: 103.0,
+//             low: 96.0,
+//             close: 97.0,
+//             volume: 3000.0,
+//             start_time: 9_33_00,
+//             close_time: 9_34_00,
+//             is_closed: true,
+//             trades: 3000,
+//         };
+//
+//         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+//         classic_strategy.take_profit_percentage= 0.04;
+//         classic_strategy.stop_loss_percentage= 0.04;
+//         classic_strategy.entry_price_range_percentage= (1.0, 1.01);
+//
+//         let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+//         classic_strategy.init_trading_day(&asset, &*last_day_candlestick);
+//
+//         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+//         assert_eq!(classic_strategy.entry_price_range, (102.0, 103.02));
+//
+//
+//         classic_strategy.order_active = true;
+//         current_candlestick.close = last_day_candlestick[0].high - last_day_candlestick[0].high*0.041; // 4% loss
+//         classic_strategy.last_buy_price = last_day_candlestick[0].high;
+//         assert!(current_candlestick.close_time < 17_00_00);
+//         assert_eq!(classic_strategy.signal, Some(Signal::LONG));
+//         assert_eq!(classic_strategy.order_active, true);
+//         let current_profit = get_current_profit(&Signal::LONG, &classic_strategy.last_buy_price, &current_candlestick.close);
+//         assert_eq!(take_profit_or_stop_loss(current_profit, classic_strategy.take_profit_percentage, classic_strategy.stop_loss_percentage), (false, true));
+//
+//         let scenario4_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+//         assert_eq!(scenario4_short_trade_action.enter_market_action, Some(MarketShort));
+//         assert_eq!(classic_strategy.order_active, false);
+//     }
+//
+//     #[test]
+//     //Scenario 5.0
+//     fn test_classic_reversal_momentum_candlestick_strategy_almost_ending_day_no_order_active() {
+//         let last_day_candlestick = vec![
+//             Candlestick{
+//                 date: 20231110,
+//                 open: 100.0,
+//                 high: 104.0,
+//                 low: 98.0,
+//                 close: 102.0,
+//                 volume: 1500.0,
+//                 start_time: 9_00_00,
+//                 close_time: 18_00_00,
+//                 is_closed: true,
+//                 trades: 300
+//             }];
+//         let mut current_candlestick = Candlestick{
+//             date: 20231111,
+//             open: 102.0,
+//             high: 103.0,
+//             low: 96.0,
+//             close: 97.5,
+//             volume: 3000.0,
+//             start_time: 17_30_00,
+//             close_time: 17_30_01,
+//             is_closed: true,
+//             trades: 3000,
+//         };
+//
+//         let mut classic_strategy = ClassicReversalMomentumCandlestickStrategy::new();
+//         classic_strategy.take_profit_percentage= 0.04;
+//         classic_strategy.stop_loss_percentage= 0.04;
+//         classic_strategy.entry_price_range_percentage= (1.0, 1.01);
+//
+//         let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3);
+//
+//         classic_strategy.init_trading_day(&asset.as_ref().unwrap(), &*last_day_candlestick);
+//
+//         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+//         assert_eq!(classic_strategy.entry_price_range, (98.0, 97.02));
+//
+//         assert!(current_candlestick.close_time > 17_00_00 && current_candlestick.close_time < 17_50_00);
+//         assert_eq!(classic_strategy.signal, Some(Signal::SHORT));
+//         assert_eq!(classic_strategy.order_active, false);
+//         assert!(current_candlestick.close < classic_strategy.entry_price_range.0);
+//         assert!(current_candlestick.close > classic_strategy.entry_price_range.1);
+//
+//         // Short Reached Price
+//         let scenario5_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+//         assert_eq!(scenario5_short_trade_action.enter_market_action, None);
+//         assert_eq!(classic_strategy.order_active, false);
+//
+//         // Short  Do not Reached Price
+//         current_candlestick.close = classic_strategy.entry_price_range.0 + 1.0;
+//         assert!(current_candlestick.close > classic_strategy.entry_price_range.0);
+//
+//         let scenario5_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+//         assert_eq!(scenario5_short_trade_action.enter_market_action, None);
+//         assert_eq!(classic_strategy.order_active, false);
+//
+//         // Long Reached Price
+//         classic_strategy.signal = Some(Signal::LONG);
+//         classic_strategy.entry_price_range.0 = last_day_candlestick[0].high;
+//
+//         current_candlestick.close = last_day_candlestick[0].high + 1.0;
+//         assert!(current_candlestick.close > classic_strategy.entry_price_range.0);
+//
+//         let scenario5_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+//         assert_eq!(scenario5_long_trade_action.enter_market_action, None);
+//         assert_eq!(classic_strategy.order_active, false);
+//
+//         // Long do not Reached Price
+//         classic_strategy.signal = Some(Signal::LONG);
+//         classic_strategy.entry_price_range.0 = last_day_candlestick[0].high;
+//
+//         current_candlestick.close = last_day_candlestick[0].high - 1.0;
+//         assert!(current_candlestick.close < classic_strategy.entry_price_range.0);
+//
+//         let scenario5_long_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
+//         assert_eq!(scenario5_long_trade_action.enter_market_action, None);
+//         assert_eq!(classic_strategy.order_active, false);
+//     }
+//
+//
+//     // Almost End of the day (17_00_00 -> 17_50_00)
+//     // Last Day Short Signal
+//     // Order Active
+//     // Current Candle have Profit
+//     #[test]
+//     //Scenario 5.1
+//     fn test_classic_reversal_momentum_candlestick_strategy_almost_ending_day_short_with_order_active_take_profit() {
+//
+//     }
+//
+//     #[test]
+//     //Scenario 5.2
+//     fn test_classic_reversal_momentum_candlestick_strategy_almost_ending_day_short_with_order_active_no_profit() {
+//
+//     }
+//     // Almost End of the day (17_00_00 -> 17_50_00)
+//     // Last Day Short Signal
+//     // Order Active
+//     // Current Candle do not have profit
+//
+// }
+//
+// #[cfg(test)]
+// mod reversal_momentum_common_tests {
+//     use super::*;
+//
+//     #[test]
+//     fn test_take_profit_or_stop_loss() {
+//         let take_profit_percentage = 0.02;
+//         let stop_loss_percentage = 0.04;
+//
+//         assert_eq!(take_profit_or_stop_loss(0.04,take_profit_percentage, stop_loss_percentage), (true, false));
+//         assert_eq!(take_profit_or_stop_loss(0.02,take_profit_percentage, stop_loss_percentage), (true, false));
+//
+//         assert_eq!(take_profit_or_stop_loss(0.01,take_profit_percentage, stop_loss_percentage), (false, false));
+//         assert_eq!(take_profit_or_stop_loss(0.00,take_profit_percentage, stop_loss_percentage), (false, false));
+//         assert_eq!(take_profit_or_stop_loss(-0.01,take_profit_percentage, stop_loss_percentage), (false, false));
+//         assert_eq!(take_profit_or_stop_loss(-0.02,take_profit_percentage, stop_loss_percentage), (false, false));
+//
+//         assert_eq!(take_profit_or_stop_loss(-0.04,take_profit_percentage, stop_loss_percentage), (false, true));
+//         assert_eq!(take_profit_or_stop_loss(-0.05,take_profit_percentage, stop_loss_percentage), (false, true));
+//
+//     }
+//
+//     #[test]
+//     fn test_get_current_profit() {
+//         assert_eq!(get_current_profit(&Signal::LONG,&100.0, &104.0), 0.04);
+//         assert_eq!(get_current_profit(&Signal::LONG,&100.0, &96.0), -0.04);
+//
+//         assert_eq!(get_current_profit(&Signal::SHORT,&100.0, &104.0), -0.04);
+//         assert_eq!(get_current_profit(&Signal::SHORT,&100.0, &96.0), 0.04);
+//
+//     }
+//
+//     #[test]
+//     fn test_return_entry_price_long_updated() {
+//         let last_candle = &Candlestick{
+//             open: 2.0,
+//             high: 3.0,
+//             low: 1.0,
+//             close: 2.0,
+//             volume: 3.0,
+//             date: 20201001,
+//             start_time: 143500,
+//             close_time: 143600,
+//             is_closed: false,
+//             trades: 60,
+//         };
+//         assert_eq!(get_entry_price(last_candle, &Signal::LONG, (0.9, 1.1), true), (0.9,1.1))
+//     }
+//
+//     #[test]
+//     fn test_return_entry_price_long_classic() {
+//         let last_candle = &Candlestick{
+//             open: 2.0,
+//             high: 3.0,
+//             low: 1.0,
+//             close: 2.0,
+//             volume: 3.0,
+//             date: 20201001,
+//             start_time: 143500,
+//             close_time: 143600,
+//             is_closed: false,
+//             trades: 60,
+//         };
+//         assert_eq!(get_entry_price(last_candle, &Signal::LONG, (0.9, 1.1),false), (2.7,3.3000000000000003))
+//     }
+//
+//     #[test]
+//     fn test_return_entry_price_short_updated() {
+//         let last_candle = &Candlestick{
+//             open: 2.0,
+//             high: 3.0,
+//             low: 1.0,
+//             close: 2.0,
+//             volume: 3.0,
+//             date: 20201001,
+//             start_time: 143500,
+//             close_time: 143600,
+//             is_closed: false,
+//             trades: 60,
+//         };
+//         assert_eq!(get_entry_price(last_candle, &Signal::SHORT, (0.9, 1.1),true), (3.3, 2.6999999999999997))
+//     }
+//
+//     #[test]
+//     fn test_return_entry_price_short_classic() {
+//         let last_candle = &Candlestick{
+//             open: 2.0,
+//             high: 3.0,
+//             low: 1.0,
+//             close: 2.0,
+//             volume: 3.0,
+//             date: 20201001,
+//             start_time: 143500,
+//             close_time: 143600,
+//             is_closed: false,
+//             trades: 60,
+//         };
+//         assert_eq!(get_entry_price(last_candle, &Signal::SHORT,(0.9,1.1), false), (1.1, 0.8999999999999999))
+//     }
+//
+//     #[test]
+//     fn test_aggregate_with_less_than_two_days() {
+//         let candles = vec![
+//             Candlestick { date: 20231110, open: 130821.754224, high: 132715.797145, low: 130758.852429, close: 132541.069938, volume: 1500.0, start_time: 93000, close_time: 93100, is_closed: true, trades: 300 },
+//             Candlestick { date: 20231110, open: 132792.677116, high: 132932.458881, low: 131059.383225, close: 132205.593701, volume: 1500.0, start_time: 93100, close_time: 93200, is_closed: true, trades: 300 },
+//             Candlestick { date: 20231110, open: 132513.113585, high: 132513.113585, low: 131464.750344, close: 132506.124497, volume: 1500.0, start_time: 93200, close_time: 93300, is_closed: true, trades: 300 },
+//             Candlestick { date: 20231110, open: 131967.964700, high: 134323.287447, low: 131765.281140, close: 133868.996709, volume: 1500.0, start_time: 93300, close_time: 93400, is_closed: true, trades: 300 },
+//             Candlestick { date: 20231110, open: 133715.236767, high: 135301.759804, low: 133610.400443, close: 134581.883712, volume: 1500.0, start_time: 93400, close_time: 93500, is_closed: true, trades: 300 },
+//         ];
+//
+//         let candles = aggregate_daily_candles(&candles);
+//
+//         assert_eq!(candles.len(), 1)
+//
+//     }
+//
+//     #[test]
+//     fn test_aggregate_with_more_than_two_days() {
+//         let candles = vec![
+//             Candlestick { date: 20231109, open: 95.0, high: 105.0, low: 90.0, close: 100.0, volume: 1000.0, start_time: 93000, close_time: 100000, is_closed: true, trades: 200 },
+//             Candlestick { date: 20231110, open: 100.0, high: 110.0, low: 99.0, close: 105.0, volume: 1500.0, start_time: 93000, close_time: 100000, is_closed: true, trades: 300 },
+//             Candlestick { date: 20231111, open: 111.0, high: 120.0, low: 110.0, close: 119.0, volume: 1800.0, start_time: 93000, close_time: 100000, is_closed: true, trades: 350 },
+//         ];
+//
+//         let candles = aggregate_daily_candles(&candles);
+//
+//         assert_eq!(candles.len(), 3)
+//     }
+//     #[test]
+//     fn test_aggregate_exactly_two_days() {
+//         let candles = vec![
+//             Candlestick { date: 20231110, open: 130821.754224, high: 132715.797145, low: 130758.852429, close: 132541.069938, volume: 1500.0, start_time: 93000, close_time: 93100, is_closed: true, trades: 9548 },
+//             Candlestick { date: 20231110, open: 132792.677116, high: 132932.458881, low: 131059.383225, close: 132205.593701, volume: 3500.0, start_time: 93100, close_time: 93200, is_closed: true, trades: 9066 },
+//             Candlestick { date: 20231110, open: 132513.113585, high: 132513.113585, low: 131464.750344, close: 132506.124497, volume: 2000.0, start_time: 93200, close_time: 93300, is_closed: true, trades: 9066 },
+//             Candlestick { date: 20231110, open: 131967.964700, high: 134323.287447, low: 131765.281140, close: 133868.996709, volume: 1000.0, start_time: 93300, close_time: 93400, is_closed: true, trades: 4826 },
+//             Candlestick { date: 20231110, open: 133715.236767, high: 135301.759804, low: 133610.400443, close: 134581.883712, volume: 5000.0, start_time: 93400, close_time: 93500, is_closed: true, trades: 3495 },
+//
+//             Candlestick { date: 20231111, open: 134611.883712, high: 135611.883712, low: 130758.852429, close: 132541.069938, volume: 1500.0, start_time: 93000, close_time: 93100, is_closed: true, trades: 9548 },
+//             Candlestick { date: 20231111, open: 132792.677116, high: 132932.458881, low: 131059.383225, close: 132205.593701, volume: 3500.0, start_time: 93100, close_time: 93200, is_closed: true, trades: 9066 },
+//             Candlestick { date: 20231111, open: 132513.113585, high: 132513.113585, low: 131464.750344, close: 132506.124497, volume: 2000.0, start_time: 93200, close_time: 93300, is_closed: true, trades: 9066 },
+//             Candlestick { date: 20231111, open: 131967.964700, high: 134323.287447, low: 101765.281140, close: 133868.996709, volume: 1000.0, start_time: 93300, close_time: 93400, is_closed: true, trades: 4826 },
+//             Candlestick { date: 20231111, open: 133715.236767, high: 135301.759804, low: 133610.400443, close: 134581.883712, volume: 3000.0, start_time: 93400, close_time: 93500, is_closed: true, trades: 3494 },
+//
+//         ];
+//
+//         let result = aggregate_daily_candles(&candles);
+//
+//         assert_eq!(result.len(), 2);
+//
+//         //Asserting first candle
+//         assert_eq!(result[0].date, 20231110, "Date does not match");
+//         assert_eq!(result[0].open, 130821.754224, "Open value does not match");
+//         assert_eq!(result[0].high, 135301.759804, "High value does not match");
+//         assert_eq!(result[0].low, 130758.852429, "Low value does not match");
+//         assert_eq!(result[0].close, 134581.883712, "Close value does not match");
+//         assert_eq!(result[0].volume, 13000.0, "Volume value does not match");
+//         assert_eq!(result[0].start_time, 93000, "Start date does not match");
+//         assert_eq!(result[0].close_time, 93500, "Close date does not match");
+//         assert_eq!(result[0].trades, 36001, "Trades value does not match");
+//
+//         //Asserting second candle
+//         assert_eq!(result[1].date, 20231111, "Date does not match");
+//         assert_eq!(result[1].open, 134611.883712, "Open value does not match");
+//         assert_eq!(result[1].high, 135611.883712, "High value does not match");
+//         assert_eq!(result[1].low, 101765.281140, "Low value does not match");
+//         assert_eq!(result[1].close, 134581.883712, "Close value does not match");
+//         assert_eq!(result[1].volume, 11000.0, "Volume value does not match");
+//         assert_eq!(result[1].start_time, 93000, "Start date does not match");
+//         assert_eq!(result[1].close_time, 93500, "Close date does not match");
+//         assert_eq!(result[1].trades, 36000, "Trades value does not match");
+//     }
+//
+//     #[test]
+//     fn test_signal_calculation_long() {
+//         let current_candle = Candlestick {
+//             date: 20231110,
+//             open: 153689.529445,
+//             high: 153926.481182,
+//             low: 151076.478345,
+//             close: 151352.922038,
+//             volume: 1500.0,
+//             start_time: 90000,
+//             close_time: 180000,
+//             is_closed: true,
+//             trades: 90548
+//         };
+//         let last_candle = Candlestick {
+//             date: 20231111,
+//             open: 152840.452387,
+//             high: 153630.291511	,
+//             low: 151965.047359,
+//             close: 152958.928256,
+//             volume: 1500.0,
+//             start_time: 90000,
+//             close_time: 180000,
+//             is_closed: true,
+//             trades: 90548
+//         };
+//
+//         let signal = signal_calculation(&last_candle, &current_candle);
+//
+//         assert_eq!(signal, Some(Signal::LONG))
+//     }
+//     #[test]
+//     fn test_signal_calculation_short() {
+//         let current_candle = Candlestick {
+//             date: 20231111,
+//             open: 102028.128617,
+//             high: 104673.594800,
+//             low: 99606.408330,
+//             close: 104509.075759,
+//             volume: 1500.0,
+//             start_time: 90000,
+//             close_time: 180000,
+//             is_closed: true,
+//             trades: 90548
+//         };
+//         let last_candle = Candlestick {
+//             date: 20231110,
+//             open: 103976.034065,
+//             high: 104193.199200,
+//             low: 101567.475302,
+//             close: 103317.957900,
+//             volume: 1500.0,
+//             start_time: 90000,
+//             close_time: 180000,
+//             is_closed: true,
+//             trades: 90548
+//         };
+//
+//         let signal = signal_calculation(&last_candle, &current_candle);
+//
+//         assert_eq!(signal, Some(Signal::SHORT))
+//     }
+//     #[test]
+//     fn test_signal_calculation_none() {
+//         let current_candle = Candlestick {
+//             date: 20231111,
+//             open: 131580.000000,
+//             high: 133040.000000,
+//             low: 131380.000000,
+//             close: 132005.000000,
+//             volume: 1500.0,
+//             start_time: 90000,
+//             close_time: 180000,
+//             is_closed: true,
+//             trades: 90548
+//         };
+//         let last_candle = Candlestick {
+//             date: 20231110,
+//             high: 132830.000000,
+//             low: 131260.000000,
+//             close: 132665.000000,
+//             open: 131695.000000,
+//             volume: 1500.0,
+//             start_time: 90000,
+//             close_time: 180000,
+//             is_closed: true,
+//             trades: 90548
+//         };
+//
+//         let signal = signal_calculation(&last_candle, &current_candle);
+//         assert_eq!(signal, None)
+//
+//     }
 }

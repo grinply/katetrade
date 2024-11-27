@@ -9,6 +9,7 @@ use crate::services::backtest::data_point::DataPoint;
 
 #[allow(unused)]
 use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
+use crate::utils::date;
 
 pub const INITIAL_BALANCE: f64 = 10_000.0;
 pub const MINIMUM_BALANCE: f64 = 800.0;
@@ -153,8 +154,8 @@ impl<'a> ExchangeEventHandler<'a> {
     fn update_internal_candlestick_with_trade(&mut self, new_trade: &Trade){
         self.last_datapoint = self.current_datapoint;
         self.current_datapoint.date = new_trade.date;
-        self.current_datapoint.start_time = new_trade.time;
-        self.current_datapoint.close_time = new_trade.time;
+        self.current_datapoint.start_time = date::convert_to_naive_time(new_trade.time).unwrap();
+        self.current_datapoint.close_time = Some(self.current_datapoint.start_time);
         self.current_datapoint.open = new_trade.price;
         self.current_datapoint.high = new_trade.price;
         self.current_datapoint.low = new_trade.price;
@@ -372,8 +373,8 @@ impl<'a> ExchangeEventHandler<'a> {
             avg_entry_price: entry_price,
             avg_exit_price: 0.0,
             date: datapoint.date(),
-            entry_time: datapoint.exit_time(),
-            exit_time: -1,
+            entry_time: datapoint.exit_time().unwrap(),
+            exit_time: None,
             start_datapoint_number: self.total_candlesticks_processed as i32,
             end_datapoint_number: 0,
             total_qty: self.base_qty_per_order as i32,
