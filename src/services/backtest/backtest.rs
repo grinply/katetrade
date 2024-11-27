@@ -34,7 +34,7 @@ struct DataProvider {
     candlesticks: Vec<Candlestick>,
     trades: Vec<Trade>,
     data_files: Vec<String>,
-    candle_parser: Option<Box<dyn CandlestickGenerator>>
+    candle_parser: Option<Box<dyn CandlestickGenerator>>,
 }
 
 struct BacktestDataFiles {
@@ -49,16 +49,16 @@ impl DataProvider {
             candlesticks,
             trades,
             data_files: vec![],
-            candle_parser: None
+            candle_parser: None,
         }
     }
 
-    fn from_files(data_files: Vec<String>, candle_parser: Box<dyn CandlestickGenerator>) -> Self {
+    fn from_files(data_files: Vec<String>, candle_parser: Option<Box<dyn CandlestickGenerator>>) -> Self {
         DataProvider {
             candlesticks: vec![],
             trades: vec![],
             data_files,
-            candle_parser: Some(candle_parser),
+            candle_parser,
         }
     }
 
@@ -67,7 +67,7 @@ impl DataProvider {
             buffer: VecDeque::new(),
             files: self.data_files.clone(),
             file_index: 0,
-            is_finished: false
+            is_finished: false,
         }
     }
 
@@ -119,11 +119,12 @@ impl Iterator for CandlestickDiskIterator {
     type Item = Candlestick;
 
     fn next(&mut self) -> Option<Candlestick> {
-        if let Some(new_trade) =  self.trade_iterator.next() {
-            self.candle_parser.parse_only_closed_candles(&new_trade)
-        }else{
-            None
+        let mut option_candle = None;
+        while option_candle.is_none() && !self.trade_iterator.is_finished {
+            let new_trade = self.trade_iterator.next();
+            option_candle = self.candle_parser.parse_only_closed_candles(&new_trade?);
         }
+        option_candle
     }
 }
 
@@ -146,21 +147,21 @@ impl<'a> TradingBacktester<'a> {
         // let mut buffer = Vec::new();
         if self.data_provider.trades.len() > 0 {
             // running using cached trades from main memory
-            for trade in self.data_provider.trades.iter(){
+            for trade in self.data_provider.trades.iter() {
                 let trade_action = strategy.process_new_trade(trade);
                 event_handler.process_trade(trade);
                 event_handler.process_orders(trade_action);
-                if self.should_abort_execution(&mut event_handler){
+                if self.should_abort_execution(&mut event_handler) {
                     break;
                 }
             }
-        }else{
+        } else {
             // running loading trades from disk for each new trading day
             for new_trade in self.data_provider.trades_iterator_from_disk() {
                 let trade_action = strategy.process_new_trade(&new_trade);
                 event_handler.process_trade(&new_trade);
                 event_handler.process_orders(trade_action);
-                if self.should_abort_execution(&mut event_handler){
+                if self.should_abort_execution(&mut event_handler) {
                     break;
                 }
             }
@@ -172,7 +173,7 @@ impl<'a> TradingBacktester<'a> {
         if event_handler.current_balance <= MINIMUM_BALANCE || event_handler.removed_for_lack_of_margin {
             event_handler.removed_for_lack_of_margin = true;
             true
-        }else{
+        } else {
             false
         }
     }
@@ -186,21 +187,28 @@ impl<'a> TradingBacktester<'a> {
 
         if self.data_provider.candlesticks.len() > 0 {
             // iterating with cached Candlesticks from main memory
-            for new_candle in self.data_provider.candlesticks.iter(){
+            for new_candle in self.data_provider.candlesticks.iter() {
                 let trade_action = strategy.process_closed_candlestick(new_candle);
                 event_handler.process_candlestick(new_candle);
                 event_handler.process_orders(trade_action);
-                if self.should_abort_execution(&mut event_handler){
+                if self.should_abort_execution(&mut event_handler) {
                     break;
                 }
             }
-        }else{
+        } else {
             // iterating while loading Candlesticks from disk for each new trading day
+            let mut current_day = -1;
+            let mut bar = ProgressBar::default(self.qty_history_trading_days as u32 + 1, 100, false);
+
             for new_candle in self.data_provider.candlesticks_iterator_from_disk() {
+                if current_day != new_candle.date {
+                    current_day = new_candle.date;
+                    bar.update();
+                }
                 let trade_action = strategy.process_closed_candlestick(&new_candle);
                 event_handler.process_candlestick(&new_candle);
                 event_handler.process_orders(trade_action);
-                if self.should_abort_execution(&mut event_handler){
+                if self.should_abort_execution(&mut event_handler) {
                     break;
                 }
             }
@@ -271,7 +279,7 @@ impl<'a> TradingBacktester<'a> {
                 qty_history_trades: 0,
                 data_provider: DataProvider::from_files(
                     backtest_files_metadata.files_to_parse,
-                    candlestick_generator.unwrap()
+                    candlestick_generator,
                 ),
             }
         };

@@ -1,4 +1,4 @@
-use chrono::{NaiveDate};
+use chrono::{NaiveDate, NaiveTime};
 
 /// Convert a number in the format yyyyMMdd into a NaiveDate
 pub fn convert_to_naive_date(date: u32) -> Result<NaiveDate, anyhow::Error> {
@@ -23,6 +23,38 @@ pub fn convert_to_naive_date(date: u32) -> Result<NaiveDate, anyhow::Error> {
     Ok(naive_date.unwrap())
 }
 
+/// convert the time to the format hhMMss
+/// any additional precision will be removed.
+///
+/// invalid values will be colapsed to the nearest valid value when possible:
+/// for example minutes or seconds values of 60 will be changed to 00
+pub fn format_time(time: i32) -> Option<i32>{
+    let hours = time / 10000;
+    let mut minutes = (time / 100) - (hours * 100);
+    let mut seconds = time % 100;
+
+    if minutes == 60 {
+        minutes = 00;
+    }
+
+    if seconds == 60 {
+        seconds = 00;
+    }
+
+    Some((hours * 10000) + (100 * minutes) + seconds )
+}
+
+/// converts the provided time into [NaiveTime]
+pub fn parse_time(time: i32) -> Option<NaiveTime> {
+    let time = format_time(time)?;
+    let hours = time / 10000;
+    let minutes = (time / 100) - (hours * 100);
+    let seconds = time % 100;
+
+    NaiveTime::from_hms_opt(hours as u32, minutes as u32, seconds as u32)
+
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -43,5 +75,16 @@ mod tests {
         assert!(convert_to_naive_date(2024_01_00).is_err());
         assert!(convert_to_naive_date(2020_13_01).is_err());
         assert!(convert_to_naive_date(3001_01_32).is_err());
+    }
+
+    #[test]
+    fn should_format_time_correctly() {
+        assert_eq!(9_00_00, format_time(9_60_60).unwrap());
+        assert_eq!(9_00_10, format_time(9_60_10).unwrap());
+        assert_eq!(9_05_00, format_time(9_05_60).unwrap());
+        assert_eq!(9_22_33, format_time(9_22_33).unwrap());
+        assert_eq!(14_38_57, format_time(14_38_57).unwrap());
+        assert_eq!(14_38_00, format_time(14_38_60).unwrap());
+        assert_eq!(14_00_57, format_time(14_60_57).unwrap());
     }
 }

@@ -5,7 +5,7 @@ use crate::models::action::{TradeAction};
 use crate::models::asset::Asset;
 use crate::models::candlestick::{Candlestick, CandlestickGenerator, TickCandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
 use crate::strategies::strategy::{CandlestickTradingStrategy};
-
+use crate::utils::date;
 
 #[derive(Debug, PartialEq)]
 enum Signal {
@@ -151,10 +151,11 @@ impl CandlestickTradingStrategy for ReversalMomentumCandlestickStrategy {
 
 
     fn process_closed_candlestick(&mut self, closed_candle: &Candlestick) -> TradeAction {
-        let actual_time = parse_time(closed_candle.close_time);
+        let actual_time= date::parse_time(closed_candle.close_time)
+            .expect("time should be valid");
 
         if self.order_active {
-            return self.handle_active_order(&actual_time, &closed_candle);
+            self.handle_active_order(&actual_time, &closed_candle)
         } else {
             if actual_time.gt(&NaiveTime::from_hms_opt(17, 0, 0).unwrap()) {
                 return TradeAction::do_nothing();
@@ -304,7 +305,8 @@ impl CandlestickTradingStrategy for ClassicReversalMomentumCandlestickStrategy {
     }
 
     fn process_closed_candlestick(&mut self, closed_candle: &Candlestick) -> TradeAction {
-        let actual_time = parse_time(closed_candle.close_time);
+        let actual_time = date::parse_time(closed_candle.close_time)
+            .expect("time should be valid");
 
         if self.order_active {
             self.handle_active_order(&actual_time, &closed_candle)
@@ -315,50 +317,6 @@ impl CandlestickTradingStrategy for ClassicReversalMomentumCandlestickStrategy {
             self.check_and_place_new_order(closed_candle)
         }
     }
-}
-
-fn parse_time(time: i32) -> NaiveTime {
-    let time_str = time.to_string();
-    let len = time_str.len();
-
-    let (hour, minute, second, millisecond) = match len {
-        5 => { // Format: HMMSS
-            (
-                time_str[0..1].parse().unwrap_or(0),
-                time_str[1..3].parse().unwrap_or(0),
-                time_str[3..].parse().unwrap_or(0),
-                0,
-            )
-        }
-        6 => { // Format: HHMMSS
-            (
-                time_str[0..2].parse().unwrap_or(0),
-                time_str[2..4].parse().unwrap_or(0),
-                time_str[4..].parse().unwrap_or(0),
-                0,
-            )
-        }
-        8 => { // Format: HMMSSmmm
-            (
-                time_str[0..1].parse().unwrap_or(0),
-                time_str[1..3].parse().unwrap_or(0),
-                time_str[3..5].parse().unwrap_or(0),
-                time_str[5..].parse().unwrap_or(0),
-            )
-        }
-        9 => { // Format: HHMMSSmmm
-            (
-                time_str[0..2].parse().unwrap_or(0),
-                time_str[2..4].parse().unwrap_or(0),
-                time_str[4..6].parse().unwrap_or(0),
-                time_str[6..].parse().unwrap_or(0),
-            )
-        }
-        _ => panic!("Invalid time format: {}", time),
-    };
-
-    NaiveTime::from_hms_milli_opt(hour, minute, second, millisecond)
-        .unwrap_or_else(|| panic!("Could not parse time: {}", time))
 }
 
 fn take_profit_or_stop_loss(profit: f64, take_profit_percentage: f64, stop_loss_percentage: f64) -> (bool, bool) {
@@ -1246,16 +1204,6 @@ mod classic_reversal_momentum_strategy_tests {
 mod reversal_momentum_common_tests {
     use super::*;
 
-
-    #[test]
-    fn test_parse_time() {
-        let times = [91000, 131030, 91033223, 111033223];
-
-        assert_eq!(parse_time(times[0]), NaiveTime::from_hms_milli_opt(9,10,0,0).unwrap());
-        assert_eq!(parse_time(times[1]), NaiveTime::from_hms_milli_opt(13,10,30,0).unwrap());
-        assert_eq!(parse_time(times[2]), NaiveTime::from_hms_milli_opt(9,10,33,223).unwrap());
-        assert_eq!(parse_time(times[3]), NaiveTime::from_hms_milli_opt(11,10,33,223).unwrap());
-    }
     #[test]
     fn test_take_profit_or_stop_loss() {
         let take_profit_percentage = 0.02;

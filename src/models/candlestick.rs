@@ -2,6 +2,7 @@ use dyn_clone::DynClone;
 use strum_macros::EnumString;
 use ta::{Close, High, Low, Open, Volume};
 use crate::models::trade::Trade;
+use crate::utils::date;
 
 #[derive(Debug, Clone, Copy)]
 #[allow(unused)]
@@ -244,7 +245,8 @@ impl TimeCandlestickGenerator {
             self.last_price = new_trade.price;
             let mut new_candle = Candlestick::new(new_trade);
             self.add_close_time_to_time_based_candlestick(&mut new_candle);
-            self.remove_seconds_from_start_time(&mut new_candle);
+            new_candle.start_time = date::format_time(new_candle.start_time)
+                .expect("time should be valid");
             self.last_candle = Some(new_candle);
             return Some(self.last_candle.clone()?);
         }
@@ -254,7 +256,8 @@ impl TimeCandlestickGenerator {
         if self.last_candle.is_none() { // the very start when no trade was parsed yet
             self.last_price = new_trade.price;
             let mut new_candle = Candlestick::new(new_trade);
-            self.remove_seconds_from_start_time(&mut new_candle);
+            new_candle.start_time = date::format_time(new_candle.start_time)
+                .expect("time should be valid");
             self.add_close_time_to_time_based_candlestick(&mut new_candle);
             self.last_candle = Some(new_candle.clone());
 
@@ -314,18 +317,11 @@ impl TimeCandlestickGenerator {
         if existing_candle.is_closed {
             let mut new_candle = Candlestick::new(new_trade);
             self.add_close_time_to_time_based_candlestick(&mut new_candle);
-            self.remove_seconds_from_start_time(&mut new_candle);
+            new_candle.start_time = date::format_time(new_candle.start_time)
+                .expect("time should be valid");
             self.last_candle = Some(new_candle);
         }
         Some(result_candle)
-    }
-
-    fn remove_seconds_from_start_time(&self, candlestick: &mut Candlestick){
-        if candlestick.start_time < 99_99_99 {
-            candlestick.start_time = (candlestick.start_time / 100) * 100;
-        }else{
-            candlestick.start_time = (candlestick.start_time / 100000) * 100000;
-        }
     }
 
     fn add_close_time_to_time_based_candlestick(&self, candlestick: &mut Candlestick){
@@ -334,6 +330,8 @@ impl TimeCandlestickGenerator {
         }else{
             candlestick.close_time = candlestick.start_time + self.period as i32 * 100000;
         }
+        candlestick.close_time = date::format_time(candlestick.close_time)
+            .expect("time should be valid");
     }
 }
 

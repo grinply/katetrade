@@ -250,11 +250,8 @@ impl<'a> ExchangeEventHandler<'a> {
         }
     }
 
-    #[allow(unused)]
     fn check_scheduled_order_trigger(&mut self, candlestick: &impl DataPoint) {
-        // if self.scheduled_orders.len() > 0 {
-            panic!("currently processing limit orders is not supported on backtests");
-        // }
+        // todo!()
     }
 
     fn execute_market_long_order(&mut self) {
