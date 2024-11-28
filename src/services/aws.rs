@@ -101,6 +101,7 @@ impl AwsClient {
 
 #[cfg(test)]
 mod test {
+    use crate::constants::{AWS_REGION, TRADES_FOLDER_NAME};
     use super::*;
 
     #[test]
@@ -108,25 +109,25 @@ mod test {
     fn should_download_file_from_s3_correctly() {
         let temp_dir = env::temp_dir();
         let bucket_name = "profitpirates".to_string();
-        let file = "/trades/IND/TRADE-B3-FUTURES-IND-20240614";
+        let file = format!("/{TRADES_FOLDER_NAME}/IND/TRADE-B3-FUTURES-IND-20240614");
         let output_dir = format!("{}/{}",
                                  temp_dir.as_path().to_str().unwrap(),
                                  "TRADE-B3-FUTURES-IND-20240614"
         );
 
         println!("File saved to : {}", output_dir);
-        let aws = AwsClient::new("sa-east-1".to_string()).unwrap();
-        aws.download_file_from_s3(bucket_name.as_str(), file, output_dir.as_str()).unwrap();
+        let aws = AwsClient::new(AWS_REGION.to_string()).unwrap();
+        aws.download_file_from_s3(bucket_name.as_str(), file.as_str(), output_dir.as_str()).unwrap();
     }
 
     #[test]
     #[ignore = "will only run in the CI/CD where proper credentials are available for integration testing"]
     fn should_check_that_file_exists_on_s3_correctly() {
         let bucket_name = "profitpirates".to_string();
-        let file = "trades/IND/TRADE-B3-FUTURES-IND-20240614";
+        let file = format!("/{TRADES_FOLDER_NAME}/IND/TRADE-B3-FUTURES-IND-20240614");
 
-        let aws = AwsClient::new("sa-east-1".to_string()).unwrap();
-        let exists_on_s3 = aws.file_exists_on_s3(bucket_name.as_str(), file);
+        let aws = AwsClient::new(AWS_REGION.to_string()).unwrap();
+        let exists_on_s3 = aws.file_exists_on_s3(bucket_name.as_str(), file.as_str());
 
         assert!(exists_on_s3.is_ok(), "should not produce an error");
         assert!(exists_on_s3.unwrap(), "file should exists on profitpirates s3 bucket");
@@ -136,10 +137,10 @@ mod test {
     #[ignore = "will only run in the CI/CD where proper credentials are available for integration testing"]
     fn should_check_that_file_doesnt_exists_on_s3_correctly() {
         let bucket_name = "profitpirates".to_string();
-        let file = "trades/FILE_NOT_FOUND";
+        let file = format!("{TRADES_FOLDER_NAME}/FILE_NOT_FOUND");
 
-        let aws = AwsClient::new("sa-east-1".to_string()).unwrap();
-        let exists_on_s3 = aws.file_exists_on_s3(bucket_name.as_str(), file);
+        let aws = AwsClient::new(AWS_REGION.to_string()).unwrap();
+        let exists_on_s3 = aws.file_exists_on_s3(bucket_name.as_str(), file.as_str());
 
         assert!(exists_on_s3.is_ok(), "should not produce an error");
         assert!(!exists_on_s3.unwrap(), "file should NOT exist on profitpirates s3 bucket");

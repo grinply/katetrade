@@ -12,6 +12,7 @@ use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTrad
 use crate::utils::{date};
 use simple_bar::ProgressBar;
 use rayon::prelude::*;
+use crate::constants::{AWS_REGION, TRADES_FOLDER_NAME};
 use crate::models::trade;
 use crate::models::trade::{Trade, TradeFile};
 use crate::services::backtest::exchange_event_handler::{ExchangeEventHandler, MINIMUM_BALANCE};
@@ -295,14 +296,14 @@ impl BacktestDataFiles {
         }).collect();
 
         let uppercase_ticker = asset.ticker.to_ascii_uppercase();
-        let aws_client = Arc::new(AwsClient::new("sa-east-1".to_string())?);
+        let aws_client = Arc::new(AwsClient::new(AWS_REGION.to_string())?);
 
         values_to_process.into_par_iter().for_each(|tuple| {
             let file_to_download = tuple.0;
             let progress_bar = tuple.1;
             download_binary_trades_file(
                 aws_client.clone(),
-                format!("trades/{}/{}", uppercase_ticker, file_to_download),
+                format!("{TRADES_FOLDER_NAME}/{}/{}", uppercase_ticker, file_to_download),
                 history_trades_folder_path.to_str().unwrap().to_string(),
                 file_to_download.as_str(),
             ).expect(format!("failed to download file {}", file_to_download).as_str());
@@ -478,12 +479,12 @@ fn get_backtest_files_metadata(
                 let binary_trades_file_full_path = history_trades_folder_path.join(binary_trades_file_name.as_str());
 
                 //trades/IND/TRADE-B3-FUTURES-IND-20240722
-                let file_path_on_s3 = format!("trades/{}/{}", uppercase_ticker, binary_trades_file_name);
+                let file_path_on_s3 = format!("{TRADES_FOLDER_NAME}/{}/{}", uppercase_ticker, binary_trades_file_name);
                 if binary_trades_file_full_path.exists() {
                     trading_days += 1;
                     files_to_parse.push(binary_trades_file_full_path.to_str().unwrap().to_string());
                 } else if download_missing_files {
-                    if AwsClient::new("sa-east-1".to_string())?.file_exists_on_s3(S3_BUCKET_HISTORICAL_DATA, file_path_on_s3.as_str())? == true {
+                    if AwsClient::new(AWS_REGION.to_string())?.file_exists_on_s3(S3_BUCKET_HISTORICAL_DATA, file_path_on_s3.as_str())? == true {
                         trading_days += 1;
                         files_to_download.push(binary_trades_file_name);
                         files_to_parse.push(binary_trades_file_full_path.to_str().unwrap().to_string());
