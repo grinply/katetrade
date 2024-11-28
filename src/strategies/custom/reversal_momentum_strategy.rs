@@ -5,7 +5,6 @@ use crate::models::action::{TradeAction};
 use crate::models::asset::Asset;
 use crate::models::candlestick::{Candlestick, CandlestickGenerator, TickCandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
 use crate::strategies::strategy::{CandlestickTradingStrategy};
-use crate::utils::date;
 
 #[derive(Debug, PartialEq)]
 enum Signal {

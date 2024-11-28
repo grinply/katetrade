@@ -281,73 +281,7 @@ impl<'a> TradingBacktester<'a> {
                 ),
             }
         };
-
-
         Ok(backtester)
-    }
-
-    fn add_context_to_candle_strategy(&self, strategy: &mut Box<dyn CandlestickTradingStrategy>, index_start_day_list: &mut Vec<usize>, offset_start_current_day: usize) {
-        index_start_day_list.push(offset_start_current_day);
-        let context_size: usize = strategy.days_of_context() as usize;
-
-        if context_size == 0 {
-            return;
-        }
-
-        if index_start_day_list.len() <= context_size {
-            let mut days_of_context = context_size;
-            let mut current_day = self.data_provider.candlesticks.get(offset_start_current_day).unwrap().date;
-            for (index, initialization_candle) in self.data_provider.candlesticks.iter().skip(offset_start_current_day).enumerate() {
-                if initialization_candle.date != current_day {
-                    index_start_day_list.push(index + offset_start_current_day);
-                    current_day = initialization_candle.date;
-                    days_of_context -= 1;
-                    if days_of_context == 0 {
-                        break;
-                    }
-                }
-            }
-        }
-
-        let start_index: usize = *index_start_day_list.get(index_start_day_list.len() - context_size - 1).unwrap();
-        let end_index: usize = *index_start_day_list.last().unwrap();
-
-        strategy.init_trading_day(
-            self.asset,
-            &self.data_provider.candlesticks[start_index..end_index],
-        );
-    }
-
-    fn add_context_to_high_resolution_strategy(&self, strategy: &mut Box<dyn HighResolutionTradingStrategy>, index_start_day_list: &mut Vec<usize>, offset_start_current_day: usize) {
-        index_start_day_list.push(offset_start_current_day);
-        let context_size: usize = strategy.days_of_context() as usize;
-
-        if context_size == 0 {
-            return;
-        }
-
-        if index_start_day_list.len() <= context_size {
-            let mut days_of_context = context_size;
-            let mut current_day = self.data_provider.trades.get(offset_start_current_day).unwrap().date;
-            for (index, initialization_trade) in self.data_provider.trades.iter().skip(offset_start_current_day).enumerate() {
-                if initialization_trade.date != current_day {
-                    index_start_day_list.push(index + offset_start_current_day);
-                    current_day = initialization_trade.date;
-                    days_of_context -= 1;
-                    if days_of_context == 0 {
-                        break;
-                    }
-                }
-            }
-        }
-
-        let start_index: usize = *index_start_day_list.get(index_start_day_list.len() - context_size - 1).unwrap();
-        let end_index: usize = *index_start_day_list.last().unwrap();
-
-        strategy.init_trading_day(
-            self.asset,
-            &self.data_provider.trades[start_index..end_index],
-        );
     }
 }
 
