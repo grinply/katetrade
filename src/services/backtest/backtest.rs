@@ -733,7 +733,7 @@ mod tests {
             }
 
 
-            fn init_trading_day(&mut self, asset: &Asset, context_candles: &[Candlestick]) {
+            fn init_trading_day(&mut self, _: &Asset, context_candles: &[Candlestick]) {
                 for _ in context_candles {
                     self.initialized_trades += 1;
                 }
