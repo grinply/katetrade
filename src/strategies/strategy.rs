@@ -17,7 +17,7 @@ pub trait HighResolutionTradingStrategy {
 
     /// amount of data ( in days ) that will be provided by init_trading_day
     fn days_of_context(&self) -> u32 {
-        1
+        0
     }
 
     /// starts the trading day providing the context necessary to know what is going to be traded

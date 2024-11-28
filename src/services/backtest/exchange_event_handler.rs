@@ -31,14 +31,14 @@ pub(crate) struct ExchangeEventHandler<'a> {
     initial_qty_per_order: u32,
     base_qty_per_order: u32,
     total_candlesticks_processed: u64,
-    current_position: Option<Position>,
+    pub(crate) current_position: Option<Position>,
     // scheduled_orders: Vec<TradeEvent<'a>>,
     event_index: usize,
     pub(crate) positions: Vec<Position>,
     total_contracts_executed_current_month: u64,
     current_month_year: i32,
     current_datapoint: Candlestick,
-    last_datapoint: Candlestick,
+    pub(crate) last_datapoint: Candlestick,
     fixed_traded_qty: bool,
     pub(crate) removed_for_lack_of_margin: bool,
 }
@@ -233,7 +233,7 @@ impl<'a> ExchangeEventHandler<'a> {
     /// 1) the day is change and the position is open ( we don't allow overnight positions to be open )
     /// 2) the PNL of the position is negative and reached the minimum balance allowed
     /// a compulsory close fee of 25$ is applied if any such cases occur
-    fn check_compulsory_close_position(&mut self, datapoint: &impl DataPoint) {
+    pub(crate) fn check_compulsory_close_position(&mut self, datapoint: &impl DataPoint) {
         if self.current_position.is_none() {
             return;
         }

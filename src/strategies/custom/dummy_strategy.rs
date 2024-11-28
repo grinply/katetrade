@@ -52,7 +52,7 @@ impl HighResolutionTradingStrategy for DummyHighResolutionStrategy {
 impl CandlestickTradingStrategy for DummyCandlestickStrategy {
     fn new() -> Self {
         DummyCandlestickStrategy{
-            counter: 50
+            counter: 0
         }
     }
 
@@ -71,16 +71,13 @@ impl CandlestickTradingStrategy for DummyCandlestickStrategy {
     fn process_closed_candlestick(&mut self, _: &Candlestick) -> TradeAction {
         self.counter += 1;
 
-        if self.counter == 1000 {
+        if self.counter == 50 {
             return TradeAction::send_order(MarketLong);
         }
 
-        if self.counter == 3000 {
+        if self.counter == 100 {
+            self.counter = 40;
             return TradeAction::send_order(MarketShort);
-        }
-
-        if self.counter > 3000 {
-            self.counter = 0;
         }
 
         TradeAction::do_nothing()

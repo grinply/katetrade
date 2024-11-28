@@ -509,46 +509,25 @@ fn get_backtest_files_metadata(
 #[cfg(test)]
 mod tests {
     use crate::models::asset::Asset;
-    use crate::models::candlestick::{TimeCandlestickGenerator, TimeUnit};
+    use crate::models::candlestick::{CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
     use crate::models::exchange::Exchange;
     use crate::models::market::Market;
     use crate::services::backtest::backtest::TradingBacktester;
+    use crate::strategies::custom::dummy_strategy::{DummyCandlestickStrategy, DummyHighResolutionStrategy};
+    use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
 
     #[test]
     fn should_create_backtester_with_cached_candlestick_data_correctly(){
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-        let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
-        let backtester_engine = TradingBacktester::new(
-            &asset,
-            2015_01_02,
-            2015_01_02,
-            true,
-            Some(Box::new(candle_parser)),
-            true
-        );
-
-        assert!(backtester_engine.is_ok());
-
-        let backtester_engine = backtester_engine.unwrap();
+        let candle_parser= TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
+        let backtester_engine = candle_backtester(true, candle_parser);
         assert_eq!(535, backtester_engine.data_provider.candlesticks.len());
     }
 
     #[test]
     fn should_create_backtester_without_cached_candlestick_data_correctly(){
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
-        let backtester_engine = TradingBacktester::new(
-            &asset,
-            2015_01_02,
-            2015_01_02,
-            false,
-            Some(Box::new(candle_parser)),
-            true
-        );
+        let backtester_engine = candle_backtester(false, candle_parser);
 
-        assert!(backtester_engine.is_ok());
-
-        let backtester_engine = backtester_engine.unwrap();
         assert_eq!(0, backtester_engine.data_provider.candlesticks.len());
         assert_eq!(0, backtester_engine.data_provider.trades.len());
         assert_eq!(1, backtester_engine.data_provider.data_files.len());
@@ -556,39 +535,124 @@ mod tests {
 
     #[test]
     fn should_create_backtester_with_cached_trade_data_correctly(){
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-        let backtester_engine = TradingBacktester::new(
-            &asset,
-            2015_01_02,
-            2015_01_02,
-            true,
-            None,
-            true
-        );
-
-        assert!(backtester_engine.is_ok());
-
-        let backtester_engine = backtester_engine.unwrap();
+        let backtester_engine = trade_backtester(true);
         assert_eq!(120551, backtester_engine.data_provider.trades.len());
     }
 
     #[test]
     fn should_create_backtester_without_cached_trade_data_correctly(){
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
-        let backtester_engine = TradingBacktester::new(
-            &asset,
-            2015_01_02,
-            2015_01_02,
-            false,
-            None,
-            true
-        );
+        let backtester_engine = trade_backtester(false);
 
-        assert!(backtester_engine.is_ok());
-
-        let backtester_engine = backtester_engine.unwrap();
         assert_eq!(0, backtester_engine.data_provider.candlesticks.len());
         assert_eq!(0, backtester_engine.data_provider.trades.len());
         assert_eq!(1, backtester_engine.data_provider.data_files.len());
+    }
+
+
+    #[test]
+    fn should_run_dummy_strategy_on_backtester_with_cached_candlestick_data_correctly(){
+        let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
+        let backtester_engine = candle_backtester(true, candle_parser);
+        assert_eq!(535, backtester_engine.data_provider.candlesticks.len());
+
+        let strategy = DummyCandlestickStrategy::new();
+        let metrics = backtester_engine.run_candlestick_backtest(
+            Box::new(strategy),
+            12,
+            true
+        );
+
+        assert_eq!(8, metrics.total_trades);
+        assert_eq!(8351.26116000001, metrics.final_balance);
+        assert_eq!(2, metrics.max_win_streak);
+        assert_eq!(5, metrics.max_lose_streak);
+        assert_eq!(3, metrics.total_wins);
+        assert_eq!(5, metrics.total_loses);
+        assert_eq!(-400.12383999999645, metrics.avg_losing_trade);
+        assert_eq!(118.81661333333147, metrics.avg_winning_trade);
+        assert_eq!(19.45920238306106, metrics.max_draw_down_percentage);
+        assert_eq!(37.5, metrics.win_rate_percentage);
+        assert_eq!(0.178169758642723, metrics.profit_factor);
+        assert_eq!(-1570.1195999999882, metrics.total_gross_profit);
+        assert_eq!(74.04975999999999, metrics.total_fees_paid);
+    }
+
+    #[test]
+    fn should_run_dummy_strategy_on_backtester_without_cached_candlestick_data_correctly(){
+        let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
+        let backtester_engine = candle_backtester(false, candle_parser);
+
+        assert_eq!(0, backtester_engine.data_provider.candlesticks.len());
+
+        let strategy = DummyCandlestickStrategy::new();
+        let metrics = backtester_engine.run_candlestick_backtest(
+            Box::new(strategy),
+            12,
+            true
+        );
+
+        assert_eq!(8, metrics.total_trades);
+        assert_eq!(8351.26116000001, metrics.final_balance);
+        assert_eq!(2, metrics.max_win_streak);
+        assert_eq!(5, metrics.max_lose_streak);
+        assert_eq!(3, metrics.total_wins);
+        assert_eq!(5, metrics.total_loses);
+        assert_eq!(-400.12383999999645, metrics.avg_losing_trade);
+        assert_eq!(118.81661333333147, metrics.avg_winning_trade);
+        assert_eq!(19.45920238306106, metrics.max_draw_down_percentage);
+        assert_eq!(37.5, metrics.win_rate_percentage);
+        assert_eq!(0.178169758642723, metrics.profit_factor);
+        assert_eq!(-1570.1195999999882, metrics.total_gross_profit);
+        assert_eq!(74.04975999999999, metrics.total_fees_paid);
+    }
+
+    #[test]
+    fn should_run_dummy_strategy_on_backtester_with_cached_trade_data_correctly(){
+        let backtester_engine = trade_backtester(true);
+
+        let strategy = DummyHighResolutionStrategy::new();
+        let metrics = backtester_engine.run_high_resolution_backtest(
+            Box::new(strategy),
+            12,
+            true
+        );
+
+        assert_eq!(249, metrics.total_trades);
+        assert_eq!(2377.1875999997546, metrics.final_balance);
+        assert_eq!(6, metrics.max_win_streak);
+        assert_eq!(12, metrics.max_lose_streak);
+        assert_eq!(63, metrics.total_wins);
+        assert_eq!(186, metrics.total_loses);
+        assert_eq!(-52.595548817204694, metrics.avg_losing_trade);
+        assert_eq!(34.33612952380797, metrics.avg_winning_trade);
+        assert_eq!(77.0898606041114, metrics.max_draw_down_percentage);
+        assert_eq!(25.301204819277107, metrics.win_rate_percentage);
+        assert_eq!(0.2211209810787993, metrics.profit_factor);
+        assert_eq!(-5732.540400000169, metrics.total_gross_profit);
+        assert_eq!(1887.0555200000078, metrics.total_fees_paid);
+    }
+
+    fn candle_backtester(cache_in_memory: bool, candle_parser: impl CandlestickGenerator + 'static) -> TradingBacktester<'static>{
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+
+        TradingBacktester::new(
+            &asset,
+            2015_01_02,
+            2015_01_02,
+            cache_in_memory,
+            Some(Box::new(candle_parser)),
+            true
+        ).unwrap()
+    }
+    fn trade_backtester(cache_in_memory: bool) -> TradingBacktester<'static> {
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+        TradingBacktester::new(
+            &asset,
+            2015_01_02,
+            2015_01_02,
+            cache_in_memory,
+            None,
+            true
+        ).unwrap()
     }
 }
