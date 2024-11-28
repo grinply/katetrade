@@ -90,6 +90,11 @@ impl<'a> ExchangeEventHandler<'a> {
     }
 
     pub(crate) fn process_orders(&mut self, action: TradeAction){
+        if action == TradeAction::abort() {
+            self.removed_for_lack_of_margin = true;
+            return;
+        }
+
         let mut orders = Vec::with_capacity(3);
         if let Some(enter_order) = action.enter_market_action {
             orders.push(enter_order);
@@ -417,7 +422,7 @@ impl<'a> ExchangeEventHandler<'a> {
             Side::BUY => position.avg_exit_price - position.avg_entry_price,
             Side::SELL => position.avg_entry_price - position.avg_exit_price
         };
-        price_diff * (position.total_qty - position.open_qty) as f64 * asset.value_per_variation
+        price_diff * (position.total_qty - position.open_qty) as f64 * asset.value_per_point
     }
 
     fn calculate_gross_open_pnl(position: &Position, asset: &Asset, current_price: f64) -> f64 {
@@ -425,23 +430,34 @@ impl<'a> ExchangeEventHandler<'a> {
             Side::BUY => current_price - position.avg_entry_price,
             Side::SELL => position.avg_entry_price - current_price
         };
-        (price_diff / asset.min_variation) * position.open_qty as f64 * asset.value_per_variation
+        (price_diff / asset.min_point_variation) * position.open_qty as f64 * asset.value_per_point
     }
 
     //TODO: we need a better way to define and calculate the fees for each orders send to the market
+    // https://investimentos.btgpactual.com/custos
     fn calculate_fees(&self, total_orders: u64) -> f64 {
         let asset = self.asset;
         let brokerage = if asset.market == Market::FUTURES && asset.ticker == "WIN" || asset.ticker == "WDO" {
             match self.total_contracts_executed_current_month {
-                0_u64..=50_u64 => 0.95,
-                51_u64..=100_u64 => 0.90,
-                101_u64..=200_u64 => 0.87,
-                201_u64..=500_u64 => 0.76,
-                501_u64..=2500_u64 => 0.63,
-                2501_u64..=5000_u64 => 0.33,
-                5001_u64..=15000_u64 => 0.12,
-                15001u64.. => 0.05
+                0..=50 => 0.95,
+                51..=100 => 0.90,
+                101..=200 => 0.87,
+                201..=500 => 0.76,
+                501..=2500 => 0.63,
+                2501..=5000 => 0.33,
+                5001..=15000 => 0.12,
+                15001.. => 0.05
             }
+        } else if asset.market == Market::FUTURES && asset.ticker == "DOL" || asset.ticker == "IND" {
+            match self.total_contracts_executed_current_month {
+                0..=50 => 3.90,
+                51..=100 => 3.69,
+                101..=250 => 3.54,
+                251..=500 => 2.55,
+                501.. => 1.20
+            }
+        } else if asset.market == Market::FUTURES && asset.ticker == "BIT" {
+            0.0
         } else {
             panic!("no brokerage rate defined for asset with ticker {}", asset.ticker);
         };
@@ -453,7 +469,9 @@ impl<'a> ExchangeEventHandler<'a> {
         } else if asset.ticker == "WDO" {
             0.75 * total_orders as f64
         } else {
-            panic!("no exchange registration fee defined for asset with ticker {}", asset.ticker);
+            // TODO: this is not right just temporary to allow testing
+            0.75 * total_orders as f64
+            //panic!("no exchange registration fee defined for asset with ticker {}", asset.ticker);
         };
 
         let exchange_emolument_fees = if asset.ticker == "WIN" {
@@ -461,7 +479,9 @@ impl<'a> ExchangeEventHandler<'a> {
         } else if asset.ticker == "WDO" {
             0.40 * total_orders as f64
         } else {
-            panic!("no exchange registration fee defined for asset with ticker {}", asset.ticker);
+            // TODO: this is not right just temporary to allow testing
+            0.40 * total_orders as f64
+            //panic!("no exchange registration fee defined for asset with ticker {}", asset.ticker);
         };
 
         brokerage + iss_amount + exchange_registration_fees + exchange_emolument_fees

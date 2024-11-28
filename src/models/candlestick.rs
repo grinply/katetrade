@@ -6,7 +6,6 @@ use crate::models::trade::Trade;
 use crate::utils::date;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(unused)]
 pub struct Candlestick {
     pub open: f64,
     pub high: f64,
@@ -21,14 +20,13 @@ pub struct Candlestick {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, EnumString)]
-#[allow(unused)]
 pub enum CandlestickType {
     TIME,
     TICK,
+    #[allow(unused)]
     VOLUME,
 }
 
-#[allow(unused)]
 pub trait CandlestickGenerator: DynClone + Send + Sync {
     fn description(&self) -> String;
 
@@ -46,7 +44,6 @@ pub trait CandlestickGenerator: DynClone + Send + Sync {
 // implement required cloning traits to allow dyn objects to be cloned
 dyn_clone::clone_trait_object!(CandlestickGenerator);
 
-#[allow(unused)]
 #[derive(Clone)]
 pub struct TimeCandlestickGenerator {
     last_day: i32,
@@ -56,7 +53,6 @@ pub struct TimeCandlestickGenerator {
     last_candle: Option<Candlestick>,
 }
 
-#[allow(unused)]
 #[derive(Clone)]
 pub struct TickCandlestickGenerator {
     ticks_per_candle: u64,
@@ -233,10 +229,10 @@ impl CandlestickGenerator for TimeCandlestickGenerator {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(unused)]
 pub enum TimeUnit {
     Seconds,
     Minutes,
+    #[allow(unused)]
     Hours,
 }
 
@@ -436,8 +432,8 @@ mod tests {
     fn parse_correct_amount_of_time_based_candlesticks() {
         let binary_trades_path: PathBuf = kate_configuration_directory()
             .join("history_trades")
-            .join("WIN")
-            .join("TRADE-B3-FUTURES-WIN-20150102");
+            .join("IND")
+            .join("TRADE-B3-FUTURES-IND-20240613");
 
         assert!(binary_trades_path.exists());
 
@@ -454,7 +450,7 @@ mod tests {
                 candlesticks.push(candle);
             }
         }
-        assert_eq!(candlesticks.first().unwrap().date, 2015_01_02);
+        assert_eq!(candlesticks.first().unwrap().date, 20240613);
 
         let expected_start_time = date::convert_to_naive_time(09_00_00).unwrap();
         let actual_start_time = candlesticks.first().unwrap().start_time;
@@ -469,9 +465,9 @@ mod tests {
             actual_start_time
         );
 
-        assert_eq!(candlesticks.last().unwrap().date, 2015_01_02);
-        assert_eq!(candlesticks.last().unwrap().start_time, date::convert_to_naive_time(17_54_00).unwrap());
-        assert_eq!(535, candlesticks.len());
+        assert_eq!(candlesticks.last().unwrap().date, 20240613);
+        assert_eq!(candlesticks.last().unwrap().start_time, date::convert_to_naive_time(18_23_00).unwrap());
+        assert_eq!(547, candlesticks.len());
     }
 
     #[test]

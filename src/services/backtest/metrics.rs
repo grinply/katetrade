@@ -41,7 +41,8 @@ pub struct BacktestMetrics {
     pub avg_winning_trade: f64,
     pub avg_losing_trade: f64,
     pub profit_factor: f64,
-    pub profit_factor_log_sum: f64
+    pub profit_factor_log_sum: f64,
+    pub aborted: bool
 }
 
 impl Display for BacktestMetrics {
@@ -248,7 +249,8 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
         avg_winning_trade: sum_winning_trades / total_wins as f64,
         avg_losing_trade: sum_losing_trades / total_loses as f64,
         profit_factor: sum_winning_trades/(-1.0*sum_losing_trades),
-        profit_factor_log_sum
+        profit_factor_log_sum,
+        aborted: event_handler.removed_for_lack_of_margin
     }
 }
 

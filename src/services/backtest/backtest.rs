@@ -4,6 +4,7 @@ use std::cmp::max;
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use chrono::{Datelike, NaiveDate, Weekday};
+use itertools::enumerate;
 use crate::models::candlestick::{Candlestick, CandlestickGenerator};
 use crate::models::asset::Asset;
 use crate::services::aws::AwsClient;
@@ -143,10 +144,40 @@ impl<'a> TradingBacktester<'a> {
     pub fn run_high_resolution_backtest(&self, mut strategy: Box<dyn HighResolutionTradingStrategy>, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
         let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
 
-        // let mut buffer = Vec::new();
+        // running using cached trades from main memory
         if self.data_provider.trades.len() > 0 {
-            // running using cached trades from main memory
-            for trade in self.data_provider.trades.iter() {
+            let mut days_on_range = -1;
+            let mut current_day = -1;
+
+            let days_of_context = strategy.days_of_context() as i32;
+            let mut index_start_day_list = VecDeque::new();
+            let mut is_initialized = if days_of_context == 0 {
+                true
+            } else {
+                false
+            };
+
+
+            for (index_current_trade, trade) in enumerate(self.data_provider.trades.iter()) {
+                // this section aims to guarantee that the init_trading_day will be called for the strategy
+                // for each new trading day providing the last N days of context as required by the strategy
+                if trade.date != current_day && days_of_context > 0 {
+                    index_start_day_list.push_back(index_current_trade);
+                    current_day = trade.date;
+                    days_on_range += 1;
+
+                    if days_of_context == days_on_range {
+                        let start_index = index_start_day_list.pop_front().unwrap();
+                        strategy.init_trading_day(self.asset, &self.data_provider.trades[start_index..index_current_trade].as_ref());
+                        days_on_range = days_of_context - 1;
+                        is_initialized = true;
+                    }
+                }
+
+                if !is_initialized {
+                    continue;
+                }
+
                 let trade_action = strategy.process_new_trade(trade);
                 event_handler.process_trade(trade);
                 event_handler.process_orders(trade_action);
@@ -184,9 +215,39 @@ impl<'a> TradingBacktester<'a> {
     pub fn run_candlestick_backtest(&self, mut strategy: Box<dyn CandlestickTradingStrategy>, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
         let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
 
+        // iterating with cached Candlesticks from main memory
         if self.data_provider.candlesticks.len() > 0 {
-            // iterating with cached Candlesticks from main memory
-            for new_candle in self.data_provider.candlesticks.iter() {
+            let mut days_on_range = -1;
+            let mut current_day = -1;
+
+            let days_of_context = strategy.days_of_context() as i32;
+            let mut index_start_day_list = VecDeque::new();
+            let mut is_initialized = if days_of_context == 0 {
+                true
+            } else {
+                false
+            };
+
+            for (index_current_candle, new_candle) in enumerate(self.data_provider.candlesticks.iter()) {
+                // this section aims to guarantee that the init_trading_day will be called for the strategy
+                // for each new trading day providing the last N days of context as required by the strategy
+                if new_candle.date != current_day && days_of_context > 0 {
+                    index_start_day_list.push_back(index_current_candle);
+                    current_day = new_candle.date;
+                    days_on_range += 1;
+
+                    if days_of_context == days_on_range {
+                        let start_index = index_start_day_list.pop_front().unwrap();
+                        strategy.init_trading_day(self.asset, &self.data_provider.candlesticks[start_index..index_current_candle].as_ref());
+                        days_on_range = days_of_context - 1;
+                        is_initialized = true;
+                    }
+                }
+
+                if !is_initialized {
+                    continue;
+                }
+
                 let trade_action = strategy.process_closed_candlestick(new_candle);
                 event_handler.process_candlestick(new_candle);
                 event_handler.process_orders(trade_action);
@@ -508,77 +569,88 @@ fn get_backtest_files_metadata(
 
 #[cfg(test)]
 mod tests {
+    use crate::models::action::TradeAction;
     use crate::models::asset::Asset;
-    use crate::models::candlestick::{CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
+    use crate::models::candlestick::{Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
     use crate::models::exchange::Exchange;
     use crate::models::market::Market;
+    use crate::models::trade::Trade;
     use crate::services::backtest::backtest::TradingBacktester;
+    use crate::services::backtest::exchange_event_handler::INITIAL_BALANCE;
     use crate::strategies::custom::dummy_strategy::{DummyCandlestickStrategy, DummyHighResolutionStrategy};
     use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
 
     #[test]
-    fn should_create_backtester_with_cached_candlestick_data_correctly(){
-        let candle_parser= TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
+    fn should_create_backtester_with_cached_candlestick_data_correctly() {
+        let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let backtester_engine = candle_backtester(true, candle_parser);
-        assert_eq!(535, backtester_engine.data_provider.candlesticks.len());
+        assert_eq!(1638, backtester_engine.data_provider.candlesticks.len());
     }
 
     #[test]
-    fn should_create_backtester_without_cached_candlestick_data_correctly(){
+    fn should_create_backtester_without_cached_candlestick_data_correctly() {
         let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let backtester_engine = candle_backtester(false, candle_parser);
 
         assert_eq!(0, backtester_engine.data_provider.candlesticks.len());
         assert_eq!(0, backtester_engine.data_provider.trades.len());
-        assert_eq!(1, backtester_engine.data_provider.data_files.len());
+        assert_eq!(3, backtester_engine.data_provider.data_files.len());
     }
 
     #[test]
-    fn should_create_backtester_with_cached_trade_data_correctly(){
-        let backtester_engine = trade_backtester(true);
-        assert_eq!(120551, backtester_engine.data_provider.trades.len());
+    fn should_create_backtester_with_cached_trade_data_correctly() {
+        let backtester_engine = trade_backtester(
+            true,
+            2024_06_13,
+            2024_06_17,
+        );
+        assert_eq!(44059, backtester_engine.data_provider.trades.len());
     }
 
     #[test]
-    fn should_create_backtester_without_cached_trade_data_correctly(){
-        let backtester_engine = trade_backtester(false);
+    fn should_create_backtester_without_cached_trade_data_correctly() {
+        let backtester_engine = trade_backtester(
+            false,
+            2024_06_13,
+            2024_06_17,
+        );
 
         assert_eq!(0, backtester_engine.data_provider.candlesticks.len());
         assert_eq!(0, backtester_engine.data_provider.trades.len());
-        assert_eq!(1, backtester_engine.data_provider.data_files.len());
+        assert_eq!(3, backtester_engine.data_provider.data_files.len());
     }
 
 
     #[test]
-    fn should_run_dummy_strategy_on_backtester_with_cached_candlestick_data_correctly(){
+    fn should_run_dummy_strategy_on_backtester_with_cached_candlestick_data_correctly() {
         let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let backtester_engine = candle_backtester(true, candle_parser);
-        assert_eq!(535, backtester_engine.data_provider.candlesticks.len());
+        assert_eq!(1638, backtester_engine.data_provider.candlesticks.len());
 
         let strategy = DummyCandlestickStrategy::new();
         let metrics = backtester_engine.run_candlestick_backtest(
             Box::new(strategy),
             12,
-            true
+            true,
         );
 
-        assert_eq!(8, metrics.total_trades);
-        assert_eq!(8351.26116000001, metrics.final_balance);
+        assert_eq!(11, metrics.total_trades);
+        assert_eq!(5427.596640000183, metrics.final_balance);
         assert_eq!(2, metrics.max_win_streak);
-        assert_eq!(5, metrics.max_lose_streak);
-        assert_eq!(3, metrics.total_wins);
-        assert_eq!(5, metrics.total_loses);
-        assert_eq!(-400.12383999999645, metrics.avg_losing_trade);
-        assert_eq!(118.81661333333147, metrics.avg_winning_trade);
-        assert_eq!(19.45920238306106, metrics.max_draw_down_percentage);
-        assert_eq!(37.5, metrics.win_rate_percentage);
-        assert_eq!(0.178169758642723, metrics.profit_factor);
-        assert_eq!(-1570.1195999999882, metrics.total_gross_profit);
-        assert_eq!(74.04975999999999, metrics.total_fees_paid);
+        assert_eq!(3, metrics.max_lose_streak);
+        assert_eq!(4, metrics.total_wins);
+        assert_eq!(7, metrics.total_loses);
+        assert_eq!(-1420.350914285671, metrics.avg_losing_trade);
+        assert_eq!(1347.113309999968, metrics.avg_winning_trade);
+        assert_eq!(62.03859340345955, metrics.max_draw_down_percentage);
+        assert_eq!(36.36363636363637, metrics.win_rate_percentage);
+        assert_eq!(0.5419639798470763, metrics.profit_factor);
+        assert_eq!(-4082.363999999827, metrics.total_gross_profit);
+        assert_eq!(471.63916000000006, metrics.total_fees_paid);
     }
 
     #[test]
-    fn should_run_dummy_strategy_on_backtester_without_cached_candlestick_data_correctly(){
+    fn should_run_dummy_strategy_on_backtester_without_cached_candlestick_data_correctly() {
         let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let backtester_engine = candle_backtester(false, candle_parser);
 
@@ -588,71 +660,200 @@ mod tests {
         let metrics = backtester_engine.run_candlestick_backtest(
             Box::new(strategy),
             12,
-            true
+            true,
         );
 
-        assert_eq!(8, metrics.total_trades);
-        assert_eq!(8351.26116000001, metrics.final_balance);
+        assert_eq!(21, metrics.total_trades);
+        assert_eq!(5152.368040000092, metrics.final_balance);
         assert_eq!(2, metrics.max_win_streak);
-        assert_eq!(5, metrics.max_lose_streak);
-        assert_eq!(3, metrics.total_wins);
-        assert_eq!(5, metrics.total_loses);
-        assert_eq!(-400.12383999999645, metrics.avg_losing_trade);
-        assert_eq!(118.81661333333147, metrics.avg_winning_trade);
-        assert_eq!(19.45920238306106, metrics.max_draw_down_percentage);
-        assert_eq!(37.5, metrics.win_rate_percentage);
-        assert_eq!(0.178169758642723, metrics.profit_factor);
-        assert_eq!(-1570.1195999999882, metrics.total_gross_profit);
-        assert_eq!(74.04975999999999, metrics.total_fees_paid);
+        assert_eq!(3, metrics.max_lose_streak);
+        assert_eq!(10, metrics.total_wins);
+        assert_eq!(11, metrics.total_loses);
+        assert_eq!(-1731.7710981817859, metrics.avg_losing_trade);
+        assert_eq!(1421.781491999973, metrics.avg_winning_trade);
+        assert_eq!(63.97405468096279, metrics.max_draw_down_percentage);
+        assert_eq!(47.61904761904761, metrics.win_rate_percentage);
+        assert_eq!(0.7463622822022673, metrics.profit_factor);
+        assert_eq!(-3942.0239999999176, metrics.total_gross_profit);
+        assert_eq!(889.6431599999999, metrics.total_fees_paid);
     }
 
     #[test]
-    fn should_run_dummy_strategy_on_backtester_with_cached_trade_data_correctly(){
-        let backtester_engine = trade_backtester(true);
+    fn should_run_dummy_strategy_on_backtester_with_cached_trade_data_correctly() {
+        let backtester_engine = trade_backtester(
+            true,
+            2024_06_13,
+            2024_06_17,
+        );
 
         let strategy = DummyHighResolutionStrategy::new();
         let metrics = backtester_engine.run_high_resolution_backtest(
             Box::new(strategy),
             12,
-            true
+            true,
         );
 
-        assert_eq!(249, metrics.total_trades);
-        assert_eq!(2377.1875999997546, metrics.final_balance);
-        assert_eq!(6, metrics.max_win_streak);
-        assert_eq!(12, metrics.max_lose_streak);
-        assert_eq!(63, metrics.total_wins);
-        assert_eq!(186, metrics.total_loses);
-        assert_eq!(-52.595548817204694, metrics.avg_losing_trade);
-        assert_eq!(34.33612952380797, metrics.avg_winning_trade);
-        assert_eq!(77.0898606041114, metrics.max_draw_down_percentage);
-        assert_eq!(25.301204819277107, metrics.win_rate_percentage);
-        assert_eq!(0.2211209810787993, metrics.profit_factor);
-        assert_eq!(-5732.540400000169, metrics.total_gross_profit);
-        assert_eq!(1887.0555200000078, metrics.total_fees_paid);
+        assert_eq!(6, metrics.total_trades);
+        assert_eq!(4316.072319999753, metrics.final_balance);
+        assert_eq!(2, metrics.max_win_streak);
+        assert_eq!(4, metrics.max_lose_streak);
+        assert_eq!(2, metrics.total_wins);
+        assert_eq!(4, metrics.total_loses);
+        assert_eq!(-1533.5362800000144, metrics.avg_losing_trade);
+        assert_eq!(235.201799999905, metrics.avg_winning_trade);
+        assert_eq!(58.58556512568598, metrics.max_draw_down_percentage);
+        assert_eq!(33.33333333333333, metrics.win_rate_percentage);
+        assert_eq!(0.07668608922636731, metrics.profit_factor);
+        assert_eq!(-5417.178000000247, metrics.total_gross_profit);
+        assert_eq!(246.56352000000004, metrics.total_fees_paid);
     }
 
-    fn candle_backtester(cache_in_memory: bool, candle_parser: impl CandlestickGenerator + 'static) -> TradingBacktester<'static>{
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+    #[test]
+    fn should_initialize_context_when_running_with_cached_candlesticks_correctly() {
+        struct InitTrackerStrategy {
+            initialized_trades: usize,
+        }
+
+        impl CandlestickTradingStrategy for InitTrackerStrategy {
+            fn new() -> Self
+            where
+                Self: Sized
+            {
+                InitTrackerStrategy {
+                    initialized_trades: 0
+                }
+            }
+
+            fn name(&self) -> &'static str {
+                "test"
+            }
+
+            fn days_of_context(&self) -> u32 {
+                1
+            }
+
+
+            fn init_trading_day(&mut self, asset: &Asset, context_candles: &[Candlestick]) {
+                for _ in context_candles {
+                    self.initialized_trades += 1;
+                }
+            }
+
+            fn candlestick_generator(&self) -> Box<dyn CandlestickGenerator> {
+                Box::new(TimeCandlestickGenerator::new(TimeUnit::Minutes, 1))
+            }
+
+            fn process_closed_candlestick(&mut self, _: &Candlestick) -> TradeAction {
+                if self.initialized_trades == 547 {
+                    return TradeAction::abort();
+                }
+                TradeAction::do_nothing()
+            }
+        }
+
+        let backtester = candle_backtester(
+            true,
+            TimeCandlestickGenerator::new(TimeUnit::Minutes, 1)
+        );
+        let strategy = InitTrackerStrategy::new();
+        let metrics = backtester.run_candlestick_backtest(
+            Box::new(strategy),
+            1,
+            true,
+        );
+
+        assert_eq!(
+            true,
+            metrics.aborted,
+            "should have sent abort action signaling the the correct amount to candlesticks were initialized as expected"
+        );
+        assert_eq!(1, metrics.total_trading_days);
+        assert_eq!(0, metrics.total_trades);
+        assert_eq!(INITIAL_BALANCE, metrics.final_balance);
+    }
+
+    #[test]
+    fn should_initialize_context_when_running_with_cached_trades_correctly() {
+        struct InitTrackerStrategy {
+            initialized_trades: usize,
+        }
+
+        impl HighResolutionTradingStrategy for InitTrackerStrategy {
+            fn new() -> Self
+            where
+                Self: Sized,
+            {
+                InitTrackerStrategy {
+                    initialized_trades: 0
+                }
+            }
+
+            fn name(&self) -> &str {
+                "init_tracker_strategy"
+            }
+
+            fn days_of_context(&self) -> u32 {
+                1
+            }
+
+            fn init_trading_day(&mut self, _: &Asset, context_trades: &[Trade]) {
+                for _ in context_trades {
+                    self.initialized_trades += 1;
+                }
+            }
+
+            fn process_new_trade(&mut self, _: &Trade) -> TradeAction {
+                if self.initialized_trades == 15379 {
+                    return TradeAction::abort();
+                }
+                TradeAction::do_nothing()
+            }
+        }
+        let backtester = trade_backtester(
+            true,
+            2024_06_13,
+            2024_06_17,
+        );
+        let strategy = InitTrackerStrategy::new();
+        let metrics = backtester.run_high_resolution_backtest(
+            Box::new(strategy),
+            1,
+            true,
+        );
+
+        assert_eq!(
+            true,
+            metrics.aborted,
+            "should have sent abort action signaling the the correct amount to trades were initialized as expected"
+        );
+        assert_eq!(1, metrics.total_trading_days);
+        assert_eq!(0, metrics.total_trades);
+        assert_eq!(INITIAL_BALANCE, metrics.final_balance);
+    }
+
+
+    fn candle_backtester(cache_in_memory: bool, candle_parser: impl CandlestickGenerator + 'static) -> TradingBacktester<'static> {
+        let asset = Asset::get_asset("IND", Market::FUTURES, Exchange::B3).unwrap();
 
         TradingBacktester::new(
             &asset,
-            2015_01_02,
-            2015_01_02,
+            2024_06_13,
+            2024_06_17,
             cache_in_memory,
             Some(Box::new(candle_parser)),
-            true
+            true,
         ).unwrap()
     }
-    fn trade_backtester(cache_in_memory: bool) -> TradingBacktester<'static> {
-        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+
+    fn trade_backtester(cache_in_memory: bool, start_date: u32, end_date: u32) -> TradingBacktester<'static> {
+        let asset = Asset::get_asset("IND", Market::FUTURES, Exchange::B3).unwrap();
         TradingBacktester::new(
             &asset,
-            2015_01_02,
-            2015_01_02,
+            start_date,
+            end_date,
             cache_in_memory,
             None,
-            true
+            true,
         ).unwrap()
     }
 }
