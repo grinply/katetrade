@@ -120,10 +120,12 @@ impl<'a> ExchangeEventHandler<'a> {
             TradeEvent::NewTrade(trade) => {
                 self.update_internal_candlestick_with_trade(trade);
                 self.new_datapoint(trade);
+                self.track_current_month();
             }
             TradeEvent::NewCandle(candlestick) => {
                 self.update_internal_candlesticks(candlestick);
                 self.new_datapoint(candlestick);
+                self.track_current_month();
             }
             TradeEvent::ExecuteOrderLong => {
                 self.execute_market_long_order();
@@ -251,7 +253,7 @@ impl<'a> ExchangeEventHandler<'a> {
         }
     }
 
-    fn check_scheduled_order_trigger(&mut self, candlestick: &impl DataPoint) {
+    fn check_scheduled_order_trigger(&mut self, _: &impl DataPoint) {
         // todo!()
     }
 

@@ -29,7 +29,7 @@ pub fn convert_to_naive_date(date: u32) -> Result<NaiveDate, anyhow::Error> {
 ///
 /// invalid values will be colapsed to the nearest valid value when possible:
 /// for example minutes or seconds values of 60 will be changed to 00
-pub fn format_time(time: i32) -> Option<i32>{
+pub fn format_time(time: i32) -> Option<i32> {
     let hours = time / 10000;
     let mut minutes = (time / 100) - (hours * 100);
     let mut seconds = time % 100;
@@ -42,27 +42,41 @@ pub fn format_time(time: i32) -> Option<i32>{
         seconds = 00;
     }
 
-    Some((hours * 10000) + (100 * minutes) + seconds )
+    Some((hours * 10000) + (100 * minutes) + seconds)
 }
 
 /// converts the provided time into [NaiveTime]
+/// the only accepted formats are hhMMss or hhMMssmmm
 pub fn convert_to_naive_time(time: i32) -> Option<NaiveTime> {
+    if time > 99_99_99_999 {
+        return None;
+    }
+
+    let mut milli = 0;
+
+    let time = if time > 99_99_99 {
+        milli = (time % 1000) as u32;
+        time/ 1000
+    }else{
+        time
+    };
+
     let time = format_time(time)?;
     let hours = time / 10000;
     let minutes = (time / 100) - (hours * 100);
     let seconds = time % 100;
 
-    NaiveTime::from_hms_opt(hours as u32, minutes as u32, seconds as u32)
+    NaiveTime::from_hms_milli_opt(hours as u32, minutes as u32, seconds as u32, milli)
 }
 
-pub fn increase_time(current_time: &NaiveTime, amount_to_increase: u8, unit: TimeUnit) -> NaiveTime{
+pub fn increase_time(current_time: &NaiveTime, amount_to_increase: u8, unit: TimeUnit) -> NaiveTime {
     match unit {
         TimeUnit::Seconds => {
             let second_sum = current_time.second() + amount_to_increase as u32;
             if second_sum >= 60 {
-                NaiveTime::from_hms_opt(current_time.hour(), current_time.minute() + second_sum/60, second_sum % 60)
+                NaiveTime::from_hms_opt(current_time.hour(), current_time.minute() + second_sum / 60, second_sum % 60)
                     .unwrap()
-            } else{
+            } else {
                 NaiveTime::from_hms_opt(current_time.hour(), current_time.minute(), second_sum)
                     .unwrap()
             }
@@ -76,7 +90,7 @@ pub fn increase_time(current_time: &NaiveTime, amount_to_increase: u8, unit: Tim
                 }
                 NaiveTime::from_hms_opt(hour, minute_sum % 60, current_time.second())
                     .unwrap()
-            }else{
+            } else {
                 NaiveTime::from_hms_opt(current_time.hour(), minute_sum, current_time.second())
                     .unwrap()
             }
@@ -86,7 +100,7 @@ pub fn increase_time(current_time: &NaiveTime, amount_to_increase: u8, unit: Tim
             if hour_sum >= 24 {
                 NaiveTime::from_hms_opt(hour_sum % 24, current_time.minute(), current_time.second())
                     .unwrap()
-            }else{
+            } else {
                 NaiveTime::from_hms_opt(hour_sum, current_time.minute(), current_time.second())
                     .unwrap()
             }
@@ -95,7 +109,7 @@ pub fn increase_time(current_time: &NaiveTime, amount_to_increase: u8, unit: Tim
 }
 
 /// compare if the time defined by hour, minutes and seconds is after current_time
-pub fn is_time_after(current_time: NaiveTime, hour: u8, minutes: u8, seconds: u8) -> bool{
+pub fn is_time_after(current_time: NaiveTime, hour: u8, minutes: u8, seconds: u8) -> bool {
     let current = (current_time.hour() * 10000) + (100 * current_time.minute()) + current_time.second();
     let target = (hour as u32 * 10000) + (100 * minutes as u32) + seconds as u32;
     target >= current
@@ -108,7 +122,7 @@ mod tests {
 
     #[test]
     fn should_increase_time_correctly() {
-        let tests:Vec<(i32, u8, TimeUnit, i32)> = vec![
+        let tests: Vec<(i32, u8, TimeUnit, i32)> = vec![
             (09_10_00, 15, Seconds, 09_10_15),
             (09_10_15, 2, Seconds, 09_10_17),
             (09_10_15, 30, Minutes, 09_40_15),
@@ -159,12 +173,12 @@ mod tests {
     fn should_compare_time_correctly() {
         let current = convert_to_naive_time(09_10_33).unwrap();
         assert_eq!(true, is_time_after(current, 10, 0, 0));
-        assert_eq!(true, is_time_after(current, 09,10,33));
-        assert_eq!(true, is_time_after(current, 09,10,34));
-        assert_eq!(true, is_time_after(current, 09,11,32));
-        assert_eq!(false, is_time_after(current, 09,10,32));
-        assert_eq!(false, is_time_after(current, 09,00,33));
-        assert_eq!(false, is_time_after(current, 0,0,0));
+        assert_eq!(true, is_time_after(current, 09, 10, 33));
+        assert_eq!(true, is_time_after(current, 09, 10, 34));
+        assert_eq!(true, is_time_after(current, 09, 11, 32));
+        assert_eq!(false, is_time_after(current, 09, 10, 32));
+        assert_eq!(false, is_time_after(current, 09, 00, 33));
+        assert_eq!(false, is_time_after(current, 0, 0, 0));
     }
 
     #[test]
@@ -175,24 +189,73 @@ mod tests {
     }
 
     #[test]
-    fn should_fail_convert_to_naive_date() {
-        assert!(convert_to_naive_date(999999999).is_err());
-        assert!(convert_to_naive_date(100_10_28).is_err());
-        assert!(convert_to_naive_date(2024_00_28).is_err());
-        assert!(convert_to_naive_date(0000_01_00).is_err());
-        assert!(convert_to_naive_date(2024_01_00).is_err());
-        assert!(convert_to_naive_date(2020_13_01).is_err());
-        assert!(convert_to_naive_date(3001_01_32).is_err());
+    fn should_convert_to_naive_time_correctly() {
+        let valid_times = vec![
+            (09_00_11, 09, 00, 11, 00),
+            (11_11_11, 11, 11, 11, 00),
+            (9_01_07_234, 09, 01, 07, 234)
+        ];
+
+        for (time, hour, minute, second, milli) in valid_times {
+            let naive_time = convert_to_naive_time(time);
+            assert!(
+                naive_time.is_some(),
+                "time {} should be convert correctly on conversion to NaiveTime",
+                time
+            );
+            let naive_time = naive_time.unwrap();
+            assert_eq!(naive_time.hour(), hour);
+            assert_eq!(naive_time.minute(), minute);
+            assert_eq!(naive_time.second(), second);
+            assert_eq!(naive_time.nanosecond(), milli * 1000000);
+        }
+    }
+
+    #[test]
+    fn should_fail_convert_to_naive_date_correctly() {
+        let invalid_dates = vec![
+            999999999,
+            100_10_28,
+            2024_00_28,
+            0000_01_00,
+            2024_01_00,
+            2020_13_01,
+            3001_01_32,
+        ];
+
+        for date in invalid_dates {
+            assert!(
+                convert_to_naive_date(date).is_err(),
+                "date {} should fail on conversion to NaiveDate",
+                date
+            );
+        }
     }
 
     #[test]
     fn should_format_time_correctly() {
-        assert_eq!(9_00_00, format_time(9_60_60).unwrap());
-        assert_eq!(9_00_10, format_time(9_60_10).unwrap());
-        assert_eq!(9_05_00, format_time(9_05_60).unwrap());
-        assert_eq!(9_22_33, format_time(9_22_33).unwrap());
-        assert_eq!(14_38_57, format_time(14_38_57).unwrap());
-        assert_eq!(14_38_00, format_time(14_38_60).unwrap());
-        assert_eq!(14_00_57, format_time(14_60_57).unwrap());
+        let valid_times = vec![
+            (9_60_60, 9_00_00),
+            (9_60_10, 9_00_10),
+            (9_05_60, 9_05_00),
+            (9_22_33, 9_22_33),
+            (14_38_57, 14_38_57),
+            (14_38_60, 14_38_00),
+            (14_60_57, 14_00_57),
+        ];
+
+        for time in valid_times {
+            let expected_time = time.1;
+            let actual_time = format_time(time.0);
+            assert!(actual_time.is_some());
+            assert_eq!(
+                expected_time,
+                actual_time.unwrap(),
+                "after formating the time {} we expected the result to be {}, but it was {}",
+                time.0,
+                expected_time,
+                actual_time.unwrap()
+            );
+        }
     }
 }

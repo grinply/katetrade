@@ -1,11 +1,11 @@
-use chrono::{NaiveTime, Timelike, Utc};
+use chrono::{NaiveTime, Timelike};
 use dyn_clone::DynClone;
 use strum_macros::EnumString;
 use ta::{Close, High, Low, Open, Volume};
 use crate::models::trade::Trade;
 use crate::utils::date;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(unused)]
 pub struct Candlestick {
     pub open: f64,
@@ -150,7 +150,7 @@ impl CandlestickGenerator for TickCandlestickGenerator {
         "Candlestick grouped by quantity of trades".to_string()
     }
 
-    fn evaluate_closed_candlestick(&mut self, current_time: NaiveTime) -> Option<Candlestick> {
+    fn evaluate_closed_candlestick(&mut self, _: NaiveTime) -> Option<Candlestick> {
         None
     }
 
@@ -209,7 +209,7 @@ impl CandlestickGenerator for TimeCandlestickGenerator {
         String::from(format!("candlesticks based on time slices of {} minutes", self.period))
     }
 
-    fn evaluate_closed_candlestick(&mut self, current_time: NaiveTime) -> Option<Candlestick> {
+    fn evaluate_closed_candlestick(&mut self, _: NaiveTime) -> Option<Candlestick> {
         if self.last_candle.is_none() {
             return None;
         }
@@ -222,7 +222,9 @@ impl CandlestickGenerator for TimeCandlestickGenerator {
     }
 
     fn parse_with_open_candles(&mut self, new_trade: &Trade) -> Candlestick {
-        TimeCandlestickGenerator::parse(self, new_trade, false).unwrap()
+        let candlestick = TimeCandlestickGenerator::parse(self, new_trade, false);
+        assert!(candlestick.is_some(), "when parsing trades to generate open candlestick we should never encounter a none value. trade {:?}", new_trade);
+        candlestick.unwrap()
     }
 
     fn parse_only_closed_candles(&mut self, new_trade: &Trade) -> Option<Candlestick> {
@@ -244,7 +246,7 @@ impl TimeCandlestickGenerator {
         if time_unit == TimeUnit::Seconds || time_unit == TimeUnit::Minutes {
             assert_eq!(60 % frequency, 0,
                        "the period used in candlesticks with unit of minutes or seconds should be divisible by 60");
-        }else{
+        } else {
             assert_eq!(24 % frequency, 0,
                        "the period used in candlesticks with unit of hours should be divisible by 24");
         }
@@ -260,7 +262,8 @@ impl TimeCandlestickGenerator {
 
     fn parse(&mut self, new_trade: &Trade, only_closed_candles: bool) -> Option<Candlestick> {
         if new_trade.price < 0.0 {
-            panic!("Trade price should be greater than 0, received {}", new_trade.price);
+            println!("[ERROR] received a trade with a negative value, this is not expected, trade will be ignored. {:?}", new_trade);
+            return self.last_candle;
         }
 
         // if the day rolls over we close the current candle
@@ -291,9 +294,16 @@ impl TimeCandlestickGenerator {
         }
         let existing_candle = self.last_candle.as_mut()?;
 
-        let current_time = date::convert_to_naive_time(new_trade.time)?;
+        let current_time = date::convert_to_naive_time(new_trade.time);
+
+        assert!(
+            current_time.is_some(),
+            "should never fail to convert the raw time from a trade into NaiveTime. time used in conversion {}",
+            new_trade.time
+        );
+
         let end_time = date::increase_time(&existing_candle.start_time, self.period, self.unit);
-        let is_candle_closed = current_time.ge(&end_time);
+        let is_candle_closed = current_time?.ge(&end_time);
 
         if !is_candle_closed {
             existing_candle.trades += 1;
@@ -361,18 +371,17 @@ mod tests {
     use std::path::PathBuf;
     use crate::models::candlestick::TimeUnit::{Hours, Minutes, Seconds};
     use crate::models::trade::TradeFile;
-    use crate::utils::date::{convert_to_naive_time, increase_time};
+    use crate::utils::date::convert_to_naive_time;
     use super::*;
 
     #[test]
     fn should_round_candlestick_start_time_correctly() {
-        let tests:Vec<(i32, u8, TimeUnit, i32)> = vec![
+        let tests: Vec<(i32, u8, TimeUnit, i32)> = vec![
             (09_10_17, 15, Seconds, 09_10_15),
             (09_10_05, 2, Seconds, 09_10_04),
             (09_10_15, 30, Minutes, 09_00_00),
             (09_40_15, 10, Hours, 00_00_00),
             (09_40_15, 15, Seconds, 09_40_15),
-
             (11_01_00, 5, Minutes, 11_00_00),
             (11_06_00, 5, Minutes, 11_05_00),
             (11_13_00, 5, Minutes, 11_10_00),
@@ -385,7 +394,6 @@ mod tests {
             (11_48_00, 5, Minutes, 11_45_00),
             (11_53_00, 5, Minutes, 11_50_00),
             (11_59_00, 5, Minutes, 11_55_00),
-
             (11_00_01, 5, Seconds, 11_00_00),
             (11_00_06, 5, Seconds, 11_00_05),
             (11_00_13, 5, Seconds, 11_00_10),
@@ -398,7 +406,6 @@ mod tests {
             (11_00_48, 5, Seconds, 11_00_45),
             (11_00_53, 5, Seconds, 11_00_50),
             (11_00_59, 5, Seconds, 11_00_55),
-
             (00_00_00, 6, Hours, 00_00_00),
             (01_00_00, 6, Hours, 00_00_00),
             (03_00_00, 6, Hours, 00_00_00),
@@ -465,7 +472,7 @@ mod tests {
 
     #[test]
     fn time_candlesticks_generator_should_correctly_create_candles_of_one_minute_including_not_closed_candles() {
-        let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
+        let mut generator = TimeCandlestickGenerator::new(Minutes, 1);
         let trades = mock_trades_list();
         let mut result_candlesticks: Vec<Candlestick> = vec![];
 
@@ -602,16 +609,17 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Trade price should be greater than 0, received -131000")]
-    fn time_candlesticks_generator_handles_invalid_trades() {
+    fn time_candlesticks_generator_ignores_invalid_trades() {
         let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let trades = vec![
+            create_mock_trade(2000.0, 1, 200.0, 09_00_00, 2024_10_14), // Negative price
             create_mock_trade(-131000.0, 1, 200.0, 09_00_00, 2024_10_14), // Negative price
         ];
 
-        for trade in &trades {
-            generator.parse_with_open_candles(&trade);
-        }
+        let first_candle = generator.parse_with_open_candles(trades.first().unwrap());
+        let second_candle = generator.parse_with_open_candles(trades.last().unwrap());
+
+        assert_eq!(first_candle, second_candle);
     }
 
     #[test]
