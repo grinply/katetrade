@@ -371,6 +371,7 @@ mod tests {
     use std::path::PathBuf;
     use crate::models::candlestick::TimeUnit::{Hours, Minutes, Seconds};
     use crate::models::trade::TradeFile;
+    use crate::services::configuration::kate_configuration_directory;
     use crate::utils::date::convert_to_naive_time;
     use super::*;
 
@@ -433,7 +434,10 @@ mod tests {
 
     #[test]
     fn parse_correct_amount_of_time_based_candlesticks() {
-        let binary_trades_path = PathBuf::from("resources/TRADE-B3-FUTURES-WIN-20150102");
+        let binary_trades_path: PathBuf = kate_configuration_directory()
+            .join("history_trades")
+            .join("WIN")
+            .join("TRADE-B3-FUTURES-WIN-20150102");
 
         assert!(binary_trades_path.exists());
 

@@ -241,8 +241,11 @@ impl<'a> TradingBacktester<'a> {
             std::fs::create_dir_all(&history_trades_folder_path)?;
         }
 
-
-        println!("checking for missing trade files on local disk between {} and {}", start_date, end_date);
+        println!("checking for missing trade files on local disk between {} and {} on {:?}",
+                 start_date,
+                 end_date,
+                 history_trades_folder_path
+        );
         let backtest_files_metadata = get_backtest_files_metadata(
             asset,
             start_date,
@@ -501,4 +504,91 @@ fn get_backtest_files_metadata(
             files_to_download,
         }
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::models::asset::Asset;
+    use crate::models::candlestick::{TimeCandlestickGenerator, TimeUnit};
+    use crate::models::exchange::Exchange;
+    use crate::models::market::Market;
+    use crate::services::backtest::backtest::TradingBacktester;
+
+    #[test]
+    fn should_create_backtester_with_cached_candlestick_data_correctly(){
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+        let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
+        let backtester_engine = TradingBacktester::new(
+            &asset,
+            2015_01_02,
+            2015_01_02,
+            true,
+            Some(Box::new(candle_parser)),
+            true
+        );
+
+        assert!(backtester_engine.is_ok());
+
+        let backtester_engine = backtester_engine.unwrap();
+        assert_eq!(535, backtester_engine.data_provider.candlesticks.len());
+    }
+
+    #[test]
+    fn should_create_backtester_without_cached_candlestick_data_correctly(){
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+        let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
+        let backtester_engine = TradingBacktester::new(
+            &asset,
+            2015_01_02,
+            2015_01_02,
+            false,
+            Some(Box::new(candle_parser)),
+            true
+        );
+
+        assert!(backtester_engine.is_ok());
+
+        let backtester_engine = backtester_engine.unwrap();
+        assert_eq!(0, backtester_engine.data_provider.candlesticks.len());
+        assert_eq!(0, backtester_engine.data_provider.trades.len());
+        assert_eq!(1, backtester_engine.data_provider.data_files.len());
+    }
+
+    #[test]
+    fn should_create_backtester_with_cached_trade_data_correctly(){
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+        let backtester_engine = TradingBacktester::new(
+            &asset,
+            2015_01_02,
+            2015_01_02,
+            true,
+            None,
+            true
+        );
+
+        assert!(backtester_engine.is_ok());
+
+        let backtester_engine = backtester_engine.unwrap();
+        assert_eq!(120551, backtester_engine.data_provider.trades.len());
+    }
+
+    #[test]
+    fn should_create_backtester_without_cached_trade_data_correctly(){
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+        let backtester_engine = TradingBacktester::new(
+            &asset,
+            2015_01_02,
+            2015_01_02,
+            false,
+            None,
+            true
+        );
+
+        assert!(backtester_engine.is_ok());
+
+        let backtester_engine = backtester_engine.unwrap();
+        assert_eq!(0, backtester_engine.data_provider.candlesticks.len());
+        assert_eq!(0, backtester_engine.data_provider.trades.len());
+        assert_eq!(1, backtester_engine.data_provider.data_files.len());
+    }
 }
