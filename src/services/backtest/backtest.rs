@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::cmp::max;
+use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use chrono::{Datelike, NaiveDate, Weekday};
-use itertools::{enumerate};
+use itertools::enumerate;
 use crate::models::candlestick::{Candlestick, CandlestickGenerator};
-use crate::models::action::{TradeAction};
 use crate::models::asset::Asset;
 use crate::services::aws::AwsClient;
 use crate::services::configuration::{kate_configuration_directory, S3_BUCKET_HISTORICAL_DATA};
@@ -13,12 +13,13 @@ use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTrad
 use crate::utils::{date};
 use simple_bar::ProgressBar;
 use rayon::prelude::*;
+use crate::constants::{AWS_REGION, TRADES_FOLDER_NAME};
+use crate::models::trade;
 use crate::models::trade::{Trade, TradeFile};
 use crate::services::backtest::exchange_event_handler::{ExchangeEventHandler, MINIMUM_BALANCE};
 use crate::services::backtest::metrics;
 use crate::services::backtest::metrics::BacktestMetrics;
 
-#[derive(Debug)]
 #[allow(unused)]
 pub struct TradingBacktester<'a> {
     qty_history_trading_days: u64,
@@ -28,12 +29,12 @@ pub struct TradingBacktester<'a> {
     data_provider: DataProvider,
 }
 
-#[derive(Debug)]
 #[allow(unused)]
 struct DataProvider {
     candlesticks: Vec<Candlestick>,
     trades: Vec<Trade>,
     data_files: Vec<String>,
+    candle_parser: Option<Box<dyn CandlestickGenerator>>,
 }
 
 struct BacktestDataFiles {
@@ -48,51 +49,83 @@ impl DataProvider {
             candlesticks,
             trades,
             data_files: vec![],
+            candle_parser: None,
         }
     }
 
-    fn from_files(data_files: Vec<String>) -> Self {
+    fn from_files(data_files: Vec<String>, candle_parser: Option<Box<dyn CandlestickGenerator>>) -> Self {
         DataProvider {
             candlesticks: vec![],
             trades: vec![],
             data_files,
+            candle_parser,
         }
     }
 
-    #[allow(unused)]
-    fn datapoint_iterator(&self) -> DataProviderReader {
-        let reader_mode = if self.candlesticks.len() > 0 {
-            ReaderMode::CachedCandlestick
-        }else if self.trades.len() > 0 {
-            ReaderMode::CachedTrade
-        }else{
-            ReaderMode::TradeFromFile
-        };
-
-        DataProviderReader {
-            data_provider: Box::new(&self),
-            load_mode: reader_mode,
+    fn trades_iterator_from_disk(&self) -> TradeDiskIterator {
+        TradeDiskIterator {
+            buffer: VecDeque::new(),
+            files: self.data_files.clone(),
             file_index: 0,
-            index: 0,
-            data_buffer: Vec::new(),
+            is_finished: false,
+        }
+    }
+
+    fn candlesticks_iterator_from_disk(&self) -> CandlestickDiskIterator {
+        assert!(self.candle_parser.is_some(), "it is required to have a pre-loaded CandlestickGenerator if you wanna use it");
+        CandlestickDiskIterator {
+            candle_parser: self.candle_parser.as_ref().unwrap().clone(),
+            trade_iterator: self.trades_iterator_from_disk(),
         }
     }
 }
 
-#[allow(unused)]
-enum ReaderMode {
-    CachedCandlestick,
-    CachedTrade,
-    TradeFromFile,
+struct TradeDiskIterator {
+    buffer: VecDeque<Trade>, // VecDeque::new()
+    files: Vec<String>,
+    file_index: usize,
+    is_finished: bool,
 }
 
-#[allow(unused)]
-struct DataProviderReader<'a> {
-    data_provider: Box<&'a DataProvider>,
-    load_mode: ReaderMode,
-    file_index: usize,
-    index: usize,
-    data_buffer: Vec<Trade>,
+struct CandlestickDiskIterator {
+    candle_parser: Box<dyn CandlestickGenerator>,
+    trade_iterator: TradeDiskIterator,
+}
+
+
+/// iterator over [Trade] that will only allocate a single trading day into main memory at any given time
+/// reducing the memory requirements for accessing historical data
+impl Iterator for TradeDiskIterator {
+    type Item = Trade;
+    fn next(&mut self) -> Option<Trade> {
+        if self.is_finished || (self.file_index >= self.files.len() && self.buffer.is_empty()) {
+            self.is_finished = true;
+            return None;
+        }
+
+        if self.buffer.is_empty() {
+            let trades_file = self.files.get(self.file_index).unwrap();
+            self.buffer = trade::read_trades_from_binary_file(trades_file).unwrap();
+            self.file_index += 1;
+        }
+        self.buffer.pop_front()
+    }
+}
+
+
+/// iterator over [Candlestick] that will only allocate a single trading day into main memory at any given time
+/// reducing the memory requirements for accessing historical data
+impl Iterator for CandlestickDiskIterator {
+    type Item = Candlestick;
+
+    fn next(&mut self) -> Option<Candlestick> {
+        let mut option_candle = None;
+        while option_candle.is_none() && !self.trade_iterator.is_finished {
+            let new_trade = self.trade_iterator.next();
+            option_candle = self.candle_parser.parse_only_closed_candles(&new_trade?);
+        }
+        option_candle
+    }
 }
 
 impl Display for TradingBacktester<'_> {
@@ -111,34 +144,68 @@ impl<'a> TradingBacktester<'a> {
     pub fn run_high_resolution_backtest(&self, mut strategy: Box<dyn HighResolutionTradingStrategy>, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
         let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
 
-        let mut index_list_each_start_trading_day = vec![];
-        self.add_context_to_high_resolution_strategy(&mut strategy, &mut index_list_each_start_trading_day, 0);
+        // running using cached trades from main memory
+        if self.data_provider.trades.len() > 0 {
+            let mut days_on_range = -1;
+            let mut current_day = -1;
 
-        let index_first_actual_trading_day = *index_list_each_start_trading_day.last().unwrap();
-        let mut current_day = self.data_provider.trades.get(index_first_actual_trading_day).unwrap().date;
+            let days_of_context = strategy.days_of_context() as i32;
+            let mut index_start_day_list = VecDeque::new();
+            let mut is_initialized = if days_of_context == 0 {
+                true
+            } else {
+                false
+            };
 
-        for (index, trade) in enumerate(self.data_provider.trades.iter().skip(index_first_actual_trading_day)) {
-            if current_day != trade.date {
-                self.add_context_to_high_resolution_strategy(
-                    &mut strategy,
-                    &mut index_list_each_start_trading_day,
-                    index_first_actual_trading_day + index,
-                );
-                current_day = trade.date;
+
+            for (index_current_trade, trade) in enumerate(self.data_provider.trades.iter()) {
+                // this section aims to guarantee that the init_trading_day will be called for the strategy
+                // for each new trading day providing the last N days of context as required by the strategy
+                if trade.date != current_day && days_of_context > 0 {
+                    index_start_day_list.push_back(index_current_trade);
+                    current_day = trade.date;
+                    days_on_range += 1;
+
+                    if days_of_context == days_on_range {
+                        let start_index = index_start_day_list.pop_front().unwrap();
+                        strategy.init_trading_day(self.asset, &self.data_provider.trades[start_index..index_current_trade].as_ref());
+                        days_on_range = days_of_context - 1;
+                        is_initialized = true;
+                    }
+                }
+
+                if !is_initialized {
+                    continue;
+                }
+
+                let trade_action = strategy.process_new_trade(trade);
+                event_handler.process_trade(trade);
+                event_handler.process_orders(trade_action);
+                if self.should_abort_execution(&mut event_handler) {
+                    break;
+                }
             }
-
-            let trade_action = strategy.process_new_trade(trade);
-            event_handler.add_trade_event(&trade);
-            add_orders_event(&mut event_handler, trade_action);
-            event_handler.process_events();
-
-            if event_handler.current_balance <= MINIMUM_BALANCE || event_handler.removed_for_lack_of_margin {
-                event_handler.removed_for_lack_of_margin = true;
-                break;
+        } else {
+            // running loading trades from disk for each new trading day
+            for new_trade in self.data_provider.trades_iterator_from_disk() {
+                let trade_action = strategy.process_new_trade(&new_trade);
+                event_handler.process_trade(&new_trade);
+                event_handler.process_orders(trade_action);
+                if self.should_abort_execution(&mut event_handler) {
+                    break;
+                }
             }
         }
-
         metrics::calculate_backtest_results(&event_handler)
+    }
+
+    fn should_abort_execution(&self, event_handler: &mut ExchangeEventHandler) -> bool {
+        if event_handler.current_balance <= MINIMUM_BALANCE || event_handler.removed_for_lack_of_margin {
+            event_handler.removed_for_lack_of_margin = true;
+            true
+        } else {
+            false
+        }
     }
 
     /// Starts the execution of a Backtest ( trading simulation ) where each datapoint is closed [Candlestick]
@@ -148,30 +215,62 @@ impl<'a> TradingBacktester<'a> {
     pub fn run_candlestick_backtest(&self, mut strategy: Box<dyn CandlestickTradingStrategy>, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
         let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
 
-        let mut index_list_each_start_trading_day = vec![];
-        self.add_context_to_candle_strategy(&mut strategy, &mut index_list_each_start_trading_day, 0);
+        // iterating with cached Candlesticks from main memory
+        if self.data_provider.candlesticks.len() > 0 {
+            let mut days_on_range = -1;
+            let mut current_day = -1;
 
-        let index_first_actual_trading_day = *index_list_each_start_trading_day.last().unwrap();
-        let mut current_day = self.data_provider.candlesticks.get(index_first_actual_trading_day).unwrap().date;
+            let days_of_context = strategy.days_of_context() as i32;
+            let mut index_start_day_list = VecDeque::new();
+            let mut is_initialized = if days_of_context == 0 {
+                true
+            } else {
+                false
+            };
 
-        for (index, candlestick) in enumerate(self.data_provider.candlesticks.iter().skip(index_first_actual_trading_day)) {
-            if current_day != candlestick.date {
-                self.add_context_to_candle_strategy(
-                    &mut strategy,
-                    &mut index_list_each_start_trading_day,
-                    index_first_actual_trading_day + index,
-                );
-                current_day = candlestick.date;
+            for (index_current_candle, new_candle) in enumerate(self.data_provider.candlesticks.iter()) {
+                // this section aims to guarantee that the init_trading_day will be called for the strategy
+                // for each new trading day providing the last N days of context as required by the strategy
+                if new_candle.date != current_day && days_of_context > 0 {
+                    index_start_day_list.push_back(index_current_candle);
+                    current_day = new_candle.date;
+                    days_on_range += 1;
+
+                    if days_of_context == days_on_range {
+                        let start_index = index_start_day_list.pop_front().unwrap();
+                        strategy.init_trading_day(self.asset, &self.data_provider.candlesticks[start_index..index_current_candle].as_ref());
+                        days_on_range = days_of_context - 1;
+                        is_initialized = true;
+                    }
+                }
+
+                if !is_initialized {
+                    continue;
+                }
+
+                let trade_action = strategy.process_closed_candlestick(new_candle);
+                event_handler.process_candlestick(new_candle);
+                event_handler.process_orders(trade_action);
+                if self.should_abort_execution(&mut event_handler) {
+                    break;
+                }
             }
+        } else {
+            // iterating while loading Candlesticks from disk for each new trading day
+            let mut current_day = -1;
+            let mut bar = ProgressBar::default(self.qty_history_trading_days as u32 + 1, 100, false);
 
-            let trade_action = strategy.process_closed_candlestick(candlestick);
-            event_handler.add_candlestick_event(&candlestick);
-            add_orders_event(&mut event_handler, trade_action);
-            event_handler.process_events();
-
-            if event_handler.current_balance <= MINIMUM_BALANCE || event_handler.removed_for_lack_of_margin {
-                event_handler.removed_for_lack_of_margin = true;
-                break;
+            for new_candle in self.data_provider.candlesticks_iterator_from_disk() {
+                if current_day != new_candle.date {
+                    current_day = new_candle.date;
+                    bar.update();
+                }
+                let trade_action = strategy.process_closed_candlestick(&new_candle);
+                event_handler.process_candlestick(&new_candle);
+                event_handler.process_orders(trade_action);
+                if self.should_abort_execution(&mut event_handler) {
+                    break;
+                }
             }
         }
 
@@ -203,8 +302,11 @@ impl<'a> TradingBacktester<'a> {
             std::fs::create_dir_all(&history_trades_folder_path)?;
         }
 
-
-        println!("checking for missing trade files on local disk between {} and {}", start_date, end_date);
+        println!("checking for missing trade files on local disk between {} and {} on {:?}",
+                 start_date,
+                 end_date,
+                 history_trades_folder_path
+        );
         let backtest_files_metadata = get_backtest_files_metadata(
             asset,
             start_date,
@@ -238,76 +340,13 @@ impl<'a> TradingBacktester<'a> {
                 qty_history_trading_days: backtest_files_metadata.trading_days as u64,
                 qty_history_candles: 0,
                 qty_history_trades: 0,
-                data_provider: DataProvider::from_files(backtest_files_metadata.files_to_parse),
+                data_provider: DataProvider::from_files(
+                    backtest_files_metadata.files_to_parse,
+                    candlestick_generator,
+                ),
             }
         };
-
-
         Ok(backtester)
-    }
-
-    fn add_context_to_candle_strategy(&self, strategy: &mut Box<dyn CandlestickTradingStrategy>, index_start_day_list: &mut Vec<usize>, offset_start_current_day: usize) {
-        index_start_day_list.push(offset_start_current_day);
-        let context_size: usize = strategy.days_of_context() as usize;
-
-        if context_size == 0 {
-            return;
-        }
-
-        if index_start_day_list.len() <= context_size {
-            let mut days_of_context = context_size;
-            let mut current_day = self.data_provider.candlesticks.get(offset_start_current_day).unwrap().date;
-            for (index, initialization_candle) in self.data_provider.candlesticks.iter().skip(offset_start_current_day).enumerate() {
-                if initialization_candle.date != current_day {
-                    index_start_day_list.push(index + offset_start_current_day);
-                    current_day = initialization_candle.date;
-                    days_of_context -= 1;
-                    if days_of_context == 0 {
-                        break;
-                    }
-                }
-            }
-        }
-
-        let start_index: usize = *index_start_day_list.get(index_start_day_list.len() - context_size - 1).unwrap();
-        let end_index: usize = *index_start_day_list.last().unwrap();
-
-        strategy.init_trading_day(
-            self.asset,
-            &self.data_provider.candlesticks[start_index..end_index],
-        );
-    }
-
-    fn add_context_to_high_resolution_strategy(&self, strategy: &mut Box<dyn HighResolutionTradingStrategy>, index_start_day_list: &mut Vec<usize>, offset_start_current_day: usize) {
-        index_start_day_list.push(offset_start_current_day);
-        let context_size: usize = strategy.days_of_context() as usize;
-
-        if context_size == 0 {
-            return;
-        }
-
-        if index_start_day_list.len() <= context_size {
-            let mut days_of_context = context_size;
-            let mut current_day = self.data_provider.trades.get(offset_start_current_day).unwrap().date;
-            for (index, initialization_trade) in self.data_provider.trades.iter().skip(offset_start_current_day).enumerate() {
-                if initialization_trade.date != current_day {
-                    index_start_day_list.push(index + offset_start_current_day);
-                    current_day = initialization_trade.date;
-                    days_of_context -= 1;
-                    if days_of_context == 0 {
-                        break;
-                    }
-                }
-            }
-        }
-
-        let start_index: usize = *index_start_day_list.get(index_start_day_list.len() - context_size - 1).unwrap();
-        let end_index: usize = *index_start_day_list.last().unwrap();
-
-        strategy.init_trading_day(
-            self.asset,
-            &self.data_provider.trades[start_index..end_index],
-        );
     }
 }
 
@@ -321,14 +360,14 @@ impl BacktestDataFiles {
         }).collect();
 
         let uppercase_ticker = asset.ticker.to_ascii_uppercase();
-        let aws_client = Arc::new(AwsClient::new("sa-east-1".to_string())?);
+        let aws_client = Arc::new(AwsClient::new(AWS_REGION.to_string())?);
 
         values_to_process.into_par_iter().for_each(|tuple| {
             let file_to_download = tuple.0;
             let progress_bar = tuple.1;
             download_binary_trades_file(
                 aws_client.clone(),
-                format!("trades/{}/{}", uppercase_ticker, file_to_download),
+                format!("{TRADES_FOLDER_NAME}/{}/{}", uppercase_ticker, file_to_download),
                 history_trades_folder_path.to_str().unwrap().to_string(),
                 file_to_download.as_str(),
             ).expect(format!("failed to download file {}", file_to_download).as_str());
@@ -504,12 +543,12 @@ fn get_backtest_files_metadata(
                 let binary_trades_file_full_path = history_trades_folder_path.join(binary_trades_file_name.as_str());
 
                 //trades/IND/TRADE-B3-FUTURES-IND-20240722
-                let file_path_on_s3 = format!("trades/{}/{}", uppercase_ticker, binary_trades_file_name);
+                let file_path_on_s3 = format!("{TRADES_FOLDER_NAME}/{}/{}", uppercase_ticker, binary_trades_file_name);
                 if binary_trades_file_full_path.exists() {
                     trading_days += 1;
                     files_to_parse.push(binary_trades_file_full_path.to_str().unwrap().to_string());
                 } else if download_missing_files {
-                    if AwsClient::new("sa-east-1".to_string())?.file_exists_on_s3(S3_BUCKET_HISTORICAL_DATA, file_path_on_s3.as_str())? == true {
+                    if AwsClient::new(AWS_REGION.to_string())?.file_exists_on_s3(S3_BUCKET_HISTORICAL_DATA, file_path_on_s3.as_str())? == true {
                         trading_days += 1;
                         files_to_download.push(binary_trades_file_name);
                         files_to_parse.push(binary_trades_file_full_path.to_str().unwrap().to_string());
@@ -528,16 +567,293 @@ fn get_backtest_files_metadata(
     )
 }
 
-fn add_orders_event(event_handler: &mut ExchangeEventHandler, action: TradeAction) {
-    if let Some(enter_order) = action.enter_market_action {
-        event_handler.add_order_event(enter_order);
+#[cfg(test)]
+mod tests {
+    use crate::models::action::TradeAction;
+    use crate::models::asset::Asset;
+    use crate::models::candlestick::{Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
+    use crate::models::exchange::Exchange;
+    use crate::models::market::Market;
+    use crate::models::trade::Trade;
+    use crate::services::backtest::backtest::TradingBacktester;
+    use crate::services::backtest::exchange_event_handler::INITIAL_BALANCE;
+    use crate::strategies::custom::dummy_strategy::{DummyCandlestickStrategy, DummyHighResolutionStrategy};
+    use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
+
+    #[test]
+    fn should_create_backtester_with_cached_candlestick_data_correctly() {
+        let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
+        let backtester_engine = candle_backtester(true, candle_parser);
+        assert_eq!(1638, backtester_engine.data_provider.candlesticks.len());
     }
 
-    if let Some(stop_order) = action.stop_loss_action {
-        event_handler.add_order_event(stop_order);
+    #[test]
+    fn should_create_backtester_without_cached_candlestick_data_correctly() {
+        let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
+        let backtester_engine = candle_backtester(false, candle_parser);
+
+        assert_eq!(0, backtester_engine.data_provider.candlesticks.len());
+        assert_eq!(0, backtester_engine.data_provider.trades.len());
+        assert_eq!(3, backtester_engine.data_provider.data_files.len());
     }
 
-    if let Some(profit_order) = action.take_profit_action {
-        event_handler.add_order_event(profit_order);
+    #[test]
+    fn should_create_backtester_with_cached_trade_data_correctly() {
+        let backtester_engine = trade_backtester(
+            true,
+            2024_06_13,
+            2024_06_17,
+        );
+        assert_eq!(44059, backtester_engine.data_provider.trades.len());
+    }
+
+    #[test]
+    fn should_create_backtester_without_cached_trade_data_correctly() {
+        let backtester_engine = trade_backtester(
+            false,
+            2024_06_13,
+            2024_06_17,
+        );
+
+        assert_eq!(0, backtester_engine.data_provider.candlesticks.len());
+        assert_eq!(0, backtester_engine.data_provider.trades.len());
+        assert_eq!(3, backtester_engine.data_provider.data_files.len());
+    }
+
+
+    #[test]
+    fn should_run_dummy_strategy_on_backtester_with_cached_candlestick_data_correctly() {
+        let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
+        let backtester_engine = candle_backtester(true, candle_parser);
+        assert_eq!(1638, backtester_engine.data_provider.candlesticks.len());
+
+        let strategy = DummyCandlestickStrategy::new();
+        let metrics = backtester_engine.run_candlestick_backtest(
+            Box::new(strategy),
+            12,
+            true,
+        );
+
+        assert_eq!(11, metrics.total_trades);
+        assert_eq!(5427.596640000183, metrics.final_balance);
+        assert_eq!(2, metrics.max_win_streak);
+        assert_eq!(3, metrics.max_lose_streak);
+        assert_eq!(4, metrics.total_wins);
+        assert_eq!(7, metrics.total_loses);
+        assert_eq!(-1420.350914285671, metrics.avg_losing_trade);
+        assert_eq!(1347.113309999968, metrics.avg_winning_trade);
+        assert_eq!(62.03859340345955, metrics.max_draw_down_percentage);
+        assert_eq!(36.36363636363637, metrics.win_rate_percentage);
+        assert_eq!(0.5419639798470763, metrics.profit_factor);
+        assert_eq!(-4082.363999999827, metrics.total_gross_profit);
+        assert_eq!(471.63916000000006, metrics.total_fees_paid);
+    }
+
+    #[test]
+    fn should_run_dummy_strategy_on_backtester_without_cached_candlestick_data_correctly() {
+        let candle_parser = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
+        let backtester_engine = candle_backtester(false, candle_parser);
+
+        assert_eq!(0, backtester_engine.data_provider.candlesticks.len());
+
+        let strategy = DummyCandlestickStrategy::new();
+        let metrics = backtester_engine.run_candlestick_backtest(
+            Box::new(strategy),
+            12,
+            true,
+        );
+
+        assert_eq!(21, metrics.total_trades);
+        assert_eq!(5152.368040000092, metrics.final_balance);
+        assert_eq!(2, metrics.max_win_streak);
+        assert_eq!(3, metrics.max_lose_streak);
+        assert_eq!(10, metrics.total_wins);
+        assert_eq!(11, metrics.total_loses);
+        assert_eq!(-1731.7710981817859, metrics.avg_losing_trade);
+        assert_eq!(1421.781491999973, metrics.avg_winning_trade);
+        assert_eq!(63.97405468096279, metrics.max_draw_down_percentage);
+        assert_eq!(47.61904761904761, metrics.win_rate_percentage);
+        assert_eq!(0.7463622822022673, metrics.profit_factor);
+        assert_eq!(-3942.0239999999176, metrics.total_gross_profit);
+        assert_eq!(889.6431599999999, metrics.total_fees_paid);
+    }
+
+    #[test]
+    fn should_run_dummy_strategy_on_backtester_with_cached_trade_data_correctly() {
+        let backtester_engine = trade_backtester(
+            true,
+            2024_06_13,
+            2024_06_17,
+        );
+
+        let strategy = DummyHighResolutionStrategy::new();
+        let metrics = backtester_engine.run_high_resolution_backtest(
+            Box::new(strategy),
+            12,
+            true,
+        );
+
+        assert_eq!(6, metrics.total_trades);
+        assert_eq!(4316.072319999753, metrics.final_balance);
+        assert_eq!(2, metrics.max_win_streak);
+        assert_eq!(4, metrics.max_lose_streak);
+        assert_eq!(2, metrics.total_wins);
+        assert_eq!(4, metrics.total_loses);
+        assert_eq!(-1533.5362800000144, metrics.avg_losing_trade);
+        assert_eq!(235.201799999905, metrics.avg_winning_trade);
+        assert_eq!(58.58556512568598, metrics.max_draw_down_percentage);
+        assert_eq!(33.33333333333333, metrics.win_rate_percentage);
+        assert_eq!(0.07668608922636731, metrics.profit_factor);
+        assert_eq!(-5417.178000000247, metrics.total_gross_profit);
+        assert_eq!(246.56352000000004, metrics.total_fees_paid);
+    }
+
+    #[test]
+    fn should_initialize_context_when_running_with_cached_candlesticks_correctly() {
+        struct InitTrackerStrategy {
+            initialized_trades: usize,
+        }
+
+        impl CandlestickTradingStrategy for InitTrackerStrategy {
+            fn new() -> Self
+            where
+                Self: Sized
+            {
+                InitTrackerStrategy {
+                    initialized_trades: 0
+                }
+            }
+
+            fn name(&self) -> &'static str {
+                "test"
+            }
+
+            fn days_of_context(&self) -> u32 {
+                1
+            }
+
+
+            fn init_trading_day(&mut self, _: &Asset, context_candles: &[Candlestick]) {
+                for _ in context_candles {
+                    self.initialized_trades += 1;
+                }
+            }
+
+            fn candlestick_generator(&self) -> Box<dyn CandlestickGenerator> {
+                Box::new(TimeCandlestickGenerator::new(TimeUnit::Minutes, 1))
+            }
+
+            fn process_closed_candlestick(&mut self, _: &Candlestick) -> TradeAction {
+                if self.initialized_trades == 547 {
+                    return TradeAction::abort();
+                }
+                TradeAction::do_nothing()
+            }
+        }
+
+        let backtester = candle_backtester(
+            true,
+            TimeCandlestickGenerator::new(TimeUnit::Minutes, 1)
+        );
+        let strategy = InitTrackerStrategy::new();
+        let metrics = backtester.run_candlestick_backtest(
+            Box::new(strategy),
+            1,
+            true,
+        );
+
+        assert_eq!(
+            true,
+            metrics.aborted,
+            "should have sent abort action signaling the the correct amount to candlesticks were initialized as expected"
+        );
+        assert_eq!(1, metrics.total_trading_days);
+        assert_eq!(0, metrics.total_trades);
+        assert_eq!(INITIAL_BALANCE, metrics.final_balance);
+    }
+
+    #[test]
+    fn should_initialize_context_when_running_with_cached_trades_correctly() {
+        struct InitTrackerStrategy {
+            initialized_trades: usize,
+        }
+
+        impl HighResolutionTradingStrategy for InitTrackerStrategy {
+            fn new() -> Self
+            where
+                Self: Sized,
+            {
+                InitTrackerStrategy {
+                    initialized_trades: 0
+                }
+            }
+
+            fn name(&self) -> &str {
+                "init_tracker_strategy"
+            }
+
+            fn days_of_context(&self) -> u32 {
+                1
+            }
+
+            fn init_trading_day(&mut self, _: &Asset, context_trades: &[Trade]) {
+                for _ in context_trades {
+                    self.initialized_trades += 1;
+                }
+            }
+
+            fn process_new_trade(&mut self, _: &Trade) -> TradeAction {
+                if self.initialized_trades == 15379 {
+                    return TradeAction::abort();
+                }
+                TradeAction::do_nothing()
+            }
+        }
+        let backtester = trade_backtester(
+            true,
+            2024_06_13,
+            2024_06_17,
+        );
+        let strategy = InitTrackerStrategy::new();
+        let metrics = backtester.run_high_resolution_backtest(
+            Box::new(strategy),
+            1,
+            true,
+        );
+
+        assert_eq!(
+            true,
+            metrics.aborted,
+            "should have sent abort action signaling the the correct amount to trades were initialized as expected"
+        );
+        assert_eq!(1, metrics.total_trading_days);
+        assert_eq!(0, metrics.total_trades);
+        assert_eq!(INITIAL_BALANCE, metrics.final_balance);
+    }
+
+
+    fn candle_backtester(cache_in_memory: bool, candle_parser: impl CandlestickGenerator + 'static) -> TradingBacktester<'static> {
+        let asset = Asset::get_asset("IND", Market::FUTURES, Exchange::B3).unwrap();
+
+        TradingBacktester::new(
+            &asset,
+            2024_06_13,
+            2024_06_17,
+            cache_in_memory,
+            Some(Box::new(candle_parser)),
+            true,
+        ).unwrap()
+    }
+
+    fn trade_backtester(cache_in_memory: bool, start_date: u32, end_date: u32) -> TradingBacktester<'static> {
+        let asset = Asset::get_asset("IND", Market::FUTURES, Exchange::B3).unwrap();
+        TradingBacktester::new(
+            &asset,
+            start_date,
+            end_date,
+            cache_in_memory,
+            None,
+            true,
+        ).unwrap()
     }
 }

@@ -10,7 +10,7 @@ pub enum OrderAction {
     Abort,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[allow(unused)]
 pub struct TradeAction {
     pub(crate) enter_market_action: Option<OrderAction>,

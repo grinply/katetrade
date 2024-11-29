@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::convert::TryInto;
 use anyhow;
 use anyhow::bail;
@@ -12,7 +12,7 @@ const ONE_HUNDRED_KB_IN_BYTES: u64 = 100_000;
 const TRADES_CSV_HEADER_LINE: &str = "<ticker>,<date>,<time>,<trade_number>,<price>,<qty>,<vol>,<buy_agent>,<sell_agent>,<trade_type>,<aft>";
 
 /// Trade struct to match the Java data sent from market-connector
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 #[allow(unused)]
 pub struct Trade {
     pub trade_number: i32,
@@ -330,12 +330,12 @@ pub fn write_to_binary_file(trades: &[Trade], output_file_path: &str) -> Result<
 }
 
 #[allow(unused)]
-pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, anyhow::Error> {
+pub fn read_trades_from_binary_file(file_path: &str) -> Result<VecDeque<Trade>, anyhow::Error> {
     let file = File::open(file_path)?;
     file.sync_all()?;
     let file_size_bytes = file.metadata()?.len();
     let trade_count = (file_size_bytes / Trade::size_in_bytes() as u64) as usize;
-    let mut trades = Vec::with_capacity(trade_count);
+    let mut trades = VecDeque::with_capacity(trade_count);
 
     let mut file_reader = io::BufReader::new(File::open(file_path)?);
 
@@ -345,7 +345,7 @@ pub fn read_trades_from_binary_file(file_path: &str) -> Result<Vec<Trade>, anyho
             break;
         }
         let trade = Trade::from_bytes(buffer.as_slice())?;
-        trades.push(trade);
+        trades.push_back(trade);
     }
 
     Ok(trades)
@@ -575,7 +575,7 @@ mod tests {
     fn should_load_trades_from_binary_file_correctly() {
         let trades_file_path = "resources/example_binary_trades";
         let trades = read_trades_from_binary_file(trades_file_path);
-        let result = trades.unwrap();
+        let mut result = trades.unwrap();
 
         assert_eq!(
             2,
@@ -584,7 +584,7 @@ mod tests {
             trades_file_path
         );
 
-        let first_trade = result.first().unwrap();
+        let first_trade = result.pop_front().unwrap();
         assert_eq!(78231, first_trade.trade_number);
         assert_eq!(87800.00000020, first_trade.price);
         assert_eq!(20190102, first_trade.date);

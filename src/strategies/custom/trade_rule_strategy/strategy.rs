@@ -7,6 +7,7 @@ use crate::models::candlestick::{Candlestick, CandlestickGenerator, TimeCandlest
 use crate::models::side::Side;
 use crate::strategies::custom::trade_rule_strategy::trade_rule::{TradeRule};
 use crate::strategies::strategy::{CandlestickTradingStrategy};
+use crate::utils::date::is_time_after;
 use crate::utils::math::value_on_range;
 
 /// this is strategy is based upon the papers:
@@ -88,13 +89,15 @@ impl CandlestickTradingStrategy for TradeRuleStrategy {
         let start_long = self.long_rule.evaluate(new_candle);
         let start_short = self.short_rule.evaluate(new_candle);
 
-        if !self.is_short_position_open && !self.is_long_position_open && new_candle.start_time >= 17_25_00 {
+        if !self.is_short_position_open &&
+            !self.is_long_position_open &&
+            is_time_after(new_candle.start_time, 17, 25, 0) {
             TradeAction::do_nothing();
         }
 
         // close long position
         if self.is_long_position_open {
-            return if new_candle.start_time >= 17_25_00 ||
+            return if is_time_after(new_candle.start_time, 17, 25, 0) ||
                 self.take_profit_price <= new_candle.high ||
                 self.stop_loss_price >= new_candle.low {
                 self.is_long_position_open = false;
@@ -106,7 +109,7 @@ impl CandlestickTradingStrategy for TradeRuleStrategy {
 
         // close short position
         if self.is_short_position_open {
-            return if new_candle.start_time >= 17_25_00 ||
+            return if is_time_after(new_candle.start_time, 17, 25, 0)  ||
                 self.take_profit_price >= new_candle.low ||
                 self.stop_loss_price <= new_candle.high {
                 self.is_short_position_open = false;
