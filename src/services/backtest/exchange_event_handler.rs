@@ -90,33 +90,17 @@ impl<'a> ExchangeEventHandler<'a> {
     }
 
     pub(crate) fn process_orders(&mut self, action: TradeAction){
-        if action == TradeAction::abort() {
-            self.removed_for_lack_of_margin = true;
-            return;
-        }
-
-        let mut orders = Vec::with_capacity(3);
-        if let Some(enter_order) = action.enter_market_action {
-            orders.push(enter_order);
-        }
-
-        if let Some(stop_order) = action.stop_loss_action {
-            orders.push(stop_order);
-        }
-
-        if let Some(profit_order) = action.take_profit_action {
-            orders.push(profit_order);
-        }
-
-        for order in orders {
-            let event = match order {
-                OrderAction::MarketLong => TradeEvent::ExecuteOrderLong,
-                OrderAction::MarketShort => TradeEvent::ExecuteOrderShort,
-                OrderAction::LimitLong(price) => TradeEvent::ScheduleOrderLong(price),
-                OrderAction::LimitShort(price) => TradeEvent::ScheduleOrderShort(price),
-                OrderAction::Abort => TradeEvent::Abort
-            };
-            self.process_events(event);
+        for order_option in action.orders {
+            if let Some(order) = order_option {
+                let event = match order {
+                    OrderAction::MarketLong => TradeEvent::ExecuteOrderLong,
+                    OrderAction::MarketShort => TradeEvent::ExecuteOrderShort,
+                    OrderAction::LimitLong(price) => TradeEvent::ScheduleOrderLong(price),
+                    OrderAction::LimitShort(price) => TradeEvent::ScheduleOrderShort(price),
+                    OrderAction::Abort => TradeEvent::Abort
+                };
+                self.process_events(event);
+            }
         }
     }
 

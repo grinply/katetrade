@@ -81,6 +81,7 @@ pub fn get_command_matches() -> ArgMatches {
                 .arg(arg!(-s --strategy <STRATEGY> "Identifier (id) for the strategy you want to executed'").required(true))
                 .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'").required(true))
                 .arg(arg!(-a --account <ACCOUNT> "AccountId used when sending trades in live mode to the market-connector'").required(true))
+                .arg(arg!(-q --qty <QUANTITY> "Amount of shares/contracts that will be requested with the order").required(true))
                 .arg(arg!(-d --data <DATA> "Type of data used as input for the trading strategy")
                     .value_parser([constants::CANDLESTICK, constants::TRADE])
                     .num_args(0..=1)
@@ -452,6 +453,10 @@ fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, 
         .expect("account is required")
     ).unwrap();
 
+    let quantity_to_trade: u32 = sub_matches
+        .get_one::<String>("qty")
+        .expect("quantity is required")
+        .parse().expect("quantity should be a valid integer");
 
     let mut manager = LiveStrategyExecutor::new(
         client,
@@ -464,6 +469,7 @@ fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, 
         account_id.clone(),
         ticker.clone(),
         market,
+        quantity_to_trade
     );
 
     let result = manager.run_strategy(strategy_execution_request);

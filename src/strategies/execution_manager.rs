@@ -35,9 +35,11 @@ pub struct LiveOrderExecutor {
     market: Market,
     pub strategy_id: String,
     account_id: String,
+    contracts_per_order: i32,
 }
 
 pub struct ExecutionRequest {
+    contracts_per_order: u32,
     strategy_input_data: StrategyInputData,
     strategy_name: String,
     account_id: String,
@@ -51,13 +53,16 @@ impl LiveOrderExecutor {
         account_id: String,
         ticker: String,
         strategy_name: String,
-        market: Market) -> LiveOrderExecutor {
+        market: Market,
+        contracts_per_order: u32,
+    ) -> LiveOrderExecutor {
         LiveOrderExecutor {
             client,
             ticker,
             market,
             strategy_id: strategy_name,
             account_id,
+            contracts_per_order: contracts_per_order as i32,
         }
     }
 }
@@ -69,6 +74,7 @@ impl ExecutionRequest {
         account_id: String,
         ticker: String,
         market: Market,
+        contracts_per_order: u32,
     ) -> ExecutionRequest {
         ExecutionRequest {
             strategy_input_data: input_data,
@@ -76,6 +82,7 @@ impl ExecutionRequest {
             account_id,
             ticker,
             market,
+            contracts_per_order,
         }
     }
 }
@@ -110,6 +117,7 @@ impl LiveStrategyExecutor {
             execution_request.ticker.to_string(),
             execution_request.strategy_name.to_string().to_lowercase(),
             execution_request.market.clone(),
+            execution_request.contracts_per_order,
         );
 
         match execution_request.strategy_input_data {
@@ -124,7 +132,6 @@ impl LiveStrategyExecutor {
                 consumer_channel,
             )
         }
-
         Ok(())
     }
 
@@ -222,39 +229,79 @@ impl LiveStrategyExecutor {
 
 impl OrderExecutor for LiveOrderExecutor {
     fn execute_order_action(&self, action: TradeAction) {
-        let actions: [Option<OrderAction>; 3] = [
-            action.enter_market_action,
-            action.stop_loss_action,
-            action.take_profit_action
-        ];
-
-        for order_action in actions {
-            if order_action.is_none() {
-                continue;
+        for order_option in action.orders {
+            if let Some(order) = order_option {
+                self.execute_order(order);
             }
+        }
+    }
+}
 
-            let order_id_result = match order_action {
-                Some(OrderAction::MarketLong) => self.client.
-                    send_market_order(self.ticker.as_str(), self.market, Side::BUY, 1, self.account_id.as_str(), self.strategy_id.as_str()),
-                Some(OrderAction::MarketShort) => self.client.
-                    send_market_order(self.ticker.as_str(), self.market, Side::SELL, 1, self.account_id.as_str(), self.strategy_id.as_str()),
-                Some(OrderAction::LimitLong(price_requested)) => self.client.
-                    send_limit_order(self.ticker.as_str(), self.market, Side::BUY, price_requested, 1, self.account_id.as_str(), self.strategy_id.as_str()),
-                Some(OrderAction::LimitShort(price_requested)) => self.client.
-                    send_limit_order(self.ticker.as_str(), self.market, Side::SELL, price_requested, 1, self.account_id.as_str(), self.strategy_id.as_str()),
-                Some(OrderAction::Abort) => panic!("received an abort command we should understand why"),
-                None => unreachable!()
-            };
 
-            let order_type = order_action.unwrap();
-            if order_id_result.is_ok() {
-                let order_id = order_id_result.unwrap();
-                println!("received order_id {} from executing {:?} of {} contracts for the ticker {}",
-                         order_id, order_type, 1, self.ticker);
-                //TODO: we must validate the order execution and also keep track of the position
-            } else {
-                println!("{}", order_id_result.err().unwrap());
-            }
+impl LiveOrderExecutor {
+    fn execute_order(&self, order: OrderAction) {
+        let order_id_result = match order {
+            OrderAction::MarketLong => {
+                self.client.send_market_order(
+                    self.ticker.as_str(),
+                    self.market,
+                    Side::BUY,
+                    self.contracts_per_order,
+                    self.account_id.as_str(),
+                    self.strategy_id.as_str(),
+                )
+            },
+            OrderAction::MarketShort => {
+                self.client.send_market_order(
+                    self.ticker.as_str(),
+                    self.market,
+                    Side::SELL,
+                    self.contracts_per_order,
+                    self.account_id.as_str(),
+                    self.strategy_id.as_str(),
+                )
+            },
+            OrderAction::LimitLong(price) => {
+                self.client.send_limit_order(
+                    self.ticker.as_str(),
+                    self.market,
+                    Side::BUY,
+                    price,
+                    self.contracts_per_order,
+                    self.account_id.as_str(),
+                    self.strategy_id.as_str(),
+                )
+            },
+            OrderAction::LimitShort(price) => {
+                self.client.send_limit_order(
+                    self.ticker.as_str(),
+                    self.market,
+                    Side::SELL,
+                    price,
+                    self.contracts_per_order,
+                    self.account_id.as_str(),
+                    self.strategy_id.as_str(),
+                )
+            },
+            OrderAction::Abort => {
+                panic!("received an abort command we should understand why")
+            },
+        };
+
+        if order_id_result.is_ok() {
+            let order_id = order_id_result.unwrap();
+            println!("{:?} order sent to execute {} contracts of {}. resulting id {order_id}",
+                     order,
+                     self.contracts_per_order,
+                     self.ticker
+            );
+            //TODO: we must validate the order execution and also keep track of the position
+        } else {
+            println!("error sending {:?} order on ticker {}.  {}",
+                     order,
+                     self.ticker,
+                     order_id_result.err().unwrap()
+            );
         }
     }
 }

@@ -607,7 +607,7 @@ mod classic_reversal_momentum_strategy_tests {
 
         // Run Scenario 1.0
         let scenario1_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario1_short_trade_action.enter_market_action, Some(MarketShort));
+        assert_eq!(scenario1_short_trade_action.orders[0], Some(MarketShort));
         assert_eq!(classic_strategy.order_active, true);
     }
     #[test]
@@ -657,7 +657,7 @@ mod classic_reversal_momentum_strategy_tests {
 
         // Run Scenario 1.1
         let scenario1_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario1_short_trade_action.enter_market_action, None);
+        assert_eq!(scenario1_short_trade_action.orders[0], None);
         assert_eq!(classic_strategy.order_active, false);
     }
 //     #[test]

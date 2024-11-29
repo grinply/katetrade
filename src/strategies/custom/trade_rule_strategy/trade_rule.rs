@@ -81,10 +81,10 @@ impl TradeRule {
             ema: EMA::new(value_on_range((2.0, 100.0), chromosome[11] as f64) as usize).unwrap(),
             sma_min_percentage_diff_from_price: value_on_range((0.0, 1.0), chromosome[12] as f64),
             sma_max_percentage_diff_from_price: value_on_range((0.0, 1.0), chromosome[14] as f64),
-            sma: SMA::new(sma_period),
+            sma: SMA::new(sma_period).unwrap(),
             sma_count,
-            sma_take_profit: SMA::new(value_on_range((1.0, 100.0), chromosome[15] as f64) as usize),
-            sma_stop_loss: SMA::new(value_on_range((1.0, 100.0), chromosome[16] as f64) as usize),
+            sma_take_profit: SMA::new(value_on_range((1.0, 100.0), chromosome[15] as f64) as usize).unwrap(),
+            sma_stop_loss: SMA::new(value_on_range((1.0, 100.0), chromosome[16] as f64) as usize).unwrap(),
             stop_loss_atr_value: 0.0,
             take_profit_atr_value: 0.0,
         }

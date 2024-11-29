@@ -4,3 +4,4 @@ mod exponential_moving_average;
 mod moving_average_convergence_divergence;
 mod true_range;
 mod average_true_range;
+mod slow_stochastic;
