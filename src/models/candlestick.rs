@@ -2,6 +2,7 @@ use chrono::{NaiveTime, Timelike};
 use dyn_clone::DynClone;
 use strum_macros::EnumString;
 use ta::{Close, High, Low, Open, Volume};
+use crate::models::side::Side;
 use crate::models::trade::Trade;
 use crate::utils::date;
 
@@ -129,6 +130,27 @@ impl Candlestick {
             trades: 0,
         }
     }
+
+    pub fn direction(&self) -> CandleDirection {
+        if self.close > self.open {
+            return CandleDirection::LONG;
+        }
+
+        if self.close < self.open {
+            return CandleDirection::SHORT;
+        }
+
+        CandleDirection::UNDEFINED
+    }
+
+}
+
+
+#[derive(Eq, PartialEq)]
+pub enum CandleDirection {
+    LONG,
+    SHORT,
+    UNDEFINED
 }
 
 impl TickCandlestickGenerator {

@@ -5,6 +5,7 @@ use crate::models::asset::Asset;
 use crate::models::trade::Trade;
 use crate::strategies::custom::dummy_strategy::{DummyCandlestickStrategy, DummyHighResolutionStrategy};
 use crate::strategies::custom::reversal_momentum_strategy::{ClassicReversalMomentumCandlestickStrategy, ReversalMomentumCandlestickStrategy};
+use crate::strategies::stormer_scalper_strategy::StormerScalerStrategy;
 
 /// algorithmic trading strategy to operate in the capital markets using raw Trade data
 pub trait HighResolutionTradingStrategy {
@@ -71,6 +72,7 @@ fn list_all_candlestick_strategies() -> Vec<Box<dyn CandlestickTradingStrategy>>
 pub fn list_all_high_resolution_strategies() -> Vec<Box<dyn HighResolutionTradingStrategy>> {
     vec![
         Box::new(DummyHighResolutionStrategy::new()),
+        Box::new(StormerScalerStrategy::new()),
     ]
 }
 
