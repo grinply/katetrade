@@ -5,6 +5,7 @@ use std::thread;
 use std::time::Duration;
 use anyhow::bail;
 use ureq::Error;
+use crate::constants::TRADES_FOLDER_NAME;
 use crate::models::order::Order;
 use crate::models::order_status::OrderStatus;
 
@@ -112,7 +113,7 @@ impl MarketConnectorClient {
     pub fn get_trade_feed_key(&self, ticker: &str, market: Market) -> Result<String, anyhow::Error> {
         let exchange_str = self.exchange.to_string();
         let endpoint_path =
-            format!("api/{exchange_str}/market/feed/trades/{market}/{ticker}/subscribe");
+            format!("api/{exchange_str}/market/feed/{TRADES_FOLDER_NAME}/{market}/{ticker}/subscribe");
         let url = format!("{}/{}", self.host, endpoint_path);
 
         let response = ureq::post(url.as_str()).call()?;

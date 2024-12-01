@@ -8,7 +8,6 @@ use crate::strategies::custom::reversal_momentum_strategy::{ClassicReversalMomen
 use crate::strategies::custom::rsi_strategy::RsiOverboughtOversoldCandlestickStrategy;
 
 /// algorithmic trading strategy to operate in the capital markets using raw Trade data
-#[allow(unused)]
 pub trait HighResolutionTradingStrategy {
     fn new() -> Self
     where
@@ -18,7 +17,7 @@ pub trait HighResolutionTradingStrategy {
 
     /// amount of data ( in days ) that will be provided by init_trading_day
     fn days_of_context(&self) -> u32 {
-        1
+        0
     }
 
     /// starts the trading day providing the context necessary to know what is going to be traded
@@ -31,7 +30,6 @@ pub trait HighResolutionTradingStrategy {
 
 
 /// algorithmic trading strategy to operate in the capital markets using Candlestick aggregate data
-#[allow(unused)]
 pub trait CandlestickTradingStrategy {
     fn new() -> Self
     where
@@ -41,7 +39,7 @@ pub trait CandlestickTradingStrategy {
 
     /// amount of data ( in days ) that will be provided by init_trading_day
     fn days_of_context(&self) -> u32 {
-        1
+        0
     }
 
     /// starts the trading day providing the context necessary to know what is going to be traded

@@ -20,3 +20,5 @@ pub const TRADE: &str = "TRADE";
 pub const B3: &str = "B3";
 pub const OPTIMIZE: &str = "optimize";
 pub const CHROMOSOME_SIZE_TRADE_RULE: usize = 38;
+pub const AWS_REGION: &str = "sa-east-1";
+pub const TRADES_FOLDER_NAME: &str = "trades";

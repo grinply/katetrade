@@ -1,7 +1,8 @@
 use crate::constants::CHROMOSOME_SIZE_TRADE_RULE;
 use crate::models::asset::Asset;
 use crate::models::candlestick::{TimeCandlestickGenerator, TimeUnit};
-use crate::services::backtest::{BacktestMetrics, TradingBacktester};
+use crate::services::backtest::backtest::TradingBacktester;
+use crate::services::backtest::metrics::BacktestMetrics;
 use crate::services::optimization::brkga::FitnessExecutor;
 use crate::strategies::custom::trade_rule_strategy::strategy::TradeRuleStrategy;
 
@@ -21,6 +22,7 @@ pub fn fitness_optimizer_trade_rule_strategy(
         asset_to_trade,
         training_start_date,
         training_end_date,
+        true,
         Some(Box::new(TimeCandlestickGenerator::new(TimeUnit::Minutes, 1))),
         false,
     ).unwrap();
@@ -29,6 +31,7 @@ pub fn fitness_optimizer_trade_rule_strategy(
         asset_to_trade,
         validation_start_date,
         validation_end_date,
+        true,
         Some(Box::new(TimeCandlestickGenerator::new(TimeUnit::Minutes, 1))),
         false,
     ).unwrap();
@@ -56,7 +59,7 @@ impl FitnessExecutor for BacktestOptimizerTradeRule {
     fn calculate_fitness(&self, chromosome: &[f32]) -> f64 {
         let trading_model = Box::new(TradeRuleStrategy::decode(chromosome));
         let quantity_to_trade = trading_model.quantity_to_trade();
-        let metrics = self.training_backtester.run_backtest(
+        let metrics = self.training_backtester.run_candlestick_backtest(
             trading_model,
             quantity_to_trade,
             false,
@@ -68,13 +71,13 @@ impl FitnessExecutor for BacktestOptimizerTradeRule {
     fn chromosome_details(&self, chromosome: &[f32]) -> String {
         let trading_model = Box::new(TradeRuleStrategy::decode(chromosome));
         let quantity_to_trade = trading_model.quantity_to_trade();
-        let training_metrics = self.training_backtester.run_backtest(
+        let training_metrics = self.training_backtester.run_candlestick_backtest(
             trading_model,
             quantity_to_trade,
             true,
         );
 
-        let validation_metrics = self.validation_backtester.run_backtest(
+        let validation_metrics = self.validation_backtester.run_candlestick_backtest(
             Box::new(TradeRuleStrategy::decode(chromosome)),
             quantity_to_trade,
             true,

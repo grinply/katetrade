@@ -52,8 +52,16 @@ pub fn load_configuration() -> KateConfiguration {
 /// default location where all the application configuration and files are stored
 /// by default it uses the `home` directory defined by your system
 /// your can customize the location by defining the environment variable KATE_HOME
+#[cfg(not(test))]
 pub fn kate_configuration_directory() -> PathBuf{
     kate_home_directory().join(CONFIGURATION_FOLDER)
+}
+
+
+/// home directory that will only be return only when running tests
+#[cfg(test)]
+pub fn kate_configuration_directory() -> PathBuf{
+    PathBuf::from("resources")
 }
 
 /// uses either the default home folder or the value defined by the environment variable KATE_HOME

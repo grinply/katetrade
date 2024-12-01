@@ -124,6 +124,7 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use crate::models::side::Side;
+    use crate::utils::date;
 
     #[test]
     fn test_inplace_new_random_bootstrap_sample_deterministic() {
@@ -155,8 +156,8 @@ mod tests {
             avg_entry_price: 1.0,
             avg_exit_price: 1.0,
             date: 17092024,
-            entry_time: 132205,
-            exit_time: 132205,
+            entry_time: date::convert_to_naive_time(132205).unwrap(),
+            exit_time: Some(date::convert_to_naive_time(132205).unwrap()),
             start_datapoint_number: 1,
             end_datapoint_number: 2,
             total_qty: 2,
@@ -176,8 +177,8 @@ mod tests {
             avg_entry_price: 1.0,
             avg_exit_price: 1.0,
             date: 17092024,
-            entry_time: 132205,
-            exit_time: 132205,
+            entry_time: date::convert_to_naive_time(132205).unwrap(),
+            exit_time: Some(date::convert_to_naive_time(132205).unwrap()),
             start_datapoint_number: 1,
             end_datapoint_number: 2,
             total_qty: 2,
@@ -197,8 +198,8 @@ mod tests {
             avg_entry_price: 1.0,
             avg_exit_price: 1.0,
             date: 18092024,
-            entry_time: 132205,
-            exit_time: 132205,
+            entry_time: date::convert_to_naive_time(132205).unwrap(),
+            exit_time: Some(date::convert_to_naive_time(132205).unwrap()),
             start_datapoint_number: 1,
             end_datapoint_number: 2,
             total_qty: 2,
@@ -218,8 +219,8 @@ mod tests {
             avg_entry_price: 1.0,
             avg_exit_price: 1.0,
             date: 19092024,
-            entry_time: 132205,
-            exit_time: 132205,
+            entry_time: date::convert_to_naive_time(132205).unwrap(),
+            exit_time: Some(date::convert_to_naive_time(132205).unwrap()),
             start_datapoint_number: 1,
             end_datapoint_number: 2,
             total_qty: 2,

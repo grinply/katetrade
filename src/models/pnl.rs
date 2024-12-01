@@ -1,3 +1,4 @@
+use chrono::NaiveTime;
 use crate::models::side::Side;
 
 #[allow(unused)]
@@ -7,8 +8,8 @@ pub struct Position {
     pub avg_entry_price: f64,
     pub avg_exit_price: f64,
     pub date: i32,
-    pub entry_time: i32,
-    pub exit_time: i32,
+    pub entry_time: NaiveTime,
+    pub exit_time: Option<NaiveTime>,
     pub start_datapoint_number: i32,
     pub end_datapoint_number: i32,
     pub total_qty: i32,
