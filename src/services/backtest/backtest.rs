@@ -182,7 +182,9 @@ impl<'a> TradingBacktester<'a> {
                 let trade_action = strategy.process_new_trade(trade);
                 let mut execute_order = false;
                 for order_action in trade_action.orders {
-                    if order_action.is_some() {
+                    if let Some(order) = order_action {
+                        println!("[{}/{}] executing {:?} order with price {:.2}",
+                                 trade.date, date::convert_to_naive_time(trade.time).unwrap(), order, trade.price);
                         execute_order = true;
                     }
                 }
@@ -192,10 +194,10 @@ impl<'a> TradingBacktester<'a> {
 
                 if execute_order {
                     println!(
-                        "[{}] balance of {:.2} at time {}",
+                        "[{}/{}] current balance is {:.2}",
                         trade.date,
+                        date::convert_to_naive_time(trade.time).unwrap(),
                         event_handler.current_balance,
-                        date::convert_to_naive_time(trade.time).unwrap()
                     );
                 }
 

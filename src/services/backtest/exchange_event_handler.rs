@@ -277,11 +277,12 @@ impl<'a> ExchangeEventHandler<'a> {
     /// this aims to emulate the real behavior of the market, since between seen the price, executing the order and
     /// the conclusion in the exchange the actual execution price may ( and probably will be ) slight different
     fn calculate_price_with_slippage(&self, price: f64, side: Side) -> f64 {
-        if side == Side::BUY {
-            price + (self.slippage_multiplier * price)
-        } else {
-            price - (self.slippage_multiplier * price)
-        }
+        price
+        // if side == Side::BUY {
+        //     price + (self.slippage_multiplier * price)
+        // } else {
+        //     price - (self.slippage_multiplier * price)
+        // }
     }
 
     fn increase_position(&mut self, current_entry_price: f64, quantity_to_increase: usize) {
@@ -427,7 +428,9 @@ impl<'a> ExchangeEventHandler<'a> {
             Side::BUY => avg_exit_price - avg_entry_price,
             Side::SELL => avg_entry_price - avg_exit_price
         };
-        price_diff * quantity * asset.value_per_point
+        let result = price_diff * quantity * asset.value_per_point;
+        println!("position with {side} | entry: {:.2}, exit: {:.2} | qty: {quantity} | result: {:.2}", avg_entry_price, avg_exit_price, result);
+        result
     }
 
     fn calculate_gross_open_pnl(position: &Position, asset: &Asset, current_price: f64) -> f64 {
