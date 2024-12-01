@@ -270,7 +270,7 @@ impl StormerScalperStrategy {
             self.fast_open_position.as_ref()?.open_quantity,
         ) {
             println!("[{}] compulsory close {:?} scalp order at {} with price {:.2}",
-                     new_trade.date, force_exit, date::convert_to_naive_time(new_trade.time).unwrap(), new_trade.time);
+                     new_trade.date, force_exit, date::convert_to_naive_time(new_trade.time).unwrap(), new_trade.price);
             self.fast_open_position = None;
             return Some(force_exit);
         }
@@ -311,7 +311,7 @@ impl StormerScalperStrategy {
                 quantity_to_close,
             );
             println!("[{}] closing {:?} scalp order at {} with price {:.2}",
-                     new_trade.date, order, date::convert_to_naive_time(new_trade.time).unwrap(), new_trade.time);
+                     new_trade.date, order, date::convert_to_naive_time(new_trade.time).unwrap(), new_trade.price);
             return Some(order);
         }
 
@@ -345,7 +345,7 @@ impl StormerScalperStrategy {
             let close_order = Some(order);
             self.slow_open_position = None;
             println!("[{}] closing {:?} slow order at {} with price {:.2}",
-                     new_trade.date, order, date::convert_to_naive_time(new_trade.time).unwrap(), new_trade.time);
+                     new_trade.date, order, date::convert_to_naive_time(new_trade.time).unwrap(), new_trade.price);
             return close_order;
         }
 
