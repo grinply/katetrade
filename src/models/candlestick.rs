@@ -2,7 +2,6 @@ use chrono::{NaiveTime, Timelike};
 use dyn_clone::DynClone;
 use strum_macros::EnumString;
 use ta::{Close, High, Low, Open, Volume};
-use crate::models::side::Side;
 use crate::models::trade::Trade;
 use crate::utils::date;
 

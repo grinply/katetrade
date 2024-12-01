@@ -38,10 +38,10 @@ impl ReversalMomentumCandlestickStrategy {
         match &self.signal {
             None => TradeAction::do_nothing(),
             Some(Signal::LONG) => {
-                self.check_entry_condition(closed_candle, self.entry_price_range.0, self.entry_price_range.1, TradeAction::send_order(MarketLong))
+                self.check_entry_condition(closed_candle, self.entry_price_range.0, self.entry_price_range.1, TradeAction::send_order(MarketLong(1)))
             }
             Some(Signal::SHORT) => {
-                self.check_entry_condition(closed_candle, self.entry_price_range.1, self.entry_price_range.0, TradeAction::send_order(MarketShort))
+                self.check_entry_condition(closed_candle, self.entry_price_range.1, self.entry_price_range.0, TradeAction::send_order(MarketShort(1)))
             }
         }
     }
@@ -83,11 +83,11 @@ impl ReversalMomentumCandlestickStrategy {
         match self.signal.as_ref().unwrap() {
             Signal::LONG if self.last_buy_price <= closed_candle.close => {
                 self.reset_order_state();
-                TradeAction::send_order(MarketShort)
+                TradeAction::send_order(MarketShort(1))
             }
             Signal::SHORT if self.last_buy_price >= closed_candle.close => {
                 self.reset_order_state();
-                TradeAction::send_order(MarketLong)
+                TradeAction::send_order(MarketLong(1))
             }
             _ => TradeAction::do_nothing(),
         }
@@ -99,16 +99,16 @@ impl ReversalMomentumCandlestickStrategy {
 
         self.reset_order_state();
         match self.signal.as_ref().unwrap() {
-            Signal::LONG => TradeAction::send_order(MarketShort),
-            Signal::SHORT => TradeAction::send_order(MarketLong),
+            Signal::LONG => TradeAction::send_order(MarketShort(1)),
+            Signal::SHORT => TradeAction::send_order(MarketLong(1)),
         }
     }
 
     fn close_order_on_end_of_day(&mut self) -> TradeAction {
         self.reset_order_state();
         match self.signal.as_ref().unwrap() {
-            Signal::LONG => TradeAction::send_order(MarketShort),
-            Signal::SHORT => TradeAction::send_order(MarketLong),
+            Signal::LONG => TradeAction::send_order(MarketShort(1)),
+            Signal::SHORT => TradeAction::send_order(MarketLong(1)),
         }
     }
 }
@@ -193,10 +193,10 @@ impl ClassicReversalMomentumCandlestickStrategy {
         match &self.signal {
             None => TradeAction::do_nothing(),
             Some(Signal::LONG) => {
-                self.check_entry_condition(closed_candle, self.entry_price_range.0, self.entry_price_range.1, TradeAction::send_order(MarketLong))
+                self.check_entry_condition(closed_candle, self.entry_price_range.0, self.entry_price_range.1, TradeAction::send_order(MarketLong(1)))
             }
             Some(Signal::SHORT) => {
-                self.check_entry_condition(closed_candle, self.entry_price_range.1, self.entry_price_range.0, TradeAction::send_order(MarketShort))
+                self.check_entry_condition(closed_candle, self.entry_price_range.1, self.entry_price_range.0, TradeAction::send_order(MarketShort(1)))
             }
         }
     }
@@ -238,11 +238,11 @@ impl ClassicReversalMomentumCandlestickStrategy {
         match self.signal.as_ref().unwrap() {
             Signal::LONG if self.last_buy_price <= closed_candle.close => {
                 self.reset_order_state();
-                TradeAction::send_order(MarketShort)
+                TradeAction::send_order(MarketShort(1))
             }
             Signal::SHORT if self.last_buy_price >= closed_candle.close => {
                 self.reset_order_state();
-                TradeAction::send_order(MarketLong)
+                TradeAction::send_order(MarketLong(1))
             }
             _ => TradeAction::do_nothing(),
         }
@@ -254,16 +254,16 @@ impl ClassicReversalMomentumCandlestickStrategy {
 
         self.reset_order_state();
         match self.signal.as_ref().unwrap() {
-            Signal::LONG => TradeAction::send_order(MarketShort),
-            Signal::SHORT => TradeAction::send_order(MarketLong),
+            Signal::LONG => TradeAction::send_order(MarketShort(1)),
+            Signal::SHORT => TradeAction::send_order(MarketLong(1)),
         }
     }
 
     fn close_order_on_end_of_day(&mut self) -> TradeAction {
         self.reset_order_state();
         match self.signal.as_ref().unwrap() {
-            Signal::LONG => TradeAction::send_order(MarketShort),
-            Signal::SHORT => TradeAction::send_order(MarketLong),
+            Signal::LONG => TradeAction::send_order(MarketShort(1)),
+            Signal::SHORT => TradeAction::send_order(MarketLong(1)),
         }
     }
 }
@@ -607,7 +607,7 @@ mod classic_reversal_momentum_strategy_tests {
 
         // Run Scenario 1.0
         let scenario1_short_trade_action = classic_strategy.process_closed_candlestick(&current_candlestick);
-        assert_eq!(scenario1_short_trade_action.orders[0], Some(MarketShort));
+        assert_eq!(scenario1_short_trade_action.orders[0], Some(MarketShort(1)));
         assert_eq!(classic_strategy.order_active, true);
     }
     #[test]

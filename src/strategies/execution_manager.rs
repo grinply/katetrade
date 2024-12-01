@@ -241,44 +241,44 @@ impl OrderExecutor for LiveOrderExecutor {
 impl LiveOrderExecutor {
     fn execute_order(&self, order: OrderAction) {
         let order_id_result = match order {
-            OrderAction::MarketLong => {
+            OrderAction::MarketLong(qty) => {
                 self.client.send_market_order(
                     self.ticker.as_str(),
                     self.market,
                     Side::BUY,
-                    self.contracts_per_order,
+                    qty,
                     self.account_id.as_str(),
                     self.strategy_id.as_str(),
                 )
             },
-            OrderAction::MarketShort => {
+            OrderAction::MarketShort(qty) => {
                 self.client.send_market_order(
                     self.ticker.as_str(),
                     self.market,
                     Side::SELL,
-                    self.contracts_per_order,
+                    qty,
                     self.account_id.as_str(),
                     self.strategy_id.as_str(),
                 )
             },
-            OrderAction::LimitLong(price) => {
+            OrderAction::LimitLong(price, qty) => {
                 self.client.send_limit_order(
                     self.ticker.as_str(),
                     self.market,
                     Side::BUY,
                     price,
-                    self.contracts_per_order,
+                    qty,
                     self.account_id.as_str(),
                     self.strategy_id.as_str(),
                 )
             },
-            OrderAction::LimitShort(price) => {
+            OrderAction::LimitShort(price, qty) => {
                 self.client.send_limit_order(
                     self.ticker.as_str(),
                     self.market,
                     Side::SELL,
                     price,
-                    self.contracts_per_order,
+                    qty,
                     self.account_id.as_str(),
                     self.strategy_id.as_str(),
                 )

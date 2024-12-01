@@ -493,7 +493,7 @@ fn process_order_send_command(sub_matches: &ArgMatches, client: MarketConnectorC
         .get_one::<String>("ticker")
         .expect("ticker type is required");
 
-    let quantity: i32 = sub_matches
+    let quantity: usize = sub_matches
         .get_one::<String>("qty")
         .expect("quantity is required").parse().expect("quantity should be a valid integer");
 

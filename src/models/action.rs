@@ -1,12 +1,13 @@
-use crate::models::action::OrderAction::Abort;
+use crate::models::action::OrderAction::{Abort, MarketLong, MarketShort};
+use crate::models::side::Side;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[allow(unused)]
 pub enum OrderAction {
-    MarketLong,     // will execute immediately a long position at the market
-    MarketShort,    // will execute immediately a short position at the market
-    LimitLong(f64), // will send a long limit order to the exchange order book that MAY ( or may not)  be triggered later with the given price
-    LimitShort(f64), // will send a short limit order to the exchange order book that MAY ( or may not)  be triggered later with the given price
+    MarketLong(usize),     // will execute immediately a long position at the market
+    MarketShort(usize),    // will execute immediately a short position at the market
+    LimitLong(f64, usize), // will send a long limit order to the exchange order book that MAY ( or may not)  be triggered later with the given price
+    LimitShort(f64, usize), // will send a short limit order to the exchange order book that MAY ( or may not)  be triggered later with the given price
     Abort,
 }
 
@@ -14,6 +15,13 @@ pub enum OrderAction {
 #[allow(unused)]
 pub struct TradeAction {
     pub orders: [Option<OrderAction>; 5],
+}
+
+pub fn market_order_from_side(side: Side, qty: usize) -> OrderAction {
+    match side {
+        Side::BUY => MarketLong(qty),
+        Side::SELL => MarketShort(qty)
+    }
 }
 
 impl TradeAction {

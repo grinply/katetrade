@@ -1,6 +1,13 @@
 use chrono::{NaiveDate, NaiveTime, Timelike};
 use crate::models::candlestick::TimeUnit;
 
+
+#[allow(unused)]
+/// Convert a [NaiveTime] into a [i32] with the format hhMMss
+pub fn convert_to_formatted_time(naive_time: NaiveTime) -> i32 {
+    ((naive_time.hour() * 10000) + (100 * naive_time.minute()) + naive_time.second()) as i32
+}
+
 /// Convert a number in the format yyyyMMdd into a NaiveDate
 pub fn convert_to_naive_date(date: u32) -> Result<NaiveDate, anyhow::Error> {
     if date < 1000_00_00 || date > 9999_99_99 {
@@ -27,9 +34,19 @@ pub fn convert_to_naive_date(date: u32) -> Result<NaiveDate, anyhow::Error> {
 /// convert the time to the format hhMMss
 /// any additional precision will be removed.
 ///
-/// invalid values will be colapsed to the nearest valid value when possible:
+/// invalid values will be collapsed to the nearest valid value when possible:
 /// for example minutes or seconds values of 60 will be changed to 00
 pub fn format_time(time: i32) -> Option<i32> {
+    if time > 99_99_99_999 {
+        return None;
+    }
+
+    let time = if time < 99_99_99 {
+        time
+    }else{
+        time / 1000
+    };
+
     let hours = time / 10000;
     let mut minutes = (time / 100) - (hours * 100);
     let mut seconds = time % 100;
@@ -56,8 +73,8 @@ pub fn convert_to_naive_time(time: i32) -> Option<NaiveTime> {
 
     let time = if time > 99_99_99 {
         milli = (time % 1000) as u32;
-        time/ 1000
-    }else{
+        time / 1000
+    } else {
         time
     };
 
@@ -69,16 +86,102 @@ pub fn convert_to_naive_time(time: i32) -> Option<NaiveTime> {
     NaiveTime::from_hms_milli_opt(hours as u32, minutes as u32, seconds as u32, milli)
 }
 
+
+/// Decreases a given amount of time from the current_time
+///
+/// **important:** when using seconds or minutes as unit you cannot decrease more than 60 units.
+/// when using hours you cannot decrease more than 24 hours. **If you do the code will panic !!**
+///
+/// for example: 18:00:00 decreased of 5 minutes will result in 17:55:00
+pub fn decrease_time(current_time: &NaiveTime, amount_to_decrease: u8, unit: TimeUnit) -> NaiveTime {
+    match unit {
+        TimeUnit::Seconds => {
+            assert!(amount_to_decrease <= 60, "the maximum amount of seconds allowed to be decreased is 60");
+            let offset_seconds = current_time.second() as i32 - amount_to_decrease as i32;
+            if offset_seconds < 0 {
+                let mut minutes = current_time.minute();
+                let mut hours = current_time.hour();
+
+                if minutes == 0 {
+                    minutes = 59;
+
+                    if hours == 0 {
+                        hours = 23;
+                    }else{
+                        hours = hours -1;
+                    }
+                }else{
+                    minutes = minutes -1;
+                }
+
+                NaiveTime::from_hms_opt(hours, minutes, 60 - offset_seconds.abs() as u32)
+                    .unwrap_or_else(|| panic!("should be able to decrease {amount_to_decrease} {:?} from {current_time}", unit))
+            } else {
+                NaiveTime::from_hms_opt(current_time.hour(), current_time.minute(), offset_seconds as u32)
+                    .unwrap_or_else(|| panic!("should be able to decrease {amount_to_decrease} {:?} from {current_time}", unit))
+            }
+        }
+        TimeUnit::Minutes => {
+            assert!(amount_to_decrease <= 60, "the maximum amount of minutes allowed to be decreased is 60");
+            let offset_minutes = current_time.minute() as i32 - amount_to_decrease as i32;
+            if offset_minutes < 0 {
+                let mut hours = current_time.hour();
+
+                if hours == 0 {
+                   hours = 23;
+                }else{
+                    hours = hours - 1;
+                }
+
+                NaiveTime::from_hms_opt(hours, 60 - offset_minutes.abs() as u32, current_time.second())
+                    .unwrap_or_else(|| panic!("should be able to decrease {amount_to_decrease} {:?} from {current_time}", unit))
+            } else {
+                NaiveTime::from_hms_opt(current_time.hour(), offset_minutes as u32, current_time.second())
+                    .unwrap_or_else(|| panic!("should be able to decrease {amount_to_decrease} {:?} from {current_time}", unit))
+            }
+        }
+        TimeUnit::Hours => {
+            assert!(amount_to_decrease <= 24, "the maximum amount of hours allowed to be decreased is 24");
+            let hours_offset = current_time.hour() as i32 - amount_to_decrease as i32;
+            if hours_offset < 0 {
+                NaiveTime::from_hms_opt(24 - hours_offset.abs() as u32, current_time.minute(), current_time.second())
+                    .unwrap_or_else(|| panic!("should be able to decrease {amount_to_decrease} {:?} from {current_time}", unit))
+            } else {
+                NaiveTime::from_hms_opt(hours_offset as u32, current_time.minute(), current_time.second())
+                    .unwrap_or_else(|| panic!("should be able to decrease {amount_to_decrease} {:?} from {current_time}", unit))
+            }
+        }
+    }
+}
+
+/// Increases a given amount of time from the current_time
+///
+/// **important:** when using seconds or minutes as unit you cannot increase more than 60 units.
+/// when using hours you cannot increase more than 24 hours. **If you do the code will panic !!**
+///
+/// for example: 17:55:00 decreased of 5 minutes will result in 18:00:00
 pub fn increase_time(current_time: &NaiveTime, amount_to_increase: u8, unit: TimeUnit) -> NaiveTime {
     match unit {
         TimeUnit::Seconds => {
             let second_sum = current_time.second() + amount_to_increase as u32;
             if second_sum >= 60 {
-                NaiveTime::from_hms_opt(current_time.hour(), current_time.minute() + second_sum / 60, second_sum % 60)
-                    .unwrap()
+                let mut hours = current_time.hour();
+                let mut actual_minutes = current_time.minute() + second_sum / 60;
+
+                if actual_minutes >= 60 {
+                    actual_minutes = 0;
+                    hours+=1;
+                }
+
+                if hours >= 24 {
+                    hours = 0;
+                }
+
+                NaiveTime::from_hms_opt(hours, actual_minutes, second_sum % 60)
+                    .unwrap_or_else(|| panic!("should be able to increment {amount_to_increase} {:?} from {current_time}", unit))
             } else {
                 NaiveTime::from_hms_opt(current_time.hour(), current_time.minute(), second_sum)
-                    .unwrap()
+                    .unwrap_or_else(|| panic!("should be able to increment {amount_to_increase} {:?} from {current_time}", unit))
             }
         }
         TimeUnit::Minutes => {
@@ -89,20 +192,20 @@ pub fn increase_time(current_time: &NaiveTime, amount_to_increase: u8, unit: Tim
                     hour = hour % 24;
                 }
                 NaiveTime::from_hms_opt(hour, minute_sum % 60, current_time.second())
-                    .unwrap()
+                    .unwrap_or_else(|| panic!("should be able to increment {amount_to_increase} {:?} from {current_time}", unit))
             } else {
                 NaiveTime::from_hms_opt(current_time.hour(), minute_sum, current_time.second())
-                    .unwrap()
+                    .unwrap_or_else(|| panic!("should be able to increment {amount_to_increase} {:?} from {current_time}", unit))
             }
         }
         TimeUnit::Hours => {
             let hour_sum = current_time.hour() + amount_to_increase as u32;
             if hour_sum >= 24 {
                 NaiveTime::from_hms_opt(hour_sum % 24, current_time.minute(), current_time.second())
-                    .unwrap()
+                    .unwrap_or_else(|| panic!("should be able to increment {amount_to_increase} {:?} from {current_time}", unit))
             } else {
                 NaiveTime::from_hms_opt(hour_sum, current_time.minute(), current_time.second())
-                    .unwrap()
+                    .unwrap_or_else(|| panic!("should be able to increment {amount_to_increase} {:?} from {current_time}", unit))
             }
         }
     }
@@ -121,6 +224,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn should_decrease_time_correctly() {
+        let tests: Vec<(i32, u8, TimeUnit, i32)> = vec![
+            // edge cases the time will affect the next unit
+            (18_57_00, 60, Minutes, 17_57_00),
+            (18_50_54, 60, Seconds, 18_49_54),
+
+            (18_00_54, 60, Seconds, 17_59_54),
+            (00_57_00, 60, Minutes, 23_57_00),
+            (00_56_00, 13, Hours, 11_56_00),
+
+            (18_00_00, 5, Minutes, 17_55_00),
+            (18_00_00, 10, Minutes, 17_50_00),
+            (18_00_00, 15, Minutes, 17_45_00),
+
+            (09_10_00, 15, Seconds, 09_09_45),
+            (09_10_15, 2, Seconds, 09_10_13),
+            (09_10_15, 30, Minutes, 08_40_15),
+            (09_40_15, 10, Hours, 23_40_15),
+
+            // simple candlestick cycle of 15 seconds
+            (11_00_15, 15, Seconds, 11_00_00),
+            (11_00_30, 15, Seconds, 11_00_15),
+            (11_00_45, 15, Seconds, 11_00_30),
+            (11_01_00, 15, Seconds, 11_00_45),
+
+            // simple candlestick cycle of 5 minutes
+            (11_05_00, 5, Minutes, 11_00_00),
+            (11_10_00, 5, Minutes, 11_05_00),
+            (11_15_00, 5, Minutes, 11_10_00),
+            (11_20_00, 5, Minutes, 11_15_00),
+            (11_25_00, 5, Minutes, 11_20_00),
+            (11_30_00, 5, Minutes, 11_25_00),
+            (11_35_00, 5, Minutes, 11_30_00),
+            (11_40_00, 5, Minutes, 11_35_00),
+            (11_45_00, 5, Minutes, 11_40_00),
+            (11_50_00, 5, Minutes, 11_45_00),
+            (11_55_00, 5, Minutes, 11_50_00),
+            (12_00_00, 5, Minutes, 11_55_00),
+        ];
+
+        for (input_time, period, time_unit, expected_time) in tests {
+            let input_value = convert_to_naive_time(input_time).unwrap();
+            let expected_value = convert_to_naive_time(expected_time).unwrap();
+            let result = decrease_time(&input_value, period, time_unit);
+            assert_eq!(expected_value, result,
+                       "given the decrement of {} {:?} in the time {}, the expected value is {}, but the result was {}",
+                       period, time_unit, input_value, expected_value, result);
+        }
+    }
+
+    #[test]
     fn should_increase_time_correctly() {
         let tests: Vec<(i32, u8, TimeUnit, i32)> = vec![
             (09_10_00, 15, Seconds, 09_10_15),
@@ -136,6 +290,8 @@ mod tests {
             // sum will trigger more than one increment in the next unit of time
             (09_40_15, 121, Seconds, 09_42_16),
             (09_40_15, 121, Minutes, 11_41_15),
+            (09_59_45, 15, Seconds, 10_00_00),
+
             (09_40_15, 30, Hours, 15_40_15),
 
             // simple candlestick cycle of 15 seconds

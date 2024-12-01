@@ -14,6 +14,7 @@ use crate::utils::{date};
 use simple_bar::ProgressBar;
 use rayon::prelude::*;
 use crate::constants::{AWS_REGION, TRADES_FOLDER_NAME};
+use crate::models::action::{OrderAction, TradeAction};
 use crate::models::trade;
 use crate::models::trade::{Trade, TradeFile};
 use crate::services::backtest::exchange_event_handler::{ExchangeEventHandler, MINIMUM_BALANCE};
@@ -179,8 +180,25 @@ impl<'a> TradingBacktester<'a> {
                 }
 
                 let trade_action = strategy.process_new_trade(trade);
+                let mut execute_order = false;
+                for order_action in trade_action.orders {
+                    if order_action.is_some() {
+                        execute_order = true;
+                    }
+                }
+
                 event_handler.process_trade(trade);
                 event_handler.process_orders(trade_action);
+
+                if execute_order {
+                    println!(
+                        "[{}] balance of {:.2} at time {}",
+                        trade.date,
+                        event_handler.current_balance,
+                        date::convert_to_naive_time(trade.time).unwrap()
+                    );
+                }
+
                 if self.should_abort_execution(&mut event_handler) {
                     break;
                 }
@@ -717,7 +735,7 @@ mod tests {
         impl CandlestickTradingStrategy for InitTrackerStrategy {
             fn new() -> Self
             where
-                Self: Sized
+                Self: Sized,
             {
                 InitTrackerStrategy {
                     initialized_trades: 0
@@ -753,7 +771,7 @@ mod tests {
 
         let backtester = candle_backtester(
             true,
-            TimeCandlestickGenerator::new(TimeUnit::Minutes, 1)
+            TimeCandlestickGenerator::new(TimeUnit::Minutes, 1),
         );
         let strategy = InitTrackerStrategy::new();
         let metrics = backtester.run_candlestick_backtest(
