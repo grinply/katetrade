@@ -703,19 +703,11 @@ mod tests {
             true,
         );
 
-        // assert_eq!(6, metrics.total_trades);
-        // assert_eq!(4316.072319999753, metrics.final_balance);
-        // assert_eq!(2, metrics.max_win_streak);
-        // assert_eq!(4, metrics.max_lose_streak);
-        // assert_eq!(2, metrics.total_wins);
-        // assert_eq!(4, metrics.total_loses);
-        // assert_eq!(-1533.5362800000144, metrics.avg_losing_trade);
-        // assert_eq!(235.201799999905, metrics.avg_winning_trade);
-        // assert_eq!(58.58556512568598, metrics.max_draw_down_percentage);
-        // assert_eq!(33.33333333333333, metrics.win_rate_percentage);
-        // assert_eq!(0.07668608922636731, metrics.profit_factor);
-        // assert_eq!(-5417.178000000247, metrics.total_gross_profit);
-        // assert_eq!(246.56352000000004, metrics.total_fees_paid);
+        assert_eq!(249, metrics.total_wins);
+        assert_eq!(238, metrics.total_loses);
+        assert_eq!(487, metrics.total_trades);
+        assert_eq!(7, metrics.max_win_streak);
+        assert_eq!(10, metrics.max_lose_streak);
     }
 
     #[test]

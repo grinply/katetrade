@@ -11,6 +11,7 @@ use crate::services::trailing_stop::TrailingStop;
 use crate::strategies::strategy::HighResolutionTradingStrategy;
 use crate::utils::date;
 
+const CANDLESTICK_PERIOD: u64 = 10;
 const BOLLINGER_PERIOD: usize = 21;
 const BOLLINGER_MULTIPLIER: f64 = 0.38;
 const SLOW_STOCHASTIC_PERIOD: usize = 8;
@@ -58,7 +59,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             min_fast_candles: 21,
             fast_candle_bollinger_bands: BollingerBands::new(BOLLINGER_PERIOD, BOLLINGER_MULTIPLIER).unwrap(),
             fast_candle_stochastic: SlowStochastic::new(SLOW_STOCHASTIC_PERIOD, SLOW_STOCHASTIC_SMA_PERIOD).unwrap(),
-            fast_candle_parser: TimeCandlestickGenerator::new(TimeUnit::Seconds, 15),
+            fast_candle_parser: TimeCandlestickGenerator::new(TimeUnit::Seconds, CANDLESTICK_PERIOD),
             last_three_fast_closed_candles: [Candlestick::default(); 3],
             fast_open_position: None,
         }
