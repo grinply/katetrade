@@ -5,13 +5,14 @@ use crate::models::market::Market;
 use crate::models::pnl::Position;
 use crate::models::side::Side;
 use crate::models::trade::Trade;
+use crate::services::backtest::backtest::DEBUG_BACKTEST_LOG;
 use crate::services::backtest::data_point::DataPoint;
 
 #[allow(unused)]
 use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
 use crate::utils::date;
 
-pub const INITIAL_BALANCE: f64 = 10_000.0;
+pub const INITIAL_BALANCE: f64 = 600_000.0;
 pub const MINIMUM_BALANCE: f64 = 800.0;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
@@ -71,7 +72,6 @@ impl<'a> ExchangeEventHandler<'a> {
             total_candlesticks_processed: 0,
             event_index: 0,
             positions: vec![],
-            // scheduled_orders: vec![],
             total_contracts_executed_current_month: 0,
             current_month_year: -1,
             fixed_traded_qty,
@@ -89,7 +89,7 @@ impl<'a> ExchangeEventHandler<'a> {
         self.process_events(event);
     }
 
-    pub(crate) fn process_orders(&mut self, action: TradeAction){
+    pub(crate) fn process_orders(&mut self, action: TradeAction) {
         for order_option in action.orders {
             if let Some(order) = order_option {
                 let event = match order {
@@ -125,7 +125,7 @@ impl<'a> ExchangeEventHandler<'a> {
             TradeEvent::ZeroPosition => {
                 self.zero_current_position();
             }
-            TradeEvent::ScheduleOrderLong(_,_) | TradeEvent::ScheduleOrderShort(_,_) => {
+            TradeEvent::ScheduleOrderLong(_, _) | TradeEvent::ScheduleOrderShort(_, _) => {
                 panic!("operation not allowed");
             }
             TradeEvent::Abort => {
@@ -142,7 +142,7 @@ impl<'a> ExchangeEventHandler<'a> {
         self.track_mark_to_market(new_datapoint);
     }
 
-    fn update_internal_candlestick_with_trade(&mut self, new_trade: &Trade){
+    fn update_internal_candlestick_with_trade(&mut self, new_trade: &Trade) {
         self.last_datapoint = self.current_datapoint;
         self.current_datapoint.date = new_trade.date;
         self.current_datapoint.start_time = date::convert_to_naive_time(new_trade.time).unwrap();
@@ -154,7 +154,7 @@ impl<'a> ExchangeEventHandler<'a> {
         self.current_datapoint.volume = new_trade.volume;
     }
 
-    fn update_internal_candlesticks(&mut self, new_candle: &Candlestick){
+    fn update_internal_candlesticks(&mut self, new_candle: &Candlestick) {
         self.last_datapoint = self.current_datapoint;
         self.current_datapoint.date = new_candle.date;
         self.current_datapoint.start_time = new_candle.start_time;
@@ -207,7 +207,7 @@ impl<'a> ExchangeEventHandler<'a> {
         // if the initial_qty_per_order is 5 contracts and given the initial balance of 10.000
         // if on the next trading day the current balance is 20.000 the traded qty will be 10 contracts
         // keeping the proportion as the balance changes
-        if  datapoint.date() != self.last_datapoint.date() {
+        if datapoint.date() != self.last_datapoint.date() {
             self.base_qty_per_order = (self.current_balance as u32 * self.initial_qty_per_order) / INITIAL_BALANCE as u32;
 
             // this is the minimum quantity to trade we will never trade less than this amount
@@ -230,15 +230,26 @@ impl<'a> ExchangeEventHandler<'a> {
         let position = self.current_position.as_mut().unwrap();
 
         // use high or low instead of close
-        let gross_pnl = Self::calculate_gross_open_pnl(position, self.asset, datapoint.current_price());
+        let gross_pnl = Self::calculate_gross_pnl(
+            self.asset,
+            position.side,
+            position.avg_entry_price,
+            datapoint.current_price(),
+            position.open_qty as f64,
+        );
+
 
         if datapoint.date() != self.last_datapoint.date() ||
             (gross_pnl < 0.0 && -1.0 * gross_pnl >= MINIMUM_BALANCE) {
+            if DEBUG_BACKTEST_LOG {
+                println!("[{}/{:?}] position with {} | entry: {:.2}, exit: {:.2} | qty: {} | result: {:.2}",
+                         datapoint.date(), datapoint.time(), position.side, position.avg_entry_price, datapoint.current_price(), position.open_qty, gross_pnl);
+            }
             let open_qty = position.open_qty;
             let last_datapoint = self.last_datapoint;
             position.total_paid_in_fees += COMPULSORY_CLOSE_FEE;
             self.current_balance -= COMPULSORY_CLOSE_FEE;
-            self.decrease_position(last_datapoint.current_price(), last_datapoint, open_qty as usize);
+            self.decrease_position(last_datapoint.current_price(), &last_datapoint, open_qty as usize);
         }
     }
 
@@ -258,12 +269,12 @@ impl<'a> ExchangeEventHandler<'a> {
         let datapoint = self.current_datapoint;
         let entry_price = self.calculate_price_with_slippage(datapoint.current_price(), direction.clone());
         match &mut self.current_position {
-            None => self.open_new_position(entry_price, direction, datapoint, quantity),
+            None => self.open_new_position(entry_price, direction, &datapoint, quantity),
             Some(position) => {
                 if position.side == direction {
                     self.increase_position(entry_price, quantity);
                 } else {
-                    self.decrease_position(entry_price, datapoint.to_owned(), quantity);
+                    self.decrease_position(entry_price, &datapoint.to_owned(), quantity);
                 }
             }
         }
@@ -276,13 +287,8 @@ impl<'a> ExchangeEventHandler<'a> {
     /// slippage is a multiplier that makes the price bit worse when executing an order in the selected direction
     /// this aims to emulate the real behavior of the market, since between seen the price, executing the order and
     /// the conclusion in the exchange the actual execution price may ( and probably will be ) slight different
-    fn calculate_price_with_slippage(&self, price: f64, side: Side) -> f64 {
+    fn calculate_price_with_slippage(&self, price: f64, _: Side) -> f64 {
         price
-        // if side == Side::BUY {
-        //     price + (self.slippage_multiplier * price)
-        // } else {
-        //     price - (self.slippage_multiplier * price)
-        // }
     }
 
     fn increase_position(&mut self, current_entry_price: f64, quantity_to_increase: usize) {
@@ -294,12 +300,27 @@ impl<'a> ExchangeEventHandler<'a> {
 
         let current_fee = &self.calculate_fees(quantity_to_increase as u64);
         let position = self.current_position.as_mut().unwrap();
-        let new_total = position.total_qty + quantity_to_increase as i32;
 
-        position.avg_entry_price = ((position.avg_entry_price * position.total_qty as f64) + (current_entry_price * self.base_qty_per_order as f64)) / new_total as f64;
+
+        let last_entry = position.avg_entry_price;
+        let new_total_open_qty = position.open_qty + quantity_to_increase as i32;
+
+        position.avg_entry_price = ((position.avg_entry_price * position.open_qty as f64) + (current_entry_price * quantity_to_increase as f64)) / new_total_open_qty as f64;
+
+        if DEBUG_BACKTEST_LOG {
+            println!(
+                "[{}/{:?}] position of {} contracts increased more {} contracts with price {current_entry_price}, entry updated from {last_entry} to {}",
+                self.last_datapoint.date,
+                self.last_datapoint.close_time.unwrap(),
+                position.open_qty,
+                quantity_to_increase,
+                position.avg_entry_price
+            );
+        }
+
+
         assert!(position.avg_entry_price > 0.0);
-
-        position.total_qty = new_total;
+        position.total_qty = position.total_qty + quantity_to_increase as i32;
         position.open_qty += quantity_to_increase as i32;
 
         position.quantity_of_contracts += self.base_qty_per_order;
@@ -314,41 +335,66 @@ impl<'a> ExchangeEventHandler<'a> {
         self.asset.margin_per_contract * (self.base_qty_per_order as f64) < self.current_balance
     }
 
-    fn decrease_position(&mut self, current_exit_price: f64, datapoint: impl DataPoint, quantity_to_decrease: usize) {
+    fn decrease_position(&mut self, current_exit_price: f64, datapoint: &impl DataPoint, quantity_to_decrease: usize) {
         if !self.has_margin_execute_order() {
             self.removed_for_lack_of_margin = true;
             return;
         }
+
         assert!(self.current_position.is_some(), "sanity check, should not try to decrease a position that doesnt exit");
+        assert!(self.current_position.as_ref().unwrap().open_qty > 0, "cant decrease a position that doesnt have any contract/shares left open");
+
+        let mut open_inverse_position_qty = 0;
+
+        let quantity_to_decrease = if quantity_to_decrease as i32 > self.current_position.as_ref().unwrap().open_qty {
+            open_inverse_position_qty = quantity_to_decrease - self.current_position.as_ref().unwrap().open_qty as usize;
+            self.current_position.as_ref().unwrap().open_qty
+        }else{
+            quantity_to_decrease as i32
+        };
+
         let current_fee = self.calculate_fees(quantity_to_decrease as u64);
-        let position = self.current_position.as_mut().unwrap();
-        assert!(position.open_qty > 0, "cant decrease a position that doesnt have any contract/shares left open");
-        assert!(quantity_to_decrease as i32 <= position.open_qty, "can´t decrease a position more contracts/shares than it has");
+        let executed_qty = self.current_position.as_ref().unwrap().total_qty - self.current_position.as_ref().unwrap().open_qty;
+        self.current_position.as_mut().unwrap().avg_exit_price = ((self.current_position.as_ref().unwrap().avg_exit_price * executed_qty as f64) + (current_exit_price * quantity_to_decrease as f64)) / (executed_qty + quantity_to_decrease as i32) as f64;
 
-        let executed_qty = position.total_qty - position.open_qty;
-        position.avg_exit_price = ((position.avg_exit_price * executed_qty as f64) + (current_exit_price * quantity_to_decrease as f64)) / (executed_qty + quantity_to_decrease as i32) as f64;
-
-        assert!(position.avg_exit_price > 0.0);
-        position.open_qty -= quantity_to_decrease as i32;
-        position.quantity_of_contracts += quantity_to_decrease as u32;
-        position.total_paid_in_fees += current_fee;
+        assert!(self.current_position.as_ref().unwrap().avg_exit_price > 0.0);
+        self.current_position.as_mut().unwrap().open_qty -= quantity_to_decrease as i32;
+        self.current_position.as_mut().unwrap().quantity_of_contracts += quantity_to_decrease as u32;
+        self.current_position.as_mut().unwrap().total_paid_in_fees += current_fee;
         self.total_contracts_executed_current_month += quantity_to_decrease as u64;
 
-        let pnl = Self::calculate_gross_realized_pnl(
+        let pnl = Self::calculate_gross_pnl(
             self.asset,
-            position.side,
-            position.avg_entry_price,
+            self.current_position.as_ref().unwrap().side,
+            self.current_position.as_ref().unwrap().avg_entry_price,
             current_exit_price,
-            quantity_to_decrease as f64
+            quantity_to_decrease as f64,
         );
-        position.gross_pnl += pnl;
+
+        if DEBUG_BACKTEST_LOG {
+            println!("[{}/{:?}] position with {} | entry: {:.2}, exit: {:.2} | qty: {quantity_to_decrease} | result: {:.2}",
+                     datapoint.date(), datapoint.time(), self.current_position.as_ref().unwrap().side, self.current_position.as_ref().unwrap().avg_entry_price, current_exit_price, pnl);
+        }
+        self.current_position.as_mut().unwrap().gross_pnl += pnl;
         self.current_balance += pnl;
         self.current_balance -= current_fee;
 
-        assert!(position.total_qty >= position.open_qty, "open quantity quantity cannot be greater than total quantity");
-        if position.open_qty == 0 {
+        assert!(self.current_position.as_ref().unwrap().total_qty >= self.current_position.as_ref().unwrap().open_qty, "open quantity quantity cannot be greater than total quantity");
+
+        let side = self.current_position.as_ref().unwrap().side.opposite_side();
+        if self.current_position.as_ref().unwrap().open_qty == 0 {
             self.close_position(datapoint);
         }
+
+        if open_inverse_position_qty > 0 {
+            self.open_new_position(
+                datapoint.current_price(),
+                side,
+                datapoint,
+                open_inverse_position_qty
+            );
+        }
+
     }
 
 
@@ -364,7 +410,7 @@ impl<'a> ExchangeEventHandler<'a> {
         }
     }
 
-    fn open_new_position(&mut self, entry_price: f64, side: Side, datapoint: impl DataPoint, quantity: usize) {
+    fn open_new_position(&mut self, entry_price: f64, side: Side, datapoint: &impl DataPoint, quantity: usize) {
         assert!(self.current_position.is_none(), "sanity check, should not try open a position without closing the existing one");
         let fee_open_position = self.calculate_fees(self.base_qty_per_order as u64);
         let new_position = Position {
@@ -392,25 +438,25 @@ impl<'a> ExchangeEventHandler<'a> {
         self.total_contracts_executed_current_month += self.base_qty_per_order as u64;
     }
 
-    fn close_position(&mut self, datapoint: impl DataPoint) {
+    fn close_position(&mut self, datapoint: &impl DataPoint) {
         assert!(self.current_position.is_some(), "sanity check, should not try to close a position that doesnt exit");
         let mut closed_position = self.current_position.as_ref().unwrap().clone();
         assert_eq!(0, closed_position.open_qty, "cant close a position that has open contracts/shares in the market");
 
         if closed_position.open_qty > 0 {
-            let current_exit_price =  datapoint.current_price();
+            let current_exit_price = datapoint.current_price();
             let quantity_to_decrease = closed_position.open_qty;
             let executed_qty = closed_position.total_qty - closed_position.open_qty;
             closed_position.avg_exit_price = ((closed_position.avg_exit_price * executed_qty as f64) + (current_exit_price * quantity_to_decrease as f64)) / (executed_qty + quantity_to_decrease) as f64;
-            let pnl = Self::calculate_gross_realized_pnl(
+            let pnl = Self::calculate_gross_pnl(
                 self.asset,
                 closed_position.side,
                 closed_position.avg_entry_price,
                 current_exit_price,
-                quantity_to_decrease as f64
+                quantity_to_decrease as f64,
             );
             self.current_balance += closed_position.gross_pnl;
-            closed_position.gross_pnl+= pnl;
+            closed_position.gross_pnl += pnl;
         }
 
         closed_position.is_closed = true;
@@ -423,22 +469,13 @@ impl<'a> ExchangeEventHandler<'a> {
         self.current_position = None;
     }
 
-    fn calculate_gross_realized_pnl(asset: &Asset, side: Side, avg_entry_price: f64, avg_exit_price: f64, quantity: f64) -> f64 {
+    fn calculate_gross_pnl(asset: &Asset, side: Side, avg_entry_price: f64, avg_exit_price: f64, quantity: f64) -> f64 {
         let price_diff = match side {
             Side::BUY => avg_exit_price - avg_entry_price,
             Side::SELL => avg_entry_price - avg_exit_price
         };
         let result = price_diff * quantity * asset.value_per_point;
-        println!("position with {side} | entry: {:.2}, exit: {:.2} | qty: {quantity} | result: {:.2}", avg_entry_price, avg_exit_price, result);
         result
-    }
-
-    fn calculate_gross_open_pnl(position: &Position, asset: &Asset, current_price: f64) -> f64 {
-        let price_diff = match position.side {
-            Side::BUY => current_price - position.avg_entry_price,
-            Side::SELL => position.avg_entry_price - current_price
-        };
-        (price_diff / asset.min_point_variation) * position.open_qty as f64 * asset.value_per_point
     }
 
     //TODO: we need a better way to define and calculate the fees for each orders send to the market
