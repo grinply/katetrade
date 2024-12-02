@@ -12,6 +12,7 @@ use crate::services::trailing_stop::TrailingStop;
 use crate::strategies::strategy::HighResolutionTradingStrategy;
 use crate::utils::date;
 
+const QUANTITY_PER_POSITION: usize = 8;
 const CANDLESTICK_PERIOD: u64 = 10;
 const BOLLINGER_PERIOD: usize = 21;
 const BOLLINGER_MULTIPLIER: f64 = 0.45;
@@ -24,10 +25,10 @@ const RSI_SHORT_THRESHOLD: f64 = 30.0;
 const RSI_PERIOD: usize = 9;
 
 // scalping trailing stop loss configuration
-const TICKS_STOP_LOSS: usize = 13;
-const TICKS_FIRST_TARGET: usize = 10;
-const TICKS_SECOND_TARGET: usize = 13;
-const TICKS_THIRD_TARGET: usize = 26;
+const TICKS_STOP_LOSS: usize = 39;
+const TICKS_FIRST_TARGET: usize = 15;
+const TICKS_SECOND_TARGET: usize = 20;
+const TICKS_THIRD_TARGET: usize = 28;
 const TICKS_START_TRAILING: usize = 5;
 const TICKS_UPDATE_TRAILING_FREQUENCY: usize = 1;
 const TICKS_DISTANCE_FROM_PRICE: usize = 2;
@@ -55,7 +56,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         Self: Sized,
     {
         StormerScalperStrategy {
-            quantity_per_position: 12,
+            quantity_per_position: QUANTITY_PER_POSITION,
             points_per_tick_asset: None,
             cut_off_time_sending_orders: NaiveTime::from_hms_opt(17, 50, 00).unwrap(),
             time_force_close_open_positions: NaiveTime::from_hms_opt(17, 55, 00).unwrap(),
@@ -111,7 +112,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         let fast_order_exit: Option<OrderAction> = self.should_exit_fast_position(new_trade);
 
         if let Some(fast_candle) = self.candle_parser.parse_only_closed_candles(new_trade) {
-            self.candle_count +=1;
+            self.candle_count += 1;
             let stochastic = self.stochastic.next(fast_candle.close);
             let bollinger_output = self.bollinger_bands.next(fast_candle.close);
             let rsi = self.rsi.next(fast_candle.close);
@@ -143,7 +144,7 @@ impl StormerScalperStrategy {
 
         // looking for long positions
         if current_price > bollinger_output.upper &&
-            rsi < RSI_LONG_THRESHOLD  &&
+            rsi < RSI_LONG_THRESHOLD &&
             stochastic >= STOCHASTIC_LONG_THRESHOLD &&
             second_candle.direction() == SHORT &&
             first_candle.direction() == LONG {
@@ -215,7 +216,7 @@ impl StormerScalperStrategy {
 
         if quantity_to_close > 0 {
             let side = self.open_position.as_ref()?.side;
-            self.open_position.as_mut()?.open_quantity-= quantity_to_close;
+            self.open_position.as_mut()?.open_quantity -= quantity_to_close;
             if self.open_position.as_ref()?.open_quantity == 0 {
                 self.open_position = None;
             }
@@ -264,12 +265,14 @@ struct ScalperPosition {
 
 impl ScalperPosition {
     fn new(side: Side, entry_price: f64, points_per_tick: f64, quantity_to_trade: usize) -> Self {
-        let qty_per_chunk = quantity_to_trade / 3;
+        assert!(quantity_to_trade % 2 == 0);
+        assert!(quantity_to_trade % 4 == 0);
+
         ScalperPosition {
             side,
             open_quantity: quantity_to_trade,
-            // if the amount of contracts is not evenly divisible we add the extra contracts in the first chunk to minimize risk
-            quantity_per_chunk: [qty_per_chunk + (quantity_to_trade % 3), qty_per_chunk, qty_per_chunk],
+
+            quantity_per_chunk: [quantity_to_trade / 2, quantity_to_trade / 4, quantity_to_trade / 4],
             first_chunk: TrailingStop::new(
                 entry_price,
                 side,
