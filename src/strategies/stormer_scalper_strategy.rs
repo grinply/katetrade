@@ -18,17 +18,17 @@ const BOLLINGER_PERIOD: usize = 21;
 const BOLLINGER_MULTIPLIER: f64 = 0.45;
 const SLOW_STOCHASTIC_PERIOD: usize = 8;
 const SLOW_STOCHASTIC_SMA_PERIOD: usize = 3;
-const STOCHASTIC_LONG_THRESHOLD: f64 = 80.0;
-const STOCHASTIC_SHORT_THRESHOLD: f64 = 20.0;
-const RSI_LONG_THRESHOLD: f64 = 70.0;
-const RSI_SHORT_THRESHOLD: f64 = 30.0;
+const STOCHASTIC_LONG_THRESHOLD: f64 = 70.0;
+const STOCHASTIC_SHORT_THRESHOLD: f64 = 30.0;
+const RSI_LONG_THRESHOLD: f64 = 75.0;
+const RSI_SHORT_THRESHOLD: f64 = 25.0;
 const RSI_PERIOD: usize = 9;
 
 // scalping trailing stop loss configuration
-const TICKS_STOP_LOSS: usize = 39;
-const TICKS_FIRST_TARGET: usize = 15;
-const TICKS_SECOND_TARGET: usize = 20;
-const TICKS_THIRD_TARGET: usize = 28;
+const TICKS_STOP_LOSS: usize = 8;
+const TICKS_FIRST_TARGET: usize = 8;
+const TICKS_SECOND_TARGET: usize = 13;
+const TICKS_THIRD_TARGET: usize = 20;
 const TICKS_START_TRAILING: usize = 5;
 const TICKS_UPDATE_TRAILING_FREQUENCY: usize = 1;
 const TICKS_DISTANCE_FROM_PRICE: usize = 2;
@@ -48,6 +48,7 @@ pub struct StormerScalperStrategy {
     candle_parser: TimeCandlestickGenerator,
     last_three_closed_candles: [Candlestick; 3],
     rsi: RelativeStrengthIndex,
+    last_stochastic: f64,
 }
 
 impl HighResolutionTradingStrategy for StormerScalperStrategy {
@@ -57,11 +58,10 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
     {
         StormerScalperStrategy {
             quantity_per_position: QUANTITY_PER_POSITION,
-            points_per_tick_asset: None,
+            points_per_tick_asset: Some(5.0),
             cut_off_time_sending_orders: NaiveTime::from_hms_opt(17, 50, 00).unwrap(),
             time_force_close_open_positions: NaiveTime::from_hms_opt(17, 55, 00).unwrap(),
             rsi: RelativeStrengthIndex::new(RSI_PERIOD),
-
             candle_count: 0,
             min_candles: 21,
             bollinger_bands: BollingerBands::new(BOLLINGER_PERIOD, BOLLINGER_MULTIPLIER).unwrap(),
@@ -69,6 +69,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             candle_parser: TimeCandlestickGenerator::new(TimeUnit::Seconds, CANDLESTICK_PERIOD),
             last_three_closed_candles: [Candlestick::default(); 3],
             open_position: None,
+            last_stochastic: 0.0,
         }
     }
 
@@ -100,7 +101,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         for trade in trades {
             if let Some(fast_candle) = self.candle_parser.parse_only_closed_candles(trade) {
                 self.rsi.next(fast_candle.close);
-                self.stochastic.next(fast_candle.close);
+                self.last_stochastic = self.stochastic.next(fast_candle.close);
                 self.bollinger_bands.next(fast_candle.close);
                 self.update_fast_candles(fast_candle);
             }
@@ -115,9 +116,9 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             self.candle_count += 1;
             let stochastic = self.stochastic.next(fast_candle.close);
             let bollinger_output = self.bollinger_bands.next(fast_candle.close);
-            let rsi = self.rsi.next(fast_candle.close);
             self.update_fast_candles(fast_candle);
-            fast_order_enter = self.should_open_position(stochastic, bollinger_output, rsi);
+            fast_order_enter = self.should_open_position(stochastic, bollinger_output, self.last_stochastic);
+            self.last_stochastic = stochastic;
         }
 
         TradeAction::custom_order(fast_order_exit, fast_order_enter, None, None)
@@ -131,7 +132,7 @@ impl StormerScalperStrategy {
         self.last_three_closed_candles[2] = new_closed_candle;
     }
 
-    fn should_open_position(&mut self, stochastic: f64, bollinger_output: BollingerBandsOutput, rsi: f64) -> Option<OrderAction> {
+    fn should_open_position(&mut self, stochastic: f64, bollinger_output: BollingerBandsOutput, old_stochastic: f64) -> Option<OrderAction> {
         let first_candle = self.last_three_closed_candles[2];
         if self.candle_count < self.min_candles || self.open_position.is_some() ||
             first_candle.close_time.expect("candlestick should be closed")
@@ -144,32 +145,32 @@ impl StormerScalperStrategy {
 
         // looking for long positions
         if current_price > bollinger_output.upper &&
-            rsi < RSI_LONG_THRESHOLD &&
-            stochastic >= STOCHASTIC_LONG_THRESHOLD &&
+            (old_stochastic >= STOCHASTIC_LONG_THRESHOLD || stochastic >= STOCHASTIC_LONG_THRESHOLD) &&
             second_candle.direction() == SHORT &&
             first_candle.direction() == LONG {
             self.open_position = Some(ScalperPosition::new(
                 Side::BUY,
                 current_price,
-                self.points_per_tick_asset?,
+                self.points_per_tick_asset.unwrap(),
                 self.quantity_per_position,
             ));
+            println!("market long order");
             let order = OrderAction::MarketLong(self.quantity_per_position);
             return Some(order);
         }
 
         // looking for short positions
         if current_price < bollinger_output.lower &&
-            rsi > RSI_SHORT_THRESHOLD &&
-            stochastic <= STOCHASTIC_SHORT_THRESHOLD &&
+            (old_stochastic <= STOCHASTIC_SHORT_THRESHOLD || stochastic <= STOCHASTIC_SHORT_THRESHOLD)&&
             second_candle.direction() == LONG &&
             first_candle.direction() == SHORT {
             self.open_position = Some(ScalperPosition::new(
                 Side::SELL,
                 current_price,
-                self.points_per_tick_asset?,
+                self.points_per_tick_asset.unwrap(),
                 self.quantity_per_position,
             ));
+            println!("market short order");
             let order = OrderAction::MarketShort(self.quantity_per_position);
             return Some(order);
         }
@@ -264,7 +265,7 @@ struct ScalperPosition {
 }
 
 impl ScalperPosition {
-    fn new(side: Side, entry_price: f64, points_per_tick: f64, quantity_to_trade: usize) -> Self {
+    fn new(side: Side, entry_price: f64, points_per_tick: f64, quantity_to_trade: usize, stop_loss_ticks: usize) -> Self {
         assert!(quantity_to_trade % 2 == 0);
         assert!(quantity_to_trade % 4 == 0);
 
