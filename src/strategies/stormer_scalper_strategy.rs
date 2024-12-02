@@ -13,7 +13,7 @@ use crate::utils::date;
 
 const CANDLESTICK_PERIOD: u64 = 10;
 const BOLLINGER_PERIOD: usize = 21;
-const BOLLINGER_MULTIPLIER: f64 = 0.38;
+const BOLLINGER_MULTIPLIER: f64 = 0.45;
 const SLOW_STOCHASTIC_PERIOD: usize = 8;
 const SLOW_STOCHASTIC_SMA_PERIOD: usize = 3;
 const STOCHASTIC_LONG_THRESHOLD: f64 = 80.0;
@@ -52,7 +52,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         StormerScalperStrategy {
             quantity_per_position: 12,
             points_per_tick_asset: None,
-            cut_off_time_sending_orders: NaiveTime::from_hms_opt(17, 45, 00).unwrap(),
+            cut_off_time_sending_orders: NaiveTime::from_hms_opt(17, 50, 00).unwrap(),
             time_force_close_open_positions: NaiveTime::from_hms_opt(17, 55, 00).unwrap(),
 
             fast_candle_count: 0,
@@ -79,12 +79,12 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
 
         let cut_off_time_send_orders = date::decrease_time(
             &asset.end_trading_time,
-            10,
+            5,
             TimeUnit::Minutes,
         );
         let time_to_close_open_positions = date::increase_time(
             &cut_off_time_send_orders,
-            5,
+            2,
             TimeUnit::Minutes,
         );
         self.cut_off_time_sending_orders = cut_off_time_send_orders;
@@ -123,22 +123,21 @@ impl StormerScalperStrategy {
     }
 
     fn should_open_position_fast_scalp(&mut self, stochastic: f64, bollinger_output: BollingerBandsOutput) -> Option<OrderAction> {
-        let latest_candle = self.last_three_fast_closed_candles[2];
+        let first_candle = self.last_three_fast_closed_candles[2];
         if self.fast_candle_count < self.min_fast_candles || self.fast_open_position.is_some() ||
-            latest_candle.close_time.expect("candlestick should be closed")
+            first_candle.close_time.expect("candlestick should be closed")
                 .num_seconds_from_midnight() >= self.cut_off_time_sending_orders.num_seconds_from_midnight() {
             return None;
         }
 
-        let first_candle_direction = latest_candle.direction();
-        let second_candle_direction = self.last_three_fast_closed_candles[1].direction();
-        let current_price = latest_candle.close;
+        let second_candle = self.last_three_fast_closed_candles[1];
+        let current_price = first_candle.close;
 
         // looking for long positions
         if current_price > bollinger_output.upper &&
             stochastic >= STOCHASTIC_LONG_THRESHOLD &&
-            second_candle_direction == SHORT &&
-            first_candle_direction == LONG {
+            second_candle.direction() == SHORT &&
+            first_candle.direction() == LONG {
             self.fast_open_position = Some(ScalperPosition::new(
                 Side::BUY,
                 current_price,
@@ -152,8 +151,8 @@ impl StormerScalperStrategy {
         // looking for short positions
         if current_price < bollinger_output.lower &&
             stochastic <= STOCHASTIC_SHORT_THRESHOLD &&
-            second_candle_direction == LONG &&
-            first_candle_direction == SHORT {
+            second_candle.direction() == LONG &&
+            first_candle.direction() == SHORT {
             self.fast_open_position = Some(ScalperPosition::new(
                 Side::SELL,
                 current_price,
