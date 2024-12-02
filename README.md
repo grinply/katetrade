@@ -1,5 +1,5 @@
 # Katetrade
-Katetrade is  for algorithmic trading platform tailord for the Brazillian market. Using kate you can live trade, backtest and development/designed custom trading strategies, all built-in one complete package.
+Katetrade is a bateries included quantitative trading platform, ready to operate in any market or asset. Using kate you can live trade, backtest and development/designed custom trading strategies, all built-in one complete package.
 
 ## Installation
 + You must first install [rust 1.82.0 or higher](https://www.rust-lang.org/) in order to **work with the source code**. Or download a complete executable for your operating system directly from the repository page.

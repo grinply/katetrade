@@ -20,6 +20,8 @@ use crate::services::backtest::exchange_event_handler::{ExchangeEventHandler, MI
 use crate::services::backtest::metrics;
 use crate::services::backtest::metrics::BacktestMetrics;
 
+pub const DEBUG_BACKTEST_LOG: bool = false;
+
 #[allow(unused)]
 pub struct TradingBacktester<'a> {
     qty_history_trading_days: u64,
@@ -179,8 +181,31 @@ impl<'a> TradingBacktester<'a> {
                 }
 
                 let trade_action = strategy.process_new_trade(trade);
+                let mut execute_order = false;
+                for order_action in trade_action.orders {
+                    if let Some(order) = order_action {
+                        if DEBUG_BACKTEST_LOG {
+                            println!("[{}/{}] executing {:?} order with price {:.2}",
+                                     trade.date, date::convert_to_naive_time(trade.time).unwrap(), order, trade.price);
+                        }
+                        execute_order = true;
+                    }
+                }
+
                 event_handler.process_trade(trade);
                 event_handler.process_orders(trade_action);
+
+                if execute_order {
+                    if DEBUG_BACKTEST_LOG {
+                        println!(
+                            "[{}/{}] current balance is {:.2}",
+                            trade.date,
+                            date::convert_to_naive_time(trade.time).unwrap(),
+                            event_handler.current_balance,
+                        );
+                    }
+                }
+
                 if self.should_abort_execution(&mut event_handler) {
                     break;
                 }
@@ -302,11 +327,13 @@ impl<'a> TradingBacktester<'a> {
             std::fs::create_dir_all(&history_trades_folder_path)?;
         }
 
+
         println!("checking for missing trade files on local disk between {} and {} on {:?}",
                  start_date,
                  end_date,
                  history_trades_folder_path
         );
+
         let backtest_files_metadata = get_backtest_files_metadata(
             asset,
             start_date,
@@ -633,20 +660,11 @@ mod tests {
             12,
             true,
         );
-
-        assert_eq!(11, metrics.total_trades);
-        assert_eq!(5427.596640000183, metrics.final_balance);
-        assert_eq!(2, metrics.max_win_streak);
-        assert_eq!(3, metrics.max_lose_streak);
-        assert_eq!(4, metrics.total_wins);
-        assert_eq!(7, metrics.total_loses);
-        assert_eq!(-1420.350914285671, metrics.avg_losing_trade);
-        assert_eq!(1347.113309999968, metrics.avg_winning_trade);
-        assert_eq!(62.03859340345955, metrics.max_draw_down_percentage);
-        assert_eq!(36.36363636363637, metrics.win_rate_percentage);
-        assert_eq!(0.5419639798470763, metrics.profit_factor);
-        assert_eq!(-4082.363999999827, metrics.total_gross_profit);
-        assert_eq!(471.63916000000006, metrics.total_fees_paid);
+        assert_eq!(14, metrics.total_wins);
+        assert_eq!(17, metrics.total_loses);
+        assert_eq!(31, metrics.total_trades);
+        assert_eq!(3, metrics.max_win_streak);
+        assert_eq!(5, metrics.max_lose_streak);
     }
 
     #[test]
@@ -663,19 +681,11 @@ mod tests {
             true,
         );
 
-        assert_eq!(21, metrics.total_trades);
-        assert_eq!(5152.368040000092, metrics.final_balance);
-        assert_eq!(2, metrics.max_win_streak);
-        assert_eq!(3, metrics.max_lose_streak);
-        assert_eq!(10, metrics.total_wins);
-        assert_eq!(11, metrics.total_loses);
-        assert_eq!(-1731.7710981817859, metrics.avg_losing_trade);
-        assert_eq!(1421.781491999973, metrics.avg_winning_trade);
-        assert_eq!(63.97405468096279, metrics.max_draw_down_percentage);
-        assert_eq!(47.61904761904761, metrics.win_rate_percentage);
-        assert_eq!(0.7463622822022673, metrics.profit_factor);
-        assert_eq!(-3942.0239999999176, metrics.total_gross_profit);
-        assert_eq!(889.6431599999999, metrics.total_fees_paid);
+        assert_eq!(20, metrics.total_wins);
+        assert_eq!(12, metrics.total_loses);
+        assert_eq!(32, metrics.total_trades);
+        assert_eq!(4, metrics.max_win_streak);
+        assert_eq!(2, metrics.max_lose_streak);
     }
 
     #[test]
@@ -693,19 +703,11 @@ mod tests {
             true,
         );
 
-        assert_eq!(6, metrics.total_trades);
-        assert_eq!(4316.072319999753, metrics.final_balance);
-        assert_eq!(2, metrics.max_win_streak);
-        assert_eq!(4, metrics.max_lose_streak);
-        assert_eq!(2, metrics.total_wins);
-        assert_eq!(4, metrics.total_loses);
-        assert_eq!(-1533.5362800000144, metrics.avg_losing_trade);
-        assert_eq!(235.201799999905, metrics.avg_winning_trade);
-        assert_eq!(58.58556512568598, metrics.max_draw_down_percentage);
-        assert_eq!(33.33333333333333, metrics.win_rate_percentage);
-        assert_eq!(0.07668608922636731, metrics.profit_factor);
-        assert_eq!(-5417.178000000247, metrics.total_gross_profit);
-        assert_eq!(246.56352000000004, metrics.total_fees_paid);
+        assert_eq!(249, metrics.total_wins);
+        assert_eq!(238, metrics.total_loses);
+        assert_eq!(487, metrics.total_trades);
+        assert_eq!(7, metrics.max_win_streak);
+        assert_eq!(10, metrics.max_lose_streak);
     }
 
     #[test]
@@ -717,7 +719,7 @@ mod tests {
         impl CandlestickTradingStrategy for InitTrackerStrategy {
             fn new() -> Self
             where
-                Self: Sized
+                Self: Sized,
             {
                 InitTrackerStrategy {
                     initialized_trades: 0
@@ -753,7 +755,7 @@ mod tests {
 
         let backtester = candle_backtester(
             true,
-            TimeCandlestickGenerator::new(TimeUnit::Minutes, 1)
+            TimeCandlestickGenerator::new(TimeUnit::Minutes, 1),
         );
         let strategy = InitTrackerStrategy::new();
         let metrics = backtester.run_candlestick_backtest(

@@ -2,6 +2,7 @@ use std::fmt;
 use ta::{Close, Next, Period};
 use crate::models::candlestick::Candlestick;
 
+#[derive(Clone, Debug)]
 pub struct SimpleMovingAverage {
     period: usize,
     index: usize,
@@ -14,8 +15,11 @@ pub struct SimpleMovingAverage {
 
 #[allow(unused)]
 impl SimpleMovingAverage {
-    pub fn new(period: usize) -> Self {
-        Self {
+    pub fn new(period: usize) -> Result<Self, anyhow::Error> {
+        if period == 0 {
+            return anyhow::bail!("The period must be greater than 0.");
+        }
+        Ok(Self {
             period,
             index: 0,
             count: 0,
@@ -23,7 +27,7 @@ impl SimpleMovingAverage {
             deque: vec![0.0; period].into_boxed_slice(),
             results: vec![0.0; period].into_boxed_slice(),
             current_value: 0.0,
-        }
+        })
     }
 
     pub fn value(&self) -> f64 {
@@ -145,13 +149,13 @@ mod tests {
 
     #[test]
     fn test_new() {
-        let avg = SimpleMovingAverage::new(1);
+        let avg = SimpleMovingAverage::new(1).unwrap();
         assert_eq!(avg.period, 1);
     }
 
     #[test]
     fn test_next() {
-        let mut sma = SimpleMovingAverage::new(4);
+        let mut sma = SimpleMovingAverage::new(4).unwrap();
         assert_eq!(sma.next(4.0), 4.0);
         assert_eq!(sma.next(5.0), 4.5);
         assert_eq!(sma.next(6.0), 5.0);
@@ -163,7 +167,7 @@ mod tests {
 
     #[test]
     fn test_next_with_candlesticks() {
-        let mut sma = SimpleMovingAverage::new(3);
+        let mut sma = SimpleMovingAverage::new(3).unwrap();
 
         assert_eq!(sma.next(new_candle(4.0)), 4.0);
         assert_eq!(sma.next(new_candle(4.0)), 4.0);
@@ -173,13 +177,13 @@ mod tests {
 
     #[test]
     fn test_display() {
-        let sma = SimpleMovingAverage::new(5);
+        let sma = SimpleMovingAverage::new(5).unwrap();
         assert_eq!(format!("{}", sma), "SMA(5)");
     }
 
     #[test]
     fn test_min_value(){
-        let mut sma = SimpleMovingAverage::new(3);
+        let mut sma = SimpleMovingAverage::new(3).unwrap();
         sma.next(3.0);
         sma.next(1.0);
         sma.next(5.0);
@@ -195,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_max_value(){
-        let mut sma = SimpleMovingAverage::new(3);
+        let mut sma = SimpleMovingAverage::new(3).unwrap();
         sma.next(3.0);
         sma.next(1.0);
         sma.next(5.0);

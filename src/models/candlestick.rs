@@ -129,6 +129,27 @@ impl Candlestick {
             trades: 0,
         }
     }
+
+    pub fn direction(&self) -> CandleDirection {
+        if self.close > self.open {
+            return CandleDirection::LONG;
+        }
+
+        if self.close < self.open {
+            return CandleDirection::SHORT;
+        }
+
+        CandleDirection::UNDEFINED
+    }
+
+}
+
+
+#[derive(Eq, PartialEq)]
+pub enum CandleDirection {
+    LONG,
+    SHORT,
+    UNDEFINED
 }
 
 impl TickCandlestickGenerator {
@@ -238,7 +259,7 @@ pub enum TimeUnit {
 
 
 impl TimeCandlestickGenerator {
-    pub fn new(time_unit: TimeUnit, frequency: u64) -> impl CandlestickGenerator {
+    pub fn new(time_unit: TimeUnit, frequency: u64) -> TimeCandlestickGenerator {
         if time_unit == TimeUnit::Seconds || time_unit == TimeUnit::Minutes {
             assert_eq!(60 % frequency, 0,
                        "the period used in candlesticks with unit of minutes or seconds should be divisible by 60");

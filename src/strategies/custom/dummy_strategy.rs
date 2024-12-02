@@ -34,11 +34,11 @@ impl HighResolutionTradingStrategy for DummyHighResolutionStrategy {
         self.counter += 1;
 
         if self.counter == 50 {
-            return TradeAction::send_order(MarketLong);
+            return TradeAction::send_order(MarketLong(12));
         }
 
         if self.counter == 100 {
-            return TradeAction::send_order(MarketShort);
+            return TradeAction::send_order(MarketShort(12));
         }
 
         if self.counter > 100 {
@@ -72,12 +72,12 @@ impl CandlestickTradingStrategy for DummyCandlestickStrategy {
         self.counter += 1;
 
         if self.counter == 50 {
-            return TradeAction::send_order(MarketLong);
+            return TradeAction::send_order(MarketLong(12));
         }
 
         if self.counter == 100 {
             self.counter = 40;
-            return TradeAction::send_order(MarketShort);
+            return TradeAction::send_order(MarketShort(12));
         }
 
         TradeAction::do_nothing()

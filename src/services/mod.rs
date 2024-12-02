@@ -5,3 +5,4 @@ pub mod visualization;
 pub mod aws;
 pub(crate) mod optimization;
 pub mod backtest;
+pub mod trailing_stop;

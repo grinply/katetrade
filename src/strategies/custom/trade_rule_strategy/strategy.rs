@@ -101,7 +101,7 @@ impl CandlestickTradingStrategy for TradeRuleStrategy {
                 self.take_profit_price <= new_candle.high ||
                 self.stop_loss_price >= new_candle.low {
                 self.is_long_position_open = false;
-                TradeAction::send_order(OrderAction::MarketShort)
+                TradeAction::send_order(OrderAction::MarketShort(1))
             } else {
                 TradeAction::do_nothing()
             };
@@ -113,7 +113,7 @@ impl CandlestickTradingStrategy for TradeRuleStrategy {
                 self.take_profit_price >= new_candle.low ||
                 self.stop_loss_price <= new_candle.high {
                 self.is_short_position_open = false;
-                TradeAction::send_order(OrderAction::MarketLong)
+                TradeAction::send_order(OrderAction::MarketLong(1))
             } else {
                 TradeAction::do_nothing()
             };
@@ -135,7 +135,7 @@ impl CandlestickTradingStrategy for TradeRuleStrategy {
             self.is_long_position_open = true;
             self.take_profit_price = self.long_rule.take_profit_price();
             self.stop_loss_price = self.long_rule.stop_loss_price();
-            return TradeAction::send_order(OrderAction::MarketLong);
+            return TradeAction::send_order(OrderAction::MarketLong(1));
         }
 
         // open short position
@@ -143,7 +143,7 @@ impl CandlestickTradingStrategy for TradeRuleStrategy {
             self.is_short_position_open = true;
             self.take_profit_price = self.short_rule.take_profit_price();
             self.stop_loss_price = self.short_rule.stop_loss_price();
-            return TradeAction::send_order(OrderAction::MarketShort);
+            return TradeAction::send_order(OrderAction::MarketShort(1));
         }
 
         TradeAction::do_nothing()

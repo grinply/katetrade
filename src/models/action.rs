@@ -1,70 +1,75 @@
-use crate::models::action::OrderAction::Abort;
+use crate::models::action::OrderAction::{Abort, MarketLong, MarketShort};
+use crate::models::side::Side;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 #[allow(unused)]
 pub enum OrderAction {
-    MarketLong,     // will execute immediately a long position at the market
-    MarketShort,    // will execute immediately a short position at the market
-    LimitLong(f64), // will send a long limit order to the exchange order book that MAY ( or may not)  be triggered later with the given price
-    LimitShort(f64),// will send a short limit order to the exchange order book that MAY ( or may not)  be triggered later with the given price
+    MarketLong(usize),     // will execute immediately a long position at the market
+    MarketShort(usize),    // will execute immediately a short position at the market
+    LimitLong(f64, usize), // will send a long limit order to the exchange order book that MAY ( or may not)  be triggered later with the given price
+    LimitShort(f64, usize), // will send a short limit order to the exchange order book that MAY ( or may not)  be triggered later with the given price
     Abort,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 #[allow(unused)]
 pub struct TradeAction {
-    pub(crate) enter_market_action: Option<OrderAction>,
-    pub(crate) stop_loss_action: Option<OrderAction>,
-    pub(crate) take_profit_action: Option<OrderAction>,
+    pub orders: [Option<OrderAction>; 5],
+}
+
+pub fn market_order_from_side(side: Side, qty: usize) -> OrderAction {
+    match side {
+        Side::BUY => MarketLong(qty),
+        Side::SELL => MarketShort(qty)
+    }
 }
 
 impl TradeAction {
-
     /// single order to enter or exit the market
-    pub fn send_order(order: OrderAction) ->  TradeAction{
-        TradeAction{
-            enter_market_action: Some(order),
-            stop_loss_action: None,
-            take_profit_action: None,
+    pub fn send_order(order: OrderAction) -> TradeAction {
+        TradeAction {
+            orders: [Some(order), None, None, None, None],
         }
     }
 
     #[allow(unused)]
-    pub fn send_order_with_stop_loss(enter_order: OrderAction, stop_order: OrderAction) ->  TradeAction{
-        TradeAction{
-            enter_market_action: Some(enter_order),
-            stop_loss_action: Some(stop_order),
-            take_profit_action: None,
+    pub fn send_order_with_stop_loss(enter_order: OrderAction, stop_order: OrderAction) -> TradeAction {
+        TradeAction {
+            orders: [Some(enter_order), Some(stop_order), None, None, None],
         }
     }
 
     #[allow(unused)]
     pub fn send_order_with_stop_loss_and_take_profit(enter_order: OrderAction,
                                                      stop_order: OrderAction,
-                                                     take_profit_order: OrderAction) ->  TradeAction{
-        TradeAction{
-            enter_market_action: Some(enter_order),
-            stop_loss_action: Some(stop_order),
-            take_profit_action: Some(take_profit_order),
+                                                     take_profit_order: OrderAction) -> TradeAction {
+        TradeAction {
+            orders: [Some(enter_order), Some(stop_order), Some(take_profit_order), None, None],
         }
     }
 
     #[allow(unused)]
-    pub fn do_nothing() -> TradeAction{
+    pub fn do_nothing() -> TradeAction {
         TradeAction {
-            enter_market_action: None,
-            stop_loss_action: None,
-            take_profit_action: None
+            orders: [None; 5]
+        }
+    }
+
+    pub fn custom_order(
+        first_order: Option<OrderAction>,
+        second_order: Option<OrderAction>,
+        third_order: Option<OrderAction>,
+        fourth_order: Option<OrderAction>,
+    ) -> TradeAction {
+        TradeAction {
+            orders: [first_order, second_order, third_order, fourth_order, None]
         }
     }
 
     #[allow(unused)]
     pub fn abort() -> TradeAction {
         TradeAction {
-            enter_market_action: Some(Abort),
-            stop_loss_action: None,
-            take_profit_action: None
+            orders: [Some(Abort); 5]
         }
     }
-
 }
