@@ -18,8 +18,6 @@ Katetrade is a CLI application where you can **live trade**, **backtest** and **
 + If you built the docker container `docker run katetrade --help` 
 
 ```bash
-Welcome to katetrade, your algorithm trading system tailored for the Brazilian capital market
-
 Usage: katetrade <COMMAND>
 
 Commands:
@@ -28,6 +26,7 @@ Commands:
   backtest    Backtest a trading strategy using historical data
   file        Various operations related to historical files
   connection  General connection information
+  optimize    Optimize/train a group for best solutions for a customized trading strategy
   help        Print this message or the help of the given subcommand(s)
 
 Options:
