@@ -59,3 +59,5 @@ target/
 .vscode/
 
 resources/test_trades.csv
+output/
+**/trade-results.html
