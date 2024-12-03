@@ -22,6 +22,7 @@ use crate::services::market_connector::MarketConnectorClient;
 use crate::services::optimization::brkga::{run_brkga_optimization, BrkgaConfig};
 use crate::strategies::custom::trade_rule_strategy::optimization::fitness_optimizer_trade_rule_strategy;
 use crate::strategies::execution_manager::{ExecutionRequest, LiveStrategyExecutor};
+use crate::strategies::stormer_scalper_strategy::scalper_optimizer_function;
 use crate::strategies::strategy;
 use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name, CandlestickTradingStrategy, HighResolutionTradingStrategy, StrategyInputData};
 
@@ -607,27 +608,36 @@ fn optimize_trade_parameters_command(_: &ArgMatches) {
     // BRKGA optimization configuration
     // internal BRKGA parameters are hard coded
     // if you must tune this you can recompile the code
-    let population_size = 15_000;
+    let population_size = 100;
     let max_iterations = 1000;
     let fraction_top = 0.1;
     let fraction_bottom = 0.3;
     let elitism_rate = 0.6;
     let seed = 11223344;
 
-    let training_start_date = 2022_01_01;
-    let training_end_date = 2024_02_28;
-    let validation_start_date = 2024_06_13;
-    let validation_end_date = 2024_11_20;
+    let training_start_date = 2023_01_01;
+    let training_end_date = 2024_01_01;
+    let validation_start_date = 2024_01_01;
+    let validation_end_date = 2024_12_02;
 
     // if in the future we have another implementation that has optimizations available we can have
     // a new parameter from the CLI to define which one to choose
-    let trade_rule_fitness_executor = fitness_optimizer_trade_rule_strategy(
+    // let trade_rule_fitness_executor = fitness_optimizer_trade_rule_strategy(
+    //     asset,
+    //     training_start_date,
+    //     training_end_date,
+    //     validation_start_date,
+    //     validation_end_date,
+    // );
+
+    let scalper = scalper_optimizer_function(
         asset,
         training_start_date,
         training_end_date,
         validation_start_date,
         validation_end_date,
     );
+
 
     let brkga_configuration = BrkgaConfig::new(
         fraction_top,
@@ -640,7 +650,7 @@ fn optimize_trade_parameters_command(_: &ArgMatches) {
     run_brkga_optimization(
         seed,
         brkga_configuration,
-        trade_rule_fitness_executor,
+        scalper,
         true,
     );
 }

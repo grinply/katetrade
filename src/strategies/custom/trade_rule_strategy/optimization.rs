@@ -6,9 +6,9 @@ use crate::services::backtest::metrics::BacktestMetrics;
 use crate::services::optimization::brkga::FitnessExecutor;
 use crate::strategies::custom::trade_rule_strategy::strategy::TradeRuleStrategy;
 
-struct BacktestOptimizerTradeRule {
-    training_backtester: TradingBacktester<'static>,
-    validation_backtester: TradingBacktester<'static>,
+pub(crate) struct BacktestOptimizerTradeRule {
+    pub(crate) training_backtester: TradingBacktester<'static>,
+    pub(crate) validation_backtester: TradingBacktester<'static>,
 }
 
 pub fn fitness_optimizer_trade_rule_strategy(
