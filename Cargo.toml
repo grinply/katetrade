@@ -26,6 +26,3 @@ simple_bar = "0.2.2"
 rayon = "1.10"
 ta = "0.5.0"
 dyn-clone = "1.0"
-
-[profile.release]
-codegen-units = 1
