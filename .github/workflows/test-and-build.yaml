@@ -39,8 +39,8 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build Docker image
-        run: docker build -t ghcr.io/${{ github.repository_owner }}/katetrade:${{ github.event.repository.updated_at}} .
+        run: docker build -t ghcr.io/${{ github.repository_owner }}/katetrade:${{ steps.date.outputs.date }}-${{ github.event.number }} .
 
       - name: Push Docker image to GitHub Container Registry
-        run: docker push ghcr.io/${{ github.repository_owner }}/katetrade:${{ github.event.repository.updated_at}}
+        run: docker push ghcr.io/${{ github.repository_owner }}/katetrade:${{ steps.date.outputs.date }}-${{ github.event.number }}
         if: github.event_name != 'pull_request'
