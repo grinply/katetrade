@@ -53,11 +53,13 @@ impl Display for BacktestMetrics {
             self.quantity_of_contracts / (2 * self.total_trades)
         };
 
+        let expected_return = (self.win_rate_percentage/100.0 * self.avg_winning_trade) - ((1.0-self.win_rate_percentage/100.0) * -self.avg_losing_trade);
         writeln!(f, "{0: <30} {1: <25.2?}", "Trading Days", self.total_trading_days)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Start Balance", INITIAL_BALANCE)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Final Balance", self.final_balance)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Absolute Return", self.final_balance - INITIAL_BALANCE)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Return(%)", self.total_return_percentage)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Expected Return Per Trade", expected_return)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Profit Factor", self.profit_factor)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Win Rate(%)", self.win_rate_percentage)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Max DrawDown(%)", self.max_draw_down_percentage)?;
