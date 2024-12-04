@@ -190,7 +190,6 @@ impl StormerScalperStrategy {
             return Some(force_exit);
         }
 
-
         let mut quantity_to_close: usize = 0;
 
         let is_first_chunk_finished = self.open_position.as_ref()?.first_chunk.is_finished();
@@ -198,13 +197,26 @@ impl StormerScalperStrategy {
 
         if !is_first_chunk_finished && should_close_first_chunk {
             quantity_to_close += self.open_position.as_mut()?.quantity_per_chunk[0];
+            // here we can update the stop loss for the last two chunks of the open position
+            self.open_position.as_mut()?.second_chunk.offset_stop_loss(TICKS_SECOND_TARGET, new_trade.price);
+            self.open_position.as_mut()?.final_chunk.offset_stop_loss(TICKS_SECOND_TARGET, new_trade.price);
+            let side = self.open_position.as_ref()?.side;
+
+            println!("[{}]current price is {} , stop loss updated to {} in {} position",
+                     new_trade.time,
+                     new_trade.price,
+                     self.open_position.as_mut()?.second_chunk.stop_loss_price,
+                     side,
+            );
         }
 
         let is_second_chunk_finished = self.open_position.as_ref()?.second_chunk.is_finished();
         let should_close_second_chunk = self.open_position.as_mut()?.second_chunk.should_close_position(new_trade.price);
 
+
         if !is_second_chunk_finished && should_close_second_chunk {
             quantity_to_close += self.open_position.as_ref()?.quantity_per_chunk[1];
+            println!("[{}]closing chunk from position | current price is {}", new_trade.time, new_trade.price);
         }
 
         let is_final_chunk_finished = self.open_position.as_ref()?.final_chunk.is_finished();
