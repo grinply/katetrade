@@ -34,3 +34,13 @@ jobs:
 
       - name: Release build
         run: cargo build --release --verbose
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build Docker image
+        run: docker build -t ghcr.io/${{ github.repository_owner }}/katetrade:${{ github.event.number }} .
+
+      - name: Push Docker image to GitHub Container Registry
+        run: docker push ghcr.io/${{ github.repository_owner }}/katetrade:${{ github.event.number }}
+        if: github.event_name != 'pull_request'
