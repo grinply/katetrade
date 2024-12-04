@@ -32,6 +32,7 @@ const TICKS_THIRD_TARGET: usize = 28;
 const TICKS_START_TRAILING: usize = 5;
 const TICKS_UPDATE_TRAILING_FREQUENCY: usize = 1;
 const TICKS_DISTANCE_FROM_PRICE: usize = 2;
+const TICKS_NEW_STOP_AFTER_FIRST_TARGET: usize = 30;
 
 pub struct StormerScalperStrategy {
     quantity_per_position: usize,
@@ -108,6 +109,8 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
     }
 
     fn process_new_trade(&mut self, new_trade: &Trade) -> TradeAction {
+        self.adjust_stop_loss(new_trade);
+
         let mut fast_order_enter: Option<OrderAction> = None;
         let fast_order_exit: Option<OrderAction> = self.should_exit_fast_position(new_trade);
 
@@ -125,6 +128,37 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
 }
 
 impl StormerScalperStrategy {
+    fn adjust_stop_loss(&mut self, _: &Trade){
+        if self.open_position.is_none(){
+            return;
+        }
+
+        let open_position = self.open_position.as_mut().unwrap();
+        if !open_position.first_chunk.is_finished() && open_position.first_chunk.is_trailing_active(){
+            let new_stop_loss = Self::shift_price_in_favor(
+                open_position.first_chunk.stop_loss_price,
+                self.points_per_tick_asset.unwrap(),
+                TICKS_NEW_STOP_AFTER_FIRST_TARGET,
+                open_position.side
+            );
+
+            open_position.first_chunk.set_stop_loss(new_stop_loss);
+            open_position.second_chunk.set_stop_loss(new_stop_loss);
+            open_position.final_chunk.set_stop_loss(new_stop_loss);
+        }
+    }
+
+    fn shift_price_in_favor(price: f64, points_per_tick: f64, amount_of_ticks: usize, side: Side) -> f64 {
+        match side {
+            Side::BUY => {
+                price + (points_per_tick * amount_of_ticks as f64)
+            },
+            Side::SELL => {
+                price - (points_per_tick * amount_of_ticks as f64)
+            }
+        }
+    }
+
     fn update_fast_candles(&mut self, new_closed_candle: Candlestick) {
         self.last_three_closed_candles[0] = self.last_three_closed_candles[1];
         self.last_three_closed_candles[1] = self.last_three_closed_candles[2];
@@ -256,7 +290,10 @@ impl StormerScalperStrategy {
 
 struct ScalperPosition {
     side: Side,
+    entry_price: f64,
     open_quantity: usize,
+    first_stop_loss_adjustment: bool,
+    second_stop_loss_adjustment: bool,
     quantity_per_chunk: [usize; 3],
     first_chunk: TrailingStop,
     second_chunk: TrailingStop,
@@ -270,8 +307,10 @@ impl ScalperPosition {
 
         ScalperPosition {
             side,
+            entry_price,
             open_quantity: quantity_to_trade,
-
+            first_stop_loss_adjustment: false,
+            second_stop_loss_adjustment: false,
             quantity_per_chunk: [quantity_to_trade / 2, quantity_to_trade / 4, quantity_to_trade / 4],
             first_chunk: TrailingStop::new(
                 entry_price,
