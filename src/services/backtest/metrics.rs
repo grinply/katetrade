@@ -58,12 +58,15 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <30} {1: <25.2?}", "Final Balance", self.final_balance)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Absolute Return", self.final_balance - INITIAL_BALANCE)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Return(%)", self.total_return_percentage)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Sharp Ratio", self.sharp_ratio)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Profit Factor", self.profit_factor)?;
-        writeln!(f, "{0: <30} {1: <25}", "Sharp Ratio Description", evaluate_sharp_ratio(self.sharp_ratio))?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Max DrawDown(%)", self.max_draw_down_percentage)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Fees Paid", self.total_fees_paid)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Win Rate(%)", self.win_rate_percentage)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Max DrawDown(%)", self.max_draw_down_percentage)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Winning Trade PNL", self.avg_winning_trade)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Losing Trade PNL", self.avg_losing_trade)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Risk/Reward (Lower is Better)", -self.avg_losing_trade/self.avg_winning_trade)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Sharp Ratio", self.sharp_ratio)?;
+        writeln!(f, "{0: <30} {1: <25}", "Sharp Ratio Description", evaluate_sharp_ratio(self.sharp_ratio))?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Fees Paid", self.total_fees_paid)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Wins", self.total_wins)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Max Win Streak", self.max_win_streak)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Loses", self.total_loses)?;
@@ -75,10 +78,7 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Contracts per Trade", avg_contracts_traded)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Winning Trade PNL", self.avg_winning_trade)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Losing Trade PNL", self.avg_losing_trade)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Risk/Reward (Lower is Better)", self.avg_winning_trade/ -self.avg_losing_trade)
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)
     }
 }
 
