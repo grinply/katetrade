@@ -483,16 +483,7 @@ impl<'a> ExchangeEventHandler<'a> {
     fn calculate_fees(&self, total_orders: u64) -> f64 {
         let asset = self.asset;
         let brokerage = if asset.market == Market::FUTURES && asset.ticker == "WIN" || asset.ticker == "WDO" {
-            match self.total_contracts_executed_current_month {
-                0..=50 => 0.95,
-                51..=100 => 0.90,
-                101..=200 => 0.87,
-                201..=500 => 0.76,
-                501..=2500 => 0.63,
-                2501..=5000 => 0.33,
-                5001..=15000 => 0.12,
-                15001.. => 0.05
-            }
+            0.0 // no fees due to using RLP
         } else if asset.market == Market::FUTURES && asset.ticker == "DOL" || asset.ticker == "IND" {
             match self.total_contracts_executed_current_month {
                 0..=50 => 3.90,
