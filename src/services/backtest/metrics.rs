@@ -77,7 +77,8 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Winning Trade PNL", self.avg_winning_trade)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Losing Trade PNL", self.avg_losing_trade)
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Losing Trade PNL", self.avg_losing_trade)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Risk/Reward (Lower is Better)", self.avg_winning_trade/ -self.avg_losing_trade)
     }
 }
 
