@@ -290,10 +290,7 @@ impl StormerScalperStrategy {
 
 struct ScalperPosition {
     side: Side,
-    entry_price: f64,
     open_quantity: usize,
-    first_stop_loss_adjustment: bool,
-    second_stop_loss_adjustment: bool,
     quantity_per_chunk: [usize; 3],
     first_chunk: TrailingStop,
     second_chunk: TrailingStop,
@@ -307,10 +304,7 @@ impl ScalperPosition {
 
         ScalperPosition {
             side,
-            entry_price,
             open_quantity: quantity_to_trade,
-            first_stop_loss_adjustment: false,
-            second_stop_loss_adjustment: false,
             quantity_per_chunk: [quantity_to_trade / 2, quantity_to_trade / 4, quantity_to_trade / 4],
             first_chunk: TrailingStop::new(
                 entry_price,
