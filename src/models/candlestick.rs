@@ -1,3 +1,6 @@
+use std::fs::{File};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::io;
 use chrono::{NaiveTime, Timelike};
 use dyn_clone::DynClone;
 use strum_macros::EnumString;
@@ -142,7 +145,37 @@ impl Candlestick {
         CandleDirection::UNDEFINED
     }
 
+    pub fn to_csv_row(&self) -> String {
+        format!(
+            "{}-{}-{}T{}:{}:{},{:.2},{:.2},{:.2},{:.2}",
+            date::extract_year(self.date),
+            date::extract_month(self.date),
+            date::extract_day(self.date),
+            self.start_time.hour(),
+            self.start_time.minute(),
+            self.start_time.second(),
+            self.open,
+            self.high,
+            self.low,
+            self.close
+        )
+    }
+
 }
+
+#[allow(unused)]
+pub fn write_to_csv_file(
+    output_file_path: &str,
+    candlesticks: Vec<Candlestick>,
+) -> Result<(), io::Error> {
+    let mut csv = File::create(output_file_path)?;
+    writeln!(csv, "{}", "time,open,high,low,close")?;
+    for candle in candlesticks {
+        write!(csv, "{}\n", candle.to_csv_row())?;
+    }
+    Ok(())
+}
+
 
 
 #[derive(Eq, PartialEq)]

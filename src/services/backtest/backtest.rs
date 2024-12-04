@@ -28,12 +28,12 @@ pub struct TradingBacktester<'a> {
     qty_history_candles: u64,
     qty_history_trades: u64,
     asset: &'a Asset,
-    data_provider: DataProvider,
+    pub data_provider: DataProvider,
 }
 
 #[allow(unused)]
-struct DataProvider {
-    candlesticks: Vec<Candlestick>,
+pub struct DataProvider {
+    pub candlesticks: Vec<Candlestick>,
     trades: Vec<Trade>,
     data_files: Vec<String>,
     candle_parser: Option<Box<dyn CandlestickGenerator>>,
@@ -139,6 +139,7 @@ impl Display for TradingBacktester<'_> {
     }
 }
 impl<'a> TradingBacktester<'a> {
+
     /// Starts the execution of a Backtest ( trading simulation ) where each datapoint is a [Trade]
     ///
     /// [HighResolutionTradingStrategy] defines how and when to send orders to buy and sell the asset being traded

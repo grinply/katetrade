@@ -13,7 +13,6 @@ const TRADES_CSV_HEADER_LINE: &str = "<ticker>,<date>,<time>,<trade_number>,<pri
 
 /// Trade struct to match the Java data sent from market-connector
 #[derive(Debug, PartialEq, Clone, Copy)]
-#[allow(unused)]
 pub struct Trade {
     pub trade_number: i32,
     pub date: i32,

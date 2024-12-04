@@ -1,0 +1,4 @@
+time,price,position,action,quantity
+2024-1-5T12:5:20,133510.00,long,entry,50
+2024-1-5T12:15:10,133605.00,short,exit,50
+

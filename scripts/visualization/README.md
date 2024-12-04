@@ -23,8 +23,8 @@ docker run --rm \
 if you would like to run using the test files, assuming you are inside the `/visualization` folder, run the following:
 ```bash
 docker run --rm \
--v $(pwd)/test_candlestick.csv:/app/candlestick.csv:ro \
--v $(pwd)/test_trades.csv:/app/trades.csv:ro \
+-v $(pwd)/candlestick.csv:/app/candlestick.csv:ro \
+-v $(pwd)/trades.csv:/app/trades.csv:ro \
 -v $(pwd)/output:/app/output \
 trading-visualization /app/candlestick.csv /app/trades.csv /app/output/trade-results.html
 ```

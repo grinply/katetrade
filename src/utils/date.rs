@@ -31,6 +31,21 @@ pub fn convert_to_naive_date(date: u32) -> Result<NaiveDate, anyhow::Error> {
     Ok(naive_date.unwrap())
 }
 
+pub fn extract_year(date: i32) -> u32 {
+    (date / 10000) as u32
+}
+
+pub fn extract_month(date: i32) -> u32 {
+    let year = date / 10000;
+    let month = (date / 100) - (year * 100);
+    month as u32
+}
+
+pub fn extract_day(date: i32) -> u32 {
+    (date % 100) as u32
+}
+
+
 /// convert the time to the format hhMMss
 /// any additional precision will be removed.
 ///
