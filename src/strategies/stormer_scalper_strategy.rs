@@ -66,7 +66,14 @@ impl FitnessExecutor for ScalperOptimizer {
             false,
         );
 
-        metrics.profit_factor
+        if metrics.win_rate_percentage.is_nan() || metrics.win_rate_percentage.is_infinite() ||
+            metrics.avg_winning_trade.is_nan() || metrics.avg_winning_trade.is_infinite() ||
+            metrics.avg_losing_trade.is_nan() || metrics.avg_losing_trade.is_infinite() {
+            return -1.0;
+        }
+
+        //metrics.total_wins as f64 * (metrics.win_rate_percentage/100.0 * metrics.avg_winning_trade) - ((1.0-metrics.win_rate_percentage/100.0) * -metrics.avg_losing_trade)
+        metrics.total_liquid_profit
     }
 
     fn chromosome_details(&self, chromosome: &[f32]) -> String {
@@ -104,6 +111,7 @@ impl FitnessExecutor for ScalperOptimizer {
 
 const QUANTITY_PER_POSITION: usize = 8;
 
+#[derive(Debug)]
 struct Configuration {
     candlestick_period: usize, // 10
     bollinger_bands_period: usize, // 21
@@ -148,23 +156,24 @@ impl StormerScalperStrategy {
     pub fn decode(chromosome: &[f32]) -> Self {
         let configuration = Configuration {
             candlestick_period: 10,
-            bollinger_bands_period: value_on_range((1.0, 100.0), chromosome[0] as f64) as usize,
-            bollinger_bands_multiplier: value_on_range((1.0, 100.0), chromosome[1] as f64),
-            slow_stochastic_period: value_on_range((1.0, 100.0), chromosome[2] as f64) as usize,
-            slow_stochastic_sma_period: value_on_range((1.0, 100.0), chromosome[3] as f64) as usize,
-            stochastic_long_threshold: value_on_range((1.0, 100.0), chromosome[4] as f64),
-            stochastic_short_threshold: value_on_range((1.0, 100.0), chromosome[5] as f64),
-            rsi_long_threshold: value_on_range((1.0, 100.0), chromosome[6] as f64),
-            rsi_short_threshold: value_on_range((1.0, 100.0), chromosome[7] as f64),
-            rsi_period: value_on_range((1.0, 100.0), chromosome[8] as f64) as usize,
-            ticks_stop_loss: value_on_range((2.0, 60.0), chromosome[9] as f64) as usize,
-            ticks_first_target: value_on_range((2.0, 60.0), chromosome[10] as f64) as usize,
-            ticks_second_target: value_on_range((2.0, 60.0), chromosome[11] as f64) as usize,
-            ticks_third_target: value_on_range((2.0, 60.0), chromosome[12] as f64) as usize,
-            ticks_start_trailing: value_on_range((2.0, 60.0), chromosome[13] as f64) as usize,
-            ticks_update_trailing_frequency: value_on_range((2.0, 60.0), chromosome[14] as f64) as usize,
-            ticks_distance_from_price: value_on_range((2.0, 60.0), chromosome[15] as f64) as usize,
+            bollinger_bands_period: 21,
+            bollinger_bands_multiplier: 0.45,
+            slow_stochastic_period: 8,
+            slow_stochastic_sma_period: 6,
+            rsi_period: 9,
+            ticks_stop_loss: 8,
+            stochastic_long_threshold: value_on_range((1.0, 100.0), chromosome[0] as f64),
+            stochastic_short_threshold: value_on_range((1.0, 100.0), chromosome[1] as f64),
+            rsi_long_threshold: value_on_range((1.0, 100.0), chromosome[2] as f64),
+            rsi_short_threshold: value_on_range((1.0, 100.0), chromosome[3] as f64),
+            ticks_first_target: value_on_range((2.0, 60.0), chromosome[4] as f64) as usize,
+            ticks_second_target: value_on_range((2.0, 60.0), chromosome[5] as f64) as usize,
+            ticks_third_target: value_on_range((2.0, 60.0), chromosome[6] as f64) as usize,
+            ticks_start_trailing: value_on_range((2.0, 60.0), chromosome[7] as f64) as usize,
+            ticks_update_trailing_frequency: value_on_range((2.0, 60.0), chromosome[8] as f64) as usize,
+            ticks_distance_from_price: value_on_range((2.0, 60.0), chromosome[9] as f64) as usize,
         };
+        //println!("{:?}", configuration);
         Self::new(configuration)
     }
 
@@ -239,6 +248,8 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         Self: Sized
     {
         todo!()
+        // let values = [0.22757557, 0.16131581, 0.47541994, 0.30514446, 0.69616205, 0.72154385, 0.79478204, 0.7888839, 0.7026194, 0.61735505, 0.77801394, 0.61204416, 0.08376432, 0.6067061, 0.7084536, 0.40178603];
+        // StormerScalperStrategy::decode(&values)
     }
 
 

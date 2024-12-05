@@ -609,16 +609,16 @@ fn optimize_trade_parameters_command(_: &ArgMatches) {
     // internal BRKGA parameters are hard coded
     // if you must tune this you can recompile the code
     let population_size = 100;
-    let max_iterations = 1000;
+    let max_iterations = 100;
     let fraction_top = 0.1;
     let fraction_bottom = 0.3;
     let elitism_rate = 0.6;
-    let seed = 11223344;
+    let seed = 8755423;
 
     let training_start_date = 2023_01_01;
-    let training_end_date = 2024_01_01;
-    let validation_start_date = 2024_01_01;
-    let validation_end_date = 2024_12_02;
+    let training_end_date = 2024_12_31;
+    let validation_start_date = 2022_01_01;
+    let validation_end_date = 2022_01_07;
 
     // if in the future we have another implementation that has optimizations available we can have
     // a new parameter from the CLI to define which one to choose
