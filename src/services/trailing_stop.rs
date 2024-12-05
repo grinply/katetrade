@@ -80,6 +80,10 @@ impl TrailingStop {
         self.is_trailing_active = true;
     }
 
+    pub fn set_stop_loss(&mut self, new_stop_loss_price: f64){
+        self.stop_loss_price = new_stop_loss_price;
+    }
+
     /// check if the position should be closed now
     pub fn should_close_position(&mut self, current_price: f64) -> bool {
         match self.direction {

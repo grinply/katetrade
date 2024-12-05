@@ -22,13 +22,12 @@ const STOCHASTIC_SHORT_THRESHOLD: f64 = 20.0;
 
 
 // scalping trailing stop loss configuration
-const TICKS_STOP_LOSS: usize = 10;
 const TICKS_FIRST_TARGET: usize = 8;
-const TICKS_SECOND_TARGET: usize = 13;
-const TICKS_THIRD_TARGET: usize = 20;
+const TICKS_SECOND_TARGET: usize = 9; // actually + TICKS_START_TRAILING
+const TICKS_THIRD_TARGET: usize = 18; // actually + TICKS_START_TRAILING
 const TICKS_START_TRAILING: usize = 5;
 const TICKS_UPDATE_TRAILING_FREQUENCY: usize = 1;
-const TICKS_DISTANCE_FROM_PRICE: usize = 2;
+const TICKS_DISTANCE_FROM_PRICE: usize = 4;
 
 pub struct StormerScalperStrategy {
     quantity_per_position: usize,
@@ -96,6 +95,12 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             self.candle_count += 1;
             let stochastic = self.stochastic.next(fast_candle.close);
             let bollinger_output = self.bollinger_bands.next(fast_candle.close);
+            if self.open_position.is_some(){
+                // match self.open_position.as_ref().unwrap().side {
+                //     Side::BUY => self.set_all_stop_loses(bollinger_output.average),
+                //     Side::SELL => self.set_all_stop_loses(bollinger_output.average)
+                // }
+            }
             self.update_fast_candles(fast_candle);
             fast_order_enter = self.should_open_position(stochastic, bollinger_output);
         }
@@ -127,16 +132,14 @@ impl StormerScalperStrategy {
             stochastic >= STOCHASTIC_LONG_THRESHOLD &&
             second_candle.direction() == SHORT &&
             first_candle.direction() == LONG {
-
-            let quantity_to_trade = self.qty_to_open_new_order_and_close_old();
             self.open_position = Some(ScalperPosition::new(
                 Side::BUY,
                 current_price,
                 self.points_per_tick_asset?,
                 self.quantity_per_position,
             ));
-
-            let order = OrderAction::MarketLong(quantity_to_trade);
+            self.set_all_stop_loses(bollinger_output.lower);
+            let order = OrderAction::MarketLong(self.quantity_per_position);
             return Some(order);
         }
 
@@ -145,26 +148,23 @@ impl StormerScalperStrategy {
             stochastic <= STOCHASTIC_SHORT_THRESHOLD &&
             second_candle.direction() == LONG &&
             first_candle.direction() == SHORT {
-
-            let quantity_to_trade = self.qty_to_open_new_order_and_close_old();
             self.open_position = Some(ScalperPosition::new(
                 Side::SELL,
                 current_price,
                 self.points_per_tick_asset?,
                 self.quantity_per_position,
             ));
-            let order = OrderAction::MarketShort(quantity_to_trade);
+            self.set_all_stop_loses(bollinger_output.upper);
+            let order = OrderAction::MarketShort(self.quantity_per_position);
             return Some(order);
         }
         None
     }
 
-    fn qty_to_open_new_order_and_close_old(&self) -> usize {
-        if self.open_position.is_some() {
-            self.quantity_per_position + self.open_position.as_ref().unwrap().open_quantity
-        }else{
-            self.quantity_per_position
-        }
+    fn set_all_stop_loses(&mut self, new_stop_loss_price: f64){
+        self.open_position.as_mut().unwrap().first_chunk.set_stop_loss(new_stop_loss_price);
+        self.open_position.as_mut().unwrap().second_chunk.set_stop_loss(new_stop_loss_price);
+        self.open_position.as_mut().unwrap().final_chunk.set_stop_loss(new_stop_loss_price);
     }
 
     fn should_exit_fast_position(&mut self, new_trade: &Trade) -> Option<OrderAction> {
@@ -268,7 +268,7 @@ impl ScalperPosition {
                 entry_price,
                 side,
                 points_per_tick,
-                TICKS_STOP_LOSS,
+                50, // this will be overwritten by set_all_stop_loses function
                 TICKS_FIRST_TARGET,
                 1,
                 1,
@@ -278,7 +278,7 @@ impl ScalperPosition {
                 entry_price,
                 side,
                 points_per_tick,
-                TICKS_STOP_LOSS,
+                50, // this will be overwritten by set_all_stop_loses function
                 TICKS_SECOND_TARGET,
                 TICKS_START_TRAILING,
                 TICKS_DISTANCE_FROM_PRICE,
@@ -288,7 +288,7 @@ impl ScalperPosition {
                 entry_price,
                 side,
                 points_per_tick,
-                TICKS_STOP_LOSS,
+                50, // this will be overwritten by set_all_stop_loses function
                 TICKS_THIRD_TARGET,
                 TICKS_START_TRAILING,
                 TICKS_DISTANCE_FROM_PRICE,
