@@ -23,7 +23,7 @@ const STOCHASTIC_SHORT_THRESHOLD: f64 = 20.0;
 
 // scalping trailing stop loss configuration
 const TICKS_FIRST_TARGET: usize = 8;
-const TICKS_SECOND_TARGET: usize = 9; // actually + TICKS_START_TRAILING
+const TICKS_SECOND_TARGET: usize = 10; // actually + TICKS_START_TRAILING
 const TICKS_THIRD_TARGET: usize = 18; // actually + TICKS_START_TRAILING
 const TICKS_START_TRAILING: usize = 5;
 const TICKS_UPDATE_TRAILING_FREQUENCY: usize = 1;
@@ -52,10 +52,10 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
     {
         StormerScalperStrategy {
             quantity_per_position: QUANTITY_PER_POSITION,
-            points_per_tick_asset: None,
+
+            points_per_tick_asset: Some(5.0),
             cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 30, 00).unwrap(),
             time_force_close_open_positions: NaiveTime::from_hms_opt(11, 00, 00).unwrap(),
-
             candle_count: 0,
             min_candles: 21,
             bollinger_bands: BollingerBands::new(BOLLINGER_PERIOD, BOLLINGER_MULTIPLIER).unwrap(),
