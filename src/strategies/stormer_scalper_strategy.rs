@@ -1,7 +1,6 @@
 use chrono::{NaiveTime, Timelike};
 use ta::indicators::{BollingerBands, BollingerBandsOutput, SlowStochastic};
 use ta::Next;
-use crate::indicators::relative_strength_index::RelativeStrengthIndex;
 use crate::models::action::{market_order_from_side, OrderAction, TradeAction};
 use crate::models::asset::Asset;
 use crate::models::candlestick::{Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
@@ -13,22 +12,20 @@ use crate::strategies::strategy::HighResolutionTradingStrategy;
 use crate::utils::date;
 
 const QUANTITY_PER_POSITION: usize = 8;
-const CANDLESTICK_PERIOD: u64 = 10;
+const CANDLESTICK_PERIOD: u64 = 15;
 const BOLLINGER_PERIOD: usize = 21;
-const BOLLINGER_MULTIPLIER: f64 = 0.45;
+const BOLLINGER_MULTIPLIER: f64 = 0.38;
 const SLOW_STOCHASTIC_PERIOD: usize = 8;
 const SLOW_STOCHASTIC_SMA_PERIOD: usize = 3;
 const STOCHASTIC_LONG_THRESHOLD: f64 = 80.0;
 const STOCHASTIC_SHORT_THRESHOLD: f64 = 20.0;
-const RSI_LONG_THRESHOLD: f64 = 70.0;
-const RSI_SHORT_THRESHOLD: f64 = 30.0;
-const RSI_PERIOD: usize = 9;
+
 
 // scalping trailing stop loss configuration
-const TICKS_STOP_LOSS: usize = 39;
-const TICKS_FIRST_TARGET: usize = 15;
-const TICKS_SECOND_TARGET: usize = 20;
-const TICKS_THIRD_TARGET: usize = 28;
+const TICKS_STOP_LOSS: usize = 10;
+const TICKS_FIRST_TARGET: usize = 8;
+const TICKS_SECOND_TARGET: usize = 13;
+const TICKS_THIRD_TARGET: usize = 20;
 const TICKS_START_TRAILING: usize = 5;
 const TICKS_UPDATE_TRAILING_FREQUENCY: usize = 1;
 const TICKS_DISTANCE_FROM_PRICE: usize = 2;
@@ -47,7 +44,6 @@ pub struct StormerScalperStrategy {
     open_position: Option<ScalperPosition>,
     candle_parser: TimeCandlestickGenerator,
     last_three_closed_candles: [Candlestick; 3],
-    rsi: RelativeStrengthIndex,
 }
 
 impl HighResolutionTradingStrategy for StormerScalperStrategy {
@@ -58,9 +54,8 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         StormerScalperStrategy {
             quantity_per_position: QUANTITY_PER_POSITION,
             points_per_tick_asset: None,
-            cut_off_time_sending_orders: NaiveTime::from_hms_opt(17, 50, 00).unwrap(),
-            time_force_close_open_positions: NaiveTime::from_hms_opt(17, 55, 00).unwrap(),
-            rsi: RelativeStrengthIndex::new(RSI_PERIOD),
+            cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 30, 00).unwrap(),
+            time_force_close_open_positions: NaiveTime::from_hms_opt(11, 00, 00).unwrap(),
 
             candle_count: 0,
             min_candles: 21,
@@ -84,22 +79,8 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         self.points_per_tick_asset = Some(asset.min_point_variation);
         self.candle_count = 0;
 
-        let cut_off_time_send_orders = date::decrease_time(
-            &asset.end_trading_time,
-            5,
-            TimeUnit::Minutes,
-        );
-        let time_to_close_open_positions = date::increase_time(
-            &cut_off_time_send_orders,
-            2,
-            TimeUnit::Minutes,
-        );
-        self.cut_off_time_sending_orders = cut_off_time_send_orders;
-        self.time_force_close_open_positions = time_to_close_open_positions;
-
         for trade in trades {
             if let Some(fast_candle) = self.candle_parser.parse_only_closed_candles(trade) {
-                self.rsi.next(fast_candle.close);
                 self.stochastic.next(fast_candle.close);
                 self.bollinger_bands.next(fast_candle.close);
                 self.update_fast_candles(fast_candle);
@@ -115,9 +96,8 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             self.candle_count += 1;
             let stochastic = self.stochastic.next(fast_candle.close);
             let bollinger_output = self.bollinger_bands.next(fast_candle.close);
-            let rsi = self.rsi.next(fast_candle.close);
             self.update_fast_candles(fast_candle);
-            fast_order_enter = self.should_open_position(stochastic, bollinger_output, rsi);
+            fast_order_enter = self.should_open_position(stochastic, bollinger_output);
         }
 
         TradeAction::custom_order(fast_order_exit, fast_order_enter, None, None)
@@ -131,9 +111,9 @@ impl StormerScalperStrategy {
         self.last_three_closed_candles[2] = new_closed_candle;
     }
 
-    fn should_open_position(&mut self, stochastic: f64, bollinger_output: BollingerBandsOutput, rsi: f64) -> Option<OrderAction> {
+    fn should_open_position(&mut self, stochastic: f64, bollinger_output: BollingerBandsOutput) -> Option<OrderAction> {
         let first_candle = self.last_three_closed_candles[2];
-        if self.candle_count < self.min_candles || self.open_position.is_some() ||
+        if self.candle_count < self.min_candles ||
             first_candle.close_time.expect("candlestick should be closed")
                 .num_seconds_from_midnight() >= self.cut_off_time_sending_orders.num_seconds_from_midnight() {
             return None;
@@ -144,36 +124,47 @@ impl StormerScalperStrategy {
 
         // looking for long positions
         if current_price > bollinger_output.upper &&
-            rsi < RSI_LONG_THRESHOLD &&
             stochastic >= STOCHASTIC_LONG_THRESHOLD &&
             second_candle.direction() == SHORT &&
             first_candle.direction() == LONG {
+
+            let quantity_to_trade = self.qty_to_open_new_order_and_close_old();
             self.open_position = Some(ScalperPosition::new(
                 Side::BUY,
                 current_price,
                 self.points_per_tick_asset?,
                 self.quantity_per_position,
             ));
-            let order = OrderAction::MarketLong(self.quantity_per_position);
+
+            let order = OrderAction::MarketLong(quantity_to_trade);
             return Some(order);
         }
 
         // looking for short positions
         if current_price < bollinger_output.lower &&
-            rsi > RSI_SHORT_THRESHOLD &&
             stochastic <= STOCHASTIC_SHORT_THRESHOLD &&
             second_candle.direction() == LONG &&
             first_candle.direction() == SHORT {
+
+            let quantity_to_trade = self.qty_to_open_new_order_and_close_old();
             self.open_position = Some(ScalperPosition::new(
                 Side::SELL,
                 current_price,
                 self.points_per_tick_asset?,
                 self.quantity_per_position,
             ));
-            let order = OrderAction::MarketShort(self.quantity_per_position);
+            let order = OrderAction::MarketShort(quantity_to_trade);
             return Some(order);
         }
         None
+    }
+
+    fn qty_to_open_new_order_and_close_old(&self) -> usize {
+        if self.open_position.is_some() {
+            self.quantity_per_position + self.open_position.as_ref().unwrap().open_quantity
+        }else{
+            self.quantity_per_position
+        }
     }
 
     fn should_exit_fast_position(&mut self, new_trade: &Trade) -> Option<OrderAction> {
