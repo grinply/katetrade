@@ -43,6 +43,7 @@ pub struct StormerScalperStrategy {
     min_candles: usize,
     candle_count: usize,
     bollinger_bands: BollingerBands,
+    last_bollinger_bands: (f64, f64, f64),
     stochastic: SlowStochastic,
     open_position: Option<ScalperPosition>,
     candle_parser: TimeCandlestickGenerator,
@@ -69,6 +70,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             candle_parser: TimeCandlestickGenerator::new(TimeUnit::Seconds, CANDLESTICK_PERIOD),
             last_three_closed_candles: [Candlestick::default(); 3],
             open_position: None,
+            last_bollinger_bands: (0.0, 0.0, 0.0),
         }
     }
 
@@ -108,13 +110,30 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
     }
 
     fn process_new_trade(&mut self, new_trade: &Trade) -> TradeAction {
+        // let mut fast_order_enter: Option<OrderAction> = None;
+        // let fast_order_exit: Option<OrderAction> = self.should_exit_fast_position(new_trade);
+        //
+        // if let Some(fast_candle) = self.candle_parser.parse_only_closed_candles(new_trade) {
+        //     self.candle_count += 1;
+        //     let stochastic = self.stochastic.next(fast_candle.close);
+        //     let bollinger_output = self.bollinger_bands.next(fast_candle.close);
+        //     let rsi = self.rsi.next(fast_candle.close);
+        //     self.update_fast_candles(fast_candle);
+        //     fast_order_enter = self.should_open_position(stochastic, bollinger_output, rsi);
+        // }
+        //
+        // TradeAction::custom_order(fast_order_exit, fast_order_enter, None, None)
+
+        //Calculate bollinger output
         let mut fast_order_enter: Option<OrderAction> = None;
-        let fast_order_exit: Option<OrderAction> = self.should_exit_fast_position(new_trade);
+        let mut bollinger = self.last_bollinger_bands.clone();
+        let fast_order_exit: Option<OrderAction> = self.should_exit_fast_position(new_trade, bollinger);
 
         if let Some(fast_candle) = self.candle_parser.parse_only_closed_candles(new_trade) {
             self.candle_count += 1;
             let stochastic = self.stochastic.next(fast_candle.close);
             let bollinger_output = self.bollinger_bands.next(fast_candle.close);
+            self.last_bollinger_bands = (bollinger_output.lower, bollinger_output.average, bollinger_output.upper);
             let rsi = self.rsi.next(fast_candle.close);
             self.update_fast_candles(fast_candle);
             fast_order_enter = self.should_open_position(stochastic, bollinger_output, rsi);
@@ -176,7 +195,7 @@ impl StormerScalperStrategy {
         None
     }
 
-    fn should_exit_fast_position(&mut self, new_trade: &Trade) -> Option<OrderAction> {
+    fn should_exit_fast_position(&mut self, new_trade: &Trade, bollinger_bands_output: (f64,f64,f64)) -> Option<OrderAction> {
         if self.open_position.is_none() {
             return None;
         }
@@ -198,8 +217,10 @@ impl StormerScalperStrategy {
         if !is_first_chunk_finished && should_close_first_chunk {
             quantity_to_close += self.open_position.as_mut()?.quantity_per_chunk[0];
             // here we can update the stop loss for the last two chunks of the open position
-            self.open_position.as_mut()?.second_chunk.offset_stop_loss(TICKS_SECOND_TARGET, new_trade.price);
-            self.open_position.as_mut()?.final_chunk.offset_stop_loss(TICKS_SECOND_TARGET, new_trade.price);
+            // self.open_position.as_mut()?.second_chunk.offset_stop_loss(TICKS_SECOND_TARGET, new_trade.price);
+            // self.open_position.as_mut()?.final_chunk.offset_stop_loss(TICKS_SECOND_TARGET, new_trade.price);
+            self.open_position.as_mut()?.second_chunk.offset_stop_loss(TICKS_SECOND_TARGET, bollinger_bands_output.1);
+            self.open_position.as_mut()?.final_chunk.offset_stop_loss(TICKS_SECOND_TARGET, bollinger_bands_output.1);
             let side = self.open_position.as_ref()?.side;
 
             println!("[{}]current price is {} , stop loss updated to {} in {} position",
