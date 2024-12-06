@@ -16,7 +16,7 @@ use crate::strategies::strategy;
 
 #[allow(unused)]
 pub trait OrderExecutor {
-    fn execute_order_action(&self, action: TradeAction);
+    fn execute_order_action(&self, action: TradeAction, strategy_name: &str);
 }
 
 /// responsible to keep the context and control the execution of HighResolutionTradingStrategy
@@ -35,12 +35,9 @@ pub struct LiveOrderExecutor {
     market: Market,
     pub strategy_id: String,
     account_id: String,
-    contracts_per_order: i32,
 }
 
 pub struct ExecutionRequest {
-    contracts_per_order: u32,
-    strategy_input_data: StrategyInputData,
     strategy_name: String,
     account_id: String,
     ticker: String,
@@ -54,7 +51,6 @@ impl LiveOrderExecutor {
         ticker: String,
         strategy_name: String,
         market: Market,
-        contracts_per_order: u32,
     ) -> LiveOrderExecutor {
         LiveOrderExecutor {
             client,
@@ -62,27 +58,22 @@ impl LiveOrderExecutor {
             market,
             strategy_id: strategy_name,
             account_id,
-            contracts_per_order: contracts_per_order as i32,
         }
     }
 }
 
 impl ExecutionRequest {
     pub fn new(
-        input_data: StrategyInputData,
         strategy_name: String,
         account_id: String,
         ticker: String,
         market: Market,
-        contracts_per_order: u32,
     ) -> ExecutionRequest {
         ExecutionRequest {
-            strategy_input_data: input_data,
             strategy_name,
             account_id,
             ticker,
             market,
-            contracts_per_order,
         }
     }
 }
@@ -98,7 +89,7 @@ impl LiveStrategyExecutor {
 
     /// Run the strategy in a thread based on the strategy id
     pub fn run_strategy(&mut self, execution_request: ExecutionRequest) -> anyhow::Result<()> {
-        let execution_key = self.can_run_strategy(&execution_request)?;
+        let (execution_key,strategy_input_data) = self.can_run_strategy(&execution_request)?;
 
         let trade_datafeed = data_feed_reader::TradeFeedStream::new(
             self.configuration.market_connector_socket_url.as_str(),
@@ -117,10 +108,9 @@ impl LiveStrategyExecutor {
             execution_request.ticker.to_string(),
             execution_request.strategy_name.to_string().to_lowercase(),
             execution_request.market.clone(),
-            execution_request.contracts_per_order,
         );
 
-        match execution_request.strategy_input_data {
+        match strategy_input_data {
             StrategyInputData::TRADE => self.start_high_resolution_strategy_execution(
                 execution_key,
                 order_executor,
@@ -138,7 +128,7 @@ impl LiveStrategyExecutor {
     /// validate if all requirements for the provided ExecutionRequest are met
     /// if everything is ok an `execution_key` will be returned as Result
     /// else an Error will be generated with the reason why the execution isn´t valid
-    fn can_run_strategy(&self, execution_request: &ExecutionRequest) -> Result<String, anyhow::Error> {
+    fn can_run_strategy(&self, execution_request: &ExecutionRequest) -> Result<(String, StrategyInputData), anyhow::Error> {
         let running_key = Self::running_strategy_key(
             execution_request.strategy_name.to_lowercase().as_str(),
             execution_request.ticker.as_str(),
@@ -157,23 +147,14 @@ impl LiveStrategyExecutor {
         let strategy_name = execution_request.strategy_name
             .to_lowercase();
 
-
-        match execution_request.strategy_input_data {
-            StrategyInputData::CANDLESTICK => {
-                let strategy = get_candlestick_strategy_by_name(strategy_name.as_str());
-                if strategy.is_none() {
-                    anyhow::bail!("No candlestick strategy found for the provided strategy name '{}'", execution_request.strategy_name);
-                }
-            }
-            StrategyInputData::TRADE => {
-                let strategy = get_high_resolution_strategy_by_name(strategy_name.as_str());
-                if strategy.is_none() {
-                    anyhow::bail!("No high resolution strategy found for the provided strategy name '{}'", execution_request.strategy_name);
-                }
-            }
+        let mut input_data: StrategyInputData = StrategyInputData::TRADE;
+        if get_candlestick_strategy_by_name(strategy_name.as_str()).is_some() {
+            input_data = StrategyInputData::CANDLESTICK
+        } else if get_high_resolution_strategy_by_name(strategy_name.as_str()).is_none() {
+            anyhow::bail!("no strategy found for the provided strategy name '{}'", execution_request.strategy_name);
         }
 
-        Ok(running_key)
+        Ok((running_key, input_data))
     }
 
     fn start_candlestick_strategy_execution(&self, execution_key: String,
@@ -191,7 +172,7 @@ impl LiveStrategyExecutor {
                 let new_trade = consumer_channel.recv().unwrap(); // this will block the thread until a new trade is available
                 if let Some(closed_candle) = candlestick_parser.parse_only_closed_candles(&new_trade) {
                     let action: TradeAction = trading_strategy.process_closed_candlestick(&closed_candle);
-                    order_executor.execute_order_action(action);
+                    order_executor.execute_order_action(action, strategy_name);
                 }
             }
         });
@@ -202,12 +183,13 @@ impl LiveStrategyExecutor {
                                                 consumer_channel: Receiver<Trade>) {
         let running = self.running_strategy_map.get(execution_key.as_str()).unwrap().clone();
         thread::spawn(move || {
-            let mut trading_strategy = get_high_resolution_strategy_by_name(order_executor.strategy_id.as_str()).unwrap();
+            let strategy_name = order_executor.strategy_id.as_str();
+            let mut trading_strategy = get_high_resolution_strategy_by_name(strategy_name).unwrap();
 
             while running.load(std::sync::atomic::Ordering::Relaxed) {
                 let new_trade = consumer_channel.recv().unwrap(); // this will block the thread until a new trade is available
                 let order_action: TradeAction = trading_strategy.process_new_trade(&new_trade);
-                order_executor.execute_order_action(order_action);
+                order_executor.execute_order_action(order_action, strategy_name);
             }
         });
     }
@@ -228,10 +210,10 @@ impl LiveStrategyExecutor {
 }
 
 impl OrderExecutor for LiveOrderExecutor {
-    fn execute_order_action(&self, action: TradeAction) {
+    fn execute_order_action(&self, action: TradeAction, strategy_name: &str) {
         for order_option in action.orders {
             if let Some(order) = order_option {
-                self.execute_order(order);
+                self.execute_order(order, strategy_name);
             }
         }
     }
@@ -239,7 +221,7 @@ impl OrderExecutor for LiveOrderExecutor {
 
 
 impl LiveOrderExecutor {
-    fn execute_order(&self, order: OrderAction) {
+    fn execute_order(&self, order: OrderAction, strategy_name: &str) {
         let order_id_result = match order {
             OrderAction::MarketLong(qty) => {
                 self.client.send_market_order(
@@ -250,7 +232,7 @@ impl LiveOrderExecutor {
                     self.account_id.as_str(),
                     self.strategy_id.as_str(),
                 )
-            },
+            }
             OrderAction::MarketShort(qty) => {
                 self.client.send_market_order(
                     self.ticker.as_str(),
@@ -260,7 +242,7 @@ impl LiveOrderExecutor {
                     self.account_id.as_str(),
                     self.strategy_id.as_str(),
                 )
-            },
+            }
             OrderAction::LimitLong(price, qty) => {
                 self.client.send_limit_order(
                     self.ticker.as_str(),
@@ -271,7 +253,7 @@ impl LiveOrderExecutor {
                     self.account_id.as_str(),
                     self.strategy_id.as_str(),
                 )
-            },
+            }
             OrderAction::LimitShort(price, qty) => {
                 self.client.send_limit_order(
                     self.ticker.as_str(),
@@ -282,20 +264,20 @@ impl LiveOrderExecutor {
                     self.account_id.as_str(),
                     self.strategy_id.as_str(),
                 )
-            },
+            }
             OrderAction::Abort => {
                 panic!("received an abort command we should understand why")
-            },
+            }
         };
 
         if order_id_result.is_ok() {
             let order_id = order_id_result.unwrap();
-            println!("{:?} order sent to execute {} contracts of {}. resulting id {order_id}",
-                     order,
-                     self.contracts_per_order,
-                     self.ticker
+            println!(
+                "{} sent a {:?} order to be executed. resulting id {order_id}",
+                strategy_name,
+                order,
             );
-            //TODO: we must validate the order execution and also keep track of the position
+            //TODO: we should validate that the order execution and also keep track of the position
         } else {
             println!("error sending {:?} order on ticker {}.  {}",
                      order,
