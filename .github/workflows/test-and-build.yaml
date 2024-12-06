@@ -39,8 +39,28 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build Docker image
-        run: docker build -t ghcr.io/${{ github.repository_owner }}/katetrade:${{ github.event.number }} .
+        run: docker build -t ghcr.io/${{ github.repository_owner }}/katetrade${{ github.event.number }} .
+
+      - uses: actions/github-script@v6
+        if: github.event_name != 'pull_request'
+        id: get_issue_number
+        with:
+          script: |
+            if (context.issue.number) {
+              // Return issue number if present
+              return context.issue.number;
+            } else {
+              // Otherwise return issue number from commit
+              return (
+                await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                  commit_sha: context.sha,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                })
+              ).data[0].number;
+            }
+          result-encoding: string
 
       - name: Push Docker image to GitHub Container Registry
-        run: docker push ghcr.io/${{ github.repository_owner }}/katetrade:${{ github.event.number }}
         if: github.event_name != 'pull_request'
+        run: docker push ghcr.io/${{ github.repository_owner }}/katetrade:${{steps.get_issue_number.outputs.result}}
