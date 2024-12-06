@@ -42,7 +42,9 @@ pub struct BacktestMetrics {
     pub avg_losing_trade: f64,
     pub profit_factor: f64,
     pub profit_factor_log_sum: f64,
-    pub aborted: bool
+    pub aborted: bool,
+    pub date_best_day: i32,
+    pub date_worst_day: i32,
 }
 
 impl Display for BacktestMetrics {
@@ -80,7 +82,9 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Contracts per Trade", avg_contracts_traded)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Date Best Day", self.date_best_day)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Date Worst Day", self.date_worst_day)
     }
 }
 
@@ -138,6 +142,9 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
     let mut sum_winning_trades: f64 = 0.0;
     let mut sum_losing_trades: f64 = 0.0;
 
+    let mut best_day: i32 = 0;
+    let mut worst_day: i32 = 0;
+
     for position in &event_handler.positions {
         profit_factor_log_sum += position.sum_per_candle_total_log_returns;
 
@@ -191,9 +198,12 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
 
         if position.liquid_pnl > liquid_profit_best_day {
             liquid_profit_best_day = position.liquid_pnl;
+            best_day = position.date;
+
         }
         if position.liquid_pnl < liquid_profit_worst_day {
             liquid_profit_worst_day = position.liquid_pnl;
+            worst_day = position.date;
         }
 
 
@@ -253,7 +263,9 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
         avg_losing_trade: sum_losing_trades / total_loses as f64,
         profit_factor: sum_winning_trades/(-1.0*sum_losing_trades),
         profit_factor_log_sum,
-        aborted: event_handler.removed_for_lack_of_margin
+        aborted: event_handler.removed_for_lack_of_margin,
+        date_best_day: best_day,
+        date_worst_day: worst_day,
     }
 }
 

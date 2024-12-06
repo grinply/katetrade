@@ -8,12 +8,10 @@ use crate::models::side::Side;
 use crate::strategies::custom::trade_rule_strategy::trade_rule::{TradeRule};
 use crate::strategies::strategy::{CandlestickTradingStrategy};
 use crate::utils::date::is_time_after;
-use crate::utils::math::value_on_range;
 
 /// this is strategy is based upon the papers:
 /// Trade Optimizer and Optimization of the Trading Rule in Foreign Exchange using Genetic Algorithm
 pub struct TradeRuleStrategy {
-    quantity_to_trade: u32,
     long_rule: TradeRule,
     short_rule: TradeRule,
     is_long_position_open: bool,
@@ -36,11 +34,7 @@ impl TradeRuleStrategy {
             }
         }
 
-        // you may want give control to the strategy for how many contracts it wants to trade
-        let quantity_to_trade = value_on_range((1.0, 20.0), chromosome[0] as f64) as u32;
-
         TradeRuleStrategy {
-            quantity_to_trade,
             long_rule: TradeRule::new(Side::BUY, &chromosome[1..=18]),
             short_rule: TradeRule::new(Side::SELL, &chromosome[18..=36]),
             is_long_position_open: false,
@@ -48,10 +42,6 @@ impl TradeRuleStrategy {
             take_profit_price: 0.0,
             stop_loss_price: 0.0,
         }
-    }
-
-    pub fn quantity_to_trade(&self) -> u32 {
-        self.quantity_to_trade
     }
 }
 

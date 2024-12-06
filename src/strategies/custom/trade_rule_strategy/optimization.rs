@@ -58,11 +58,8 @@ fn calculate_fitness(metrics: BacktestMetrics) -> f64{
 impl FitnessExecutor for BacktestOptimizerTradeRule {
     fn calculate_fitness(&self, chromosome: &[f32]) -> f64 {
         let trading_model = Box::new(TradeRuleStrategy::decode(chromosome));
-        let quantity_to_trade = trading_model.quantity_to_trade();
         let metrics = self.training_backtester.run_candlestick_backtest(
             trading_model,
-            quantity_to_trade,
-            false,
         );
 
         calculate_fitness(metrics)
@@ -70,17 +67,12 @@ impl FitnessExecutor for BacktestOptimizerTradeRule {
 
     fn chromosome_details(&self, chromosome: &[f32]) -> String {
         let trading_model = Box::new(TradeRuleStrategy::decode(chromosome));
-        let quantity_to_trade = trading_model.quantity_to_trade();
         let training_metrics = self.training_backtester.run_candlestick_backtest(
             trading_model,
-            quantity_to_trade,
-            true,
         );
 
         let validation_metrics = self.validation_backtester.run_candlestick_backtest(
             Box::new(TradeRuleStrategy::decode(chromosome)),
-            quantity_to_trade,
-            true,
         );
 
         format!(

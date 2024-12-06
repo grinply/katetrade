@@ -29,8 +29,6 @@ pub(crate) struct ExchangeEventHandler<'a> {
     asset: &'a Asset,
     pub(crate) current_balance: f64,
     slippage_multiplier: f64, // defaults to 0.0001
-    initial_qty_per_order: u32,
-    base_qty_per_order: u32,
     total_candlesticks_processed: u64,
     pub(crate) current_position: Option<Position>,
     // scheduled_orders: Vec<TradeEvent<'a>>,
@@ -40,7 +38,6 @@ pub(crate) struct ExchangeEventHandler<'a> {
     current_month_year: i32,
     current_datapoint: Candlestick,
     pub(crate) last_datapoint: Candlestick,
-    fixed_traded_qty: bool,
     pub(crate) removed_for_lack_of_margin: bool,
 }
 
@@ -59,22 +56,19 @@ enum TradeEvent<'b> {
 }
 
 impl<'a> ExchangeEventHandler<'a> {
-    pub(crate) fn new(asset: &'a Asset, base_qty_to_trade: u32, fixed_traded_qty: bool) -> Self {
+    pub(crate) fn new(asset: &'a Asset) -> Self {
         ExchangeEventHandler {
             asset,
             current_position: None,
             current_datapoint: Candlestick::default(),
             last_datapoint: Candlestick::default(),
             current_balance: INITIAL_BALANCE,
-            base_qty_per_order: base_qty_to_trade,
-            initial_qty_per_order: base_qty_to_trade,
             slippage_multiplier: DEFAULT_SLIPPAGE_MULTIPLIER,
             total_candlesticks_processed: 0,
             event_index: 0,
             positions: vec![],
             total_contracts_executed_current_month: 0,
             current_month_year: -1,
-            fixed_traded_qty,
             removed_for_lack_of_margin: false,
         }
     }
@@ -136,7 +130,6 @@ impl<'a> ExchangeEventHandler<'a> {
     }
 
     fn new_datapoint(&mut self, new_datapoint: &impl DataPoint) {
-        self.should_updated_traded_qty(new_datapoint);
         self.check_compulsory_close_position(new_datapoint);
         self.check_scheduled_order_trigger(new_datapoint);
         self.track_mark_to_market(new_datapoint);
@@ -196,27 +189,6 @@ impl<'a> ExchangeEventHandler<'a> {
             }
         }
     }
-
-    fn should_updated_traded_qty(&mut self, datapoint: &impl DataPoint) {
-        if self.fixed_traded_qty {
-            return;
-        }
-
-        // we may adjust the traded qty in each new trading day
-        // the amount traded is proportional to the initial balance
-        // if the initial_qty_per_order is 5 contracts and given the initial balance of 10.000
-        // if on the next trading day the current balance is 20.000 the traded qty will be 10 contracts
-        // keeping the proportion as the balance changes
-        if datapoint.date() != self.last_datapoint.date() {
-            self.base_qty_per_order = (self.current_balance as u32 * self.initial_qty_per_order) / INITIAL_BALANCE as u32;
-
-            // this is the minimum quantity to trade we will never trade less than this amount
-            if self.base_qty_per_order < self.initial_qty_per_order {
-                self.base_qty_per_order = self.initial_qty_per_order;
-            }
-        }
-    }
-
 
     /// close an existing open existing position in the following cases:
     /// 1) the day is change and the position is open ( we don't allow overnight positions to be open )
@@ -293,7 +265,7 @@ impl<'a> ExchangeEventHandler<'a> {
 
     fn increase_position(&mut self, current_entry_price: f64, quantity_to_increase: usize) {
         assert!(self.current_position.is_some(), "sanity check, should not try to increase a position that doesnt exit");
-        if !self.has_margin_execute_order() {
+        if !self.has_margin_execute_order(quantity_to_increase) {
             self.removed_for_lack_of_margin = true;
             return;
         }
@@ -323,7 +295,7 @@ impl<'a> ExchangeEventHandler<'a> {
         position.total_qty = position.total_qty + quantity_to_increase as i32;
         position.open_qty += quantity_to_increase as i32;
 
-        position.quantity_of_contracts += self.base_qty_per_order;
+        position.quantity_of_contracts += quantity_to_increase as u32;
         position.total_paid_in_fees += current_fee;
         self.total_contracts_executed_current_month += quantity_to_increase as u64;
         self.current_balance -= current_fee;
@@ -331,16 +303,11 @@ impl<'a> ExchangeEventHandler<'a> {
         assert!(position.total_qty >= position.open_qty, "open quantity cannot be greater than total quantity");
     }
 
-    fn has_margin_execute_order(&self) -> bool {
-        self.asset.margin_per_contract * (self.base_qty_per_order as f64) < self.current_balance
+    fn has_margin_execute_order(&self, quantity_of_contracts: usize) -> bool {
+        self.asset.margin_per_contract * (quantity_of_contracts as f64) < self.current_balance
     }
 
     fn decrease_position(&mut self, current_exit_price: f64, datapoint: &impl DataPoint, quantity_to_decrease: usize) {
-        if !self.has_margin_execute_order() {
-            self.removed_for_lack_of_margin = true;
-            return;
-        }
-
         assert!(self.current_position.is_some(), "sanity check, should not try to decrease a position that doesnt exit");
         assert!(self.current_position.as_ref().unwrap().open_qty > 0, "cant decrease a position that doesnt have any contract/shares left open");
 
@@ -412,7 +379,7 @@ impl<'a> ExchangeEventHandler<'a> {
 
     fn open_new_position(&mut self, entry_price: f64, side: Side, datapoint: &impl DataPoint, quantity: usize) {
         assert!(self.current_position.is_none(), "sanity check, should not try open a position without closing the existing one");
-        let fee_open_position = self.calculate_fees(self.base_qty_per_order as u64);
+        let fee_open_position = self.calculate_fees(quantity as u64);
         let new_position = Position {
             side,
             avg_entry_price: entry_price,
@@ -435,7 +402,7 @@ impl<'a> ExchangeEventHandler<'a> {
         };
         self.current_position = Some(new_position);
         self.current_balance -= fee_open_position;
-        self.total_contracts_executed_current_month += self.base_qty_per_order as u64;
+        self.total_contracts_executed_current_month += quantity as u64;
     }
 
     fn close_position(&mut self, datapoint: &impl DataPoint) {

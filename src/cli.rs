@@ -157,12 +157,6 @@ pub fn get_command_matches() -> ArgMatches {
                     .default_value("true")
                     .num_args(0..=1)
                     .required(false))
-                .arg(arg!(-q --qty_to_trade <QUANTITY_TO_TRADE> "base traded quantity to trade on each order sent to the market")
-                    .default_value("1")
-                    .required(false))
-                .arg(arg!(--fixed_trade_qty <FIXED_TRADE_QTY> "defines if the quantity traded should increase and decrease as the current balance changes to keep the traded amount proportional")
-                    .default_value("true")
-                    .required(false))
         )
         .subcommand(
             Command::new(constants::FILE)
@@ -298,20 +292,6 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
         .expect("exchange is required")
     ).unwrap();
 
-    let qty_to_trade: u32 = if sub_matches.get_one::<String>("qty_to_trade").is_some() {
-        sub_matches.get_one::<String>("qty_to_trade").expect("required")
-            .parse().expect("should be a positive number")
-    } else {
-        1
-    };
-
-    let fixed_trade_qty: bool = if sub_matches.get_one::<String>("fixed_trade_qty").is_some() {
-        sub_matches.get_one::<String>("fixed_trade_qty").expect("required")
-            .parse().expect("should be a boolean value")
-    } else {
-        true
-    };
-
     let asset = Asset::get_asset(ticker, market, exchange);
 
     if asset.is_none() {
@@ -334,8 +314,6 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
             begin,
             end,
             asset.unwrap(),
-            qty_to_trade,
-            fixed_trade_qty,
             cache_on_memory,
             no_download
         );
@@ -348,8 +326,6 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
             begin,
             end,
             asset.unwrap(),
-            qty_to_trade,
-            fixed_trade_qty,
             cache_on_memory,
             no_download
         );
@@ -362,8 +338,6 @@ fn run_high_resolution_backtest(
     begin: u32,
     end: u32,
     asset: &Asset,
-    qty_to_trade: u32,
-    fixed_trade_qty: bool,
     cache_on_memory: bool,
     no_download: bool
 ) {
@@ -389,7 +363,7 @@ fn run_high_resolution_backtest(
     println!("{}", backtester);
 
     let now = Instant::now();
-    let metrics = backtester.run_high_resolution_backtest(strategy, qty_to_trade, fixed_trade_qty);
+    let metrics = backtester.run_high_resolution_backtest(strategy);
     let elapsed = now.elapsed();
     println!("backtest executed successfully in {:.2?}", elapsed);
     println!("{}", metrics);
@@ -401,8 +375,6 @@ fn run_candlestick_backtest(
     begin: u32,
     end: u32,
     asset: &Asset,
-    qty_to_trade: u32,
-    fixed_trade_qty: bool,
     cache_on_memory: bool,
     no_download: bool
 ) {
@@ -429,7 +401,7 @@ fn run_candlestick_backtest(
     println!("{}", backtester);
 
     let now = Instant::now();
-    let metrics = backtester.run_candlestick_backtest(strategy, qty_to_trade, fixed_trade_qty);
+    let metrics = backtester.run_candlestick_backtest(strategy);
     let elapsed = now.elapsed();
     println!("backtest executed successfully in {:.2?}", elapsed);
     println!("{}", metrics);

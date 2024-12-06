@@ -1,4 +1,5 @@
 use chrono::{NaiveTime, Timelike};
+use itertools::enumerate;
 use ta::indicators::{BollingerBands, BollingerBandsOutput, SlowStochastic};
 use ta::Next;
 use crate::models::action::{market_order_from_side, OrderAction, TradeAction};
@@ -23,9 +24,9 @@ const STOCHASTIC_SHORT_THRESHOLD: f64 = 20.0;
 
 // scalping trailing stop loss configuration
 const TICKS_FIRST_TARGET: usize = 8;
-const TICKS_SECOND_TARGET: usize = 10; // actually + TICKS_START_TRAILING
-const TICKS_THIRD_TARGET: usize = 18; // actually + TICKS_START_TRAILING
-const TICKS_START_TRAILING: usize = 5;
+const TICKS_SECOND_TARGET: usize = 13; // actually + TICKS_START_TRAILING
+const TICKS_THIRD_TARGET: usize = 20; // actually + TICKS_START_TRAILING
+const TICKS_START_TRAILING: usize = 1;
 const TICKS_UPDATE_TRAILING_FREQUENCY: usize = 1;
 const TICKS_DISTANCE_FROM_PRICE: usize = 4;
 
@@ -40,7 +41,7 @@ pub struct StormerScalperStrategy {
     candle_count: usize,
     bollinger_bands: BollingerBands,
     stochastic: SlowStochastic,
-    open_position: Option<ScalperPosition>,
+    open_positions: Vec<ScalperPosition>,
     candle_parser: TimeCandlestickGenerator,
     last_three_closed_candles: [Candlestick; 3],
 }
@@ -54,7 +55,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             quantity_per_position: QUANTITY_PER_POSITION,
 
             points_per_tick_asset: Some(5.0),
-            cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 30, 00).unwrap(),
+            cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 25, 00).unwrap(),
             time_force_close_open_positions: NaiveTime::from_hms_opt(11, 00, 00).unwrap(),
             candle_count: 0,
             min_candles: 21,
@@ -62,7 +63,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             stochastic: SlowStochastic::new(SLOW_STOCHASTIC_PERIOD, SLOW_STOCHASTIC_SMA_PERIOD).unwrap(),
             candle_parser: TimeCandlestickGenerator::new(TimeUnit::Seconds, CANDLESTICK_PERIOD),
             last_three_closed_candles: [Candlestick::default(); 3],
-            open_position: None,
+            open_positions: Vec::new(),
         }
     }
 
@@ -89,18 +90,12 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
 
     fn process_new_trade(&mut self, new_trade: &Trade) -> TradeAction {
         let mut fast_order_enter: Option<OrderAction> = None;
-        let fast_order_exit: Option<OrderAction> = self.should_exit_fast_position(new_trade);
+        let fast_order_exit: Option<OrderAction> = self.should_exit_position(new_trade);
 
         if let Some(fast_candle) = self.candle_parser.parse_only_closed_candles(new_trade) {
             self.candle_count += 1;
             let stochastic = self.stochastic.next(fast_candle.close);
             let bollinger_output = self.bollinger_bands.next(fast_candle.close);
-            if self.open_position.is_some(){
-                // match self.open_position.as_ref().unwrap().side {
-                //     Side::BUY => self.set_all_stop_loses(bollinger_output.average),
-                //     Side::SELL => self.set_all_stop_loses(bollinger_output.average)
-                // }
-            }
             self.update_fast_candles(fast_candle);
             fast_order_enter = self.should_open_position(stochastic, bollinger_output);
         }
@@ -132,15 +127,16 @@ impl StormerScalperStrategy {
             stochastic >= STOCHASTIC_LONG_THRESHOLD &&
             second_candle.direction() == SHORT &&
             first_candle.direction() == LONG {
-            self.open_position = Some(ScalperPosition::new(
+            let mut position = ScalperPosition::new(
                 Side::BUY,
                 current_price,
                 self.points_per_tick_asset?,
                 self.quantity_per_position,
-            ));
-            self.set_all_stop_loses(bollinger_output.lower);
-            let order = OrderAction::MarketLong(self.quantity_per_position);
-            return Some(order);
+            );
+
+            Self::set_all_stop_loses(&mut position, bollinger_output.lower);
+            self.open_positions.push(position);
+            return Some(OrderAction::MarketLong(self.quantity_per_position));
         }
 
         // looking for short positions
@@ -148,82 +144,93 @@ impl StormerScalperStrategy {
             stochastic <= STOCHASTIC_SHORT_THRESHOLD &&
             second_candle.direction() == LONG &&
             first_candle.direction() == SHORT {
-            self.open_position = Some(ScalperPosition::new(
+            let mut position = ScalperPosition::new(
                 Side::SELL,
                 current_price,
                 self.points_per_tick_asset?,
                 self.quantity_per_position,
-            ));
-            self.set_all_stop_loses(bollinger_output.upper);
-            let order = OrderAction::MarketShort(self.quantity_per_position);
-            return Some(order);
+            );
+            Self::set_all_stop_loses(&mut position, bollinger_output.upper);
+            self.open_positions.push(position);
+            return Some(OrderAction::MarketShort(self.quantity_per_position));
         }
         None
     }
 
-    fn set_all_stop_loses(&mut self, new_stop_loss_price: f64){
-        self.open_position.as_mut().unwrap().first_chunk.set_stop_loss(new_stop_loss_price);
-        self.open_position.as_mut().unwrap().second_chunk.set_stop_loss(new_stop_loss_price);
-        self.open_position.as_mut().unwrap().final_chunk.set_stop_loss(new_stop_loss_price);
+    fn set_all_stop_loses(position: &mut ScalperPosition, new_stop_loss_price: f64) {
+        position.first_chunk.set_stop_loss(new_stop_loss_price);
+        position.second_chunk.set_stop_loss(new_stop_loss_price);
+        position.final_chunk.set_stop_loss(new_stop_loss_price);
     }
 
-    fn should_exit_fast_position(&mut self, new_trade: &Trade) -> Option<OrderAction> {
-        if self.open_position.is_none() {
+    fn should_exit_position(&mut self, new_trade: &Trade) -> Option<OrderAction> {
+        if self.open_positions.is_empty() {
             return None;
         }
 
-        if let Some(force_exit) = self.should_force_close_position_end_trading_day(
-            new_trade,
-            self.open_position.as_ref()?.side,
-            self.open_position.as_ref()?.open_quantity,
-        ) {
-            self.open_position = None;
-            return Some(force_exit);
+        if let Some(close_action) = self.should_force_close_position_end_trading_day(new_trade) {
+            return Some(close_action);
         }
 
+        let mut positions_to_remove: Vec<usize> = vec![];
+        let mut total_quantity_to_close: usize = 0;
 
-        let mut quantity_to_close: usize = 0;
+        let side = self.open_positions.first()?.side;
+        for (index_position, open_position) in enumerate(self.open_positions.iter_mut()) {
+            let mut quantity_to_close: usize = 0;
 
-        let is_first_chunk_finished = self.open_position.as_ref()?.first_chunk.is_finished();
-        let should_close_first_chunk = self.open_position.as_mut()?.first_chunk.should_close_position(new_trade.price);
+            let is_first_chunk_finished = open_position.first_chunk.is_finished();
+            let should_close_first_chunk = open_position.first_chunk.should_close_position(new_trade.price);
 
-        if !is_first_chunk_finished && should_close_first_chunk {
-            quantity_to_close += self.open_position.as_mut()?.quantity_per_chunk[0];
-        }
-
-        let is_second_chunk_finished = self.open_position.as_ref()?.second_chunk.is_finished();
-        let should_close_second_chunk = self.open_position.as_mut()?.second_chunk.should_close_position(new_trade.price);
-
-        if !is_second_chunk_finished && should_close_second_chunk {
-            quantity_to_close += self.open_position.as_ref()?.quantity_per_chunk[1];
-        }
-
-        let is_final_chunk_finished = self.open_position.as_ref()?.final_chunk.is_finished();
-        let should_close_final_chunk = self.open_position.as_mut()?.final_chunk.should_close_position(new_trade.price);
-
-        if !is_final_chunk_finished && should_close_final_chunk {
-            quantity_to_close += self.open_position.as_ref()?.quantity_per_chunk[2];
-        }
-
-        if quantity_to_close > 0 {
-            let side = self.open_position.as_ref()?.side;
-            self.open_position.as_mut()?.open_quantity -= quantity_to_close;
-            if self.open_position.as_ref()?.open_quantity == 0 {
-                self.open_position = None;
+            if !is_first_chunk_finished && should_close_first_chunk {
+                quantity_to_close += open_position.quantity_per_chunk[0];
             }
 
-            let order = market_order_from_side(
-                side.opposite_side(),
-                quantity_to_close,
-            );
+            let is_second_chunk_finished = open_position.second_chunk.is_finished();
+            let should_close_second_chunk = open_position.second_chunk.should_close_position(new_trade.price);
 
-            return Some(order);
+            if !is_second_chunk_finished && should_close_second_chunk {
+                quantity_to_close += open_position.quantity_per_chunk[1];
+            }
+
+            let is_final_chunk_finished = open_position.final_chunk.is_finished();
+            let should_close_final_chunk = open_position.final_chunk.should_close_position(new_trade.price);
+
+            if !is_final_chunk_finished && should_close_final_chunk {
+                quantity_to_close += open_position.quantity_per_chunk[2];
+            }
+
+            if quantity_to_close > 0 {
+                open_position.open_quantity -= quantity_to_close;
+                if open_position.open_quantity == 0 {
+                    positions_to_remove.push(index_position);
+                }
+
+                total_quantity_to_close += quantity_to_close;
+            }
+        }
+
+        let mut index_offset = 0;
+        for index in positions_to_remove {
+            if index != 0 {
+                self.open_positions.remove(index - index_offset);
+            }else{
+                self.open_positions.remove(0);
+            }
+            index_offset+=1
+        }
+
+        if total_quantity_to_close > 0 {
+            return Some(market_order_from_side(
+                side.opposite_side(),
+                total_quantity_to_close,
+            ));
         }
 
         None
     }
 
-    fn should_force_close_position_end_trading_day(&self, new_trade: &Trade, side: Side, open_quantity: usize) -> Option<OrderAction> {
+    fn should_force_close_position_end_trading_day(&self, new_trade: &Trade) -> Option<OrderAction> {
         let current_time = date::convert_to_naive_time(new_trade.time);
         assert!(
             current_time.is_some(),
@@ -236,6 +243,11 @@ impl StormerScalperStrategy {
         let force_close_time = self.time_force_close_open_positions.num_seconds_from_midnight();
 
         if current_time >= force_close_time {
+            let side = self.open_positions.first()?.side;
+            let open_quantity = self.open_positions.iter()
+                .fold(0, |total_open_quantity, position|
+                    total_open_quantity + position.open_quantity);
+
             return Some(market_order_from_side(
                 side.opposite_side(),
                 open_quantity)
@@ -256,7 +268,6 @@ struct ScalperPosition {
 
 impl ScalperPosition {
     fn new(side: Side, entry_price: f64, points_per_tick: f64, quantity_to_trade: usize) -> Self {
-        assert!(quantity_to_trade % 2 == 0);
         assert!(quantity_to_trade % 4 == 0);
 
         ScalperPosition {
