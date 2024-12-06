@@ -467,7 +467,7 @@ fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, 
     }
 
     println!(
-        "started trading ticker {} for the account {} using strategy {}",
+        "started trading {} for the account {} using {}",
         ticker, account_id, strategy_id
     );
 
