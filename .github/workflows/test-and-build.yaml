@@ -38,11 +38,7 @@ jobs:
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Build Docker image
-        run: docker build -t ghcr.io/${{ github.repository_owner }}/katetrade${{ github.event.number }} .
-
       - uses: actions/github-script@v6
-        if: github.event_name != 'pull_request'
         id: get_issue_number
         with:
           script: |
@@ -60,6 +56,9 @@ jobs:
               ).data[0].number;
             }
           result-encoding: string
+      
+      - name: Build Docker image
+        run: docker build -t ghcr.io/${{ github.repository_owner }}/katetrade:${{steps.get_issue_number.outputs.result}} .
 
       - name: Push Docker image to GitHub Container Registry
         if: github.event_name != 'pull_request'
