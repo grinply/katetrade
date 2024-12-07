@@ -76,8 +76,9 @@ impl TrailingStop {
 
     #[allow(unused)]
     /// will ignore the previously defined activation_price and start trailing the current price
-    pub fn start_trailing_now(&mut self) {
+    pub fn start_trailing_now(&mut self, current_price: f64) {
         self.is_trailing_active = true;
+        self.price_next_trailing_move = current_price;
     }
 
     pub fn set_stop_loss(&mut self, new_stop_loss_price: f64){
@@ -171,7 +172,7 @@ mod test {
             1,
         );
 
-        trailing_stop.start_trailing_now();
+        trailing_stop.start_trailing_now(119_980.0);
 
         assert_eq!(trailing_stop.is_trailing_active, true);
         assert_eq!(trailing_stop.is_finished, false);

@@ -127,6 +127,12 @@ impl StormerScalperStrategy {
             stochastic >= STOCHASTIC_LONG_THRESHOLD &&
             second_candle.direction() == SHORT &&
             first_candle.direction() == LONG {
+            for position in self.open_positions.iter_mut() {
+                if current_price > position.entry_price && !position.first_chunk.is_finished(){
+                    position.first_chunk.start_trailing_now(current_price);
+                }
+            }
+
             let mut position = ScalperPosition::new(
                 Side::BUY,
                 current_price,
@@ -144,6 +150,13 @@ impl StormerScalperStrategy {
             stochastic <= STOCHASTIC_SHORT_THRESHOLD &&
             second_candle.direction() == LONG &&
             first_candle.direction() == SHORT {
+
+            for position in self.open_positions.iter_mut() {
+                if current_price < position.entry_price && !position.first_chunk.is_finished(){
+                    position.first_chunk.start_trailing_now(current_price);
+                }
+            }
+
             let mut position = ScalperPosition::new(
                 Side::SELL,
                 current_price,
@@ -259,6 +272,7 @@ impl StormerScalperStrategy {
 
 struct ScalperPosition {
     side: Side,
+    entry_price: f64,
     open_quantity: usize,
     quantity_per_chunk: [usize; 3],
     first_chunk: TrailingStop,
@@ -272,6 +286,7 @@ impl ScalperPosition {
 
         ScalperPosition {
             side,
+            entry_price,
             open_quantity: quantity_to_trade,
 
             quantity_per_chunk: [quantity_to_trade / 2, quantity_to_trade / 4, quantity_to_trade / 4],
