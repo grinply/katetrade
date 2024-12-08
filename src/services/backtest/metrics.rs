@@ -4,9 +4,7 @@ use crate::models::side::Side;
 use crate::services::backtest::exchange_event_handler::{ExchangeEventHandler, INITIAL_BALANCE};
 use crate::utils::math;
 
-const YEARLY_RISK_FREE_RATE: f64 = 10.5; // Avg yield for the Brazilian SELIC BOND from 2009 to 2024
-const TRADING_DAYS_IN_A_YEAR: u32 = 250;
-const DAILY_RISK_FREE_RATE: f64 = YEARLY_RISK_FREE_RATE / TRADING_DAYS_IN_A_YEAR as f64;
+const TRADING_DAYS_IN_A_YEAR: f64 = 252.0;
 
 #[allow(unused)]
 pub struct BacktestMetrics {
@@ -224,11 +222,11 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
 
     let daily_percentage_returns = get_daily_percentage_returns(liquid_profit_per_day, daily_start_balance);
     let sum_daily_excess_return_percentage: f64 = daily_percentage_returns.iter()
-        .map(|daily_percentage_return| *daily_percentage_return - DAILY_RISK_FREE_RATE)
+        .map(|daily_percentage_return| *daily_percentage_return)
         .sum();
     let avg_daily_excess_return_percentage = sum_daily_excess_return_percentage / daily_percentage_returns.len() as f64;
     let standard_deviation_percentage_returns = math::standard_deviation(daily_percentage_returns);
-    let sharp_ratio = avg_daily_excess_return_percentage / standard_deviation_percentage_returns;
+    let sharp_ratio = (avg_daily_excess_return_percentage / standard_deviation_percentage_returns) * TRADING_DAYS_IN_A_YEAR.sqrt();
 
     BacktestMetrics {
         final_balance: event_handler.current_balance,

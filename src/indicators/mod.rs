@@ -5,3 +5,4 @@ pub mod moving_average_convergence_divergence;
 pub mod true_range;
 pub mod average_true_range;
 pub mod slow_stochastic;
+pub mod average_directional_index;

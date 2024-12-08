@@ -20,7 +20,7 @@ use crate::services::backtest::exchange_event_handler::{ExchangeEventHandler, MI
 use crate::services::backtest::metrics;
 use crate::services::backtest::metrics::BacktestMetrics;
 
-pub const DEBUG_BACKTEST_LOG: bool = true;
+pub const DEBUG_BACKTEST_LOG: bool = false;
 
 #[allow(unused)]
 pub struct TradingBacktester<'a> {
