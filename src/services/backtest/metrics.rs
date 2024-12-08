@@ -4,9 +4,7 @@ use crate::models::side::Side;
 use crate::services::backtest::exchange_event_handler::{ExchangeEventHandler, INITIAL_BALANCE};
 use crate::utils::math;
 
-const YEARLY_RISK_FREE_RATE: f64 = 10.5; // Avg yield for the Brazilian SELIC BOND from 2009 to 2024
-const TRADING_DAYS_IN_A_YEAR: u32 = 250;
-const DAILY_RISK_FREE_RATE: f64 = YEARLY_RISK_FREE_RATE / TRADING_DAYS_IN_A_YEAR as f64;
+const TRADING_DAYS_IN_A_YEAR: f64 = 252.0;
 
 #[allow(unused)]
 pub struct BacktestMetrics {
@@ -34,7 +32,7 @@ pub struct BacktestMetrics {
     pub quantity_of_contracts: u64,
     pub total_wins: u64,
     pub total_loses: u64,
-    pub avg_risk_reward: f32,
+    pub avg_risk_reward: f64,
     pub max_win_streak: i32,
     pub max_lose_streak: i32,
     pub max_draw_down_percentage: f64,
@@ -42,31 +40,27 @@ pub struct BacktestMetrics {
     pub avg_losing_trade: f64,
     pub profit_factor: f64,
     pub profit_factor_log_sum: f64,
-    pub aborted: bool
+    pub aborted: bool,
+    pub avg_contracts_traded: usize,
+    pub balance_evolution: Vec<f64>
 }
 
 impl Display for BacktestMetrics {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let avg_contracts_traded = if self.total_trades == 0 {
-            0
-        }else{
-            self.quantity_of_contracts / (2 * self.total_trades)
-        };
 
-        let expected_return = (self.win_rate_percentage/100.0 * self.avg_winning_trade) - ((1.0-self.win_rate_percentage/100.0) * -self.avg_losing_trade);
         writeln!(f, "{0: <30} {1: <25.2?}", "Trading Days", self.total_trading_days)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Start Balance", INITIAL_BALANCE)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Final Balance", self.final_balance)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Absolute Return", self.final_balance - INITIAL_BALANCE)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Return(%)", self.total_return_percentage)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Expected Return Per Trade", expected_return)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Expected Return Per Trade", self.avg_risk_reward)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Profit Factor", self.profit_factor)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Sharp Ratio", self.sharp_ratio)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Win Rate(%)", self.win_rate_percentage)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Max DrawDown(%)", self.max_draw_down_percentage)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Winning Trade PNL", self.avg_winning_trade)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Losing Trade PNL", self.avg_losing_trade)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Risk/Reward (Lower is Better)", -self.avg_losing_trade/self.avg_winning_trade)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Sharp Ratio", self.sharp_ratio)?;
         writeln!(f, "{0: <30} {1: <25}", "Sharp Ratio Description", evaluate_sharp_ratio(self.sharp_ratio))?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Fees Paid", self.total_fees_paid)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Wins", self.total_wins)?;
@@ -77,7 +71,7 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Long Trades", self.total_long_trades)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Short Trades", self.total_short_trades)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Total Contracts Executed", self.quantity_of_contracts)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Contracts per Trade", avg_contracts_traded)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Contracts per Trade", self.avg_contracts_traded)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)
@@ -137,6 +131,7 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
     let mut profit_factor_log_sum = 0.0;
     let mut sum_winning_trades: f64 = 0.0;
     let mut sum_losing_trades: f64 = 0.0;
+    let mut balance_evolution_over_time: Vec<f64> = vec![INITIAL_BALANCE];
 
     for position in &event_handler.positions {
         profit_factor_log_sum += position.sum_per_candle_total_log_returns;
@@ -198,6 +193,7 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
 
 
         current_balance += position.liquid_pnl;
+        balance_evolution_over_time.push(current_balance);
         if current_balance > local_max_balance {
             local_max_balance = current_balance;
             local_min_balance_after_local_max = current_balance;
@@ -212,13 +208,25 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
         }
     }
 
+    let avg_contracts_traded = if total_trades == 0 {
+        0
+    }else{
+        total_contracts / (2 * total_trades)
+    };
+
+    let avg_losing_trade = sum_losing_trades / total_loses as f64;
+    let avg_winning_trade = sum_winning_trades / total_wins as f64;
+    let win_rate = total_wins as f64 / total_trades as f64;
+    let expected_return = (win_rate * avg_winning_trade) - ((1.0- win_rate) * -avg_losing_trade);
+
+    // sharpe calculation
     let daily_percentage_returns = get_daily_percentage_returns(liquid_profit_per_day, daily_start_balance);
     let sum_daily_excess_return_percentage: f64 = daily_percentage_returns.iter()
-        .map(|daily_percentage_return| *daily_percentage_return - DAILY_RISK_FREE_RATE)
+        .map(|daily_percentage_return| *daily_percentage_return)
         .sum();
     let avg_daily_excess_return_percentage = sum_daily_excess_return_percentage / daily_percentage_returns.len() as f64;
     let standard_deviation_percentage_returns = math::standard_deviation(daily_percentage_returns);
-    let sharp_ratio = avg_daily_excess_return_percentage / standard_deviation_percentage_returns;
+    let sharp_ratio = (avg_daily_excess_return_percentage / standard_deviation_percentage_returns) * TRADING_DAYS_IN_A_YEAR.sqrt();
 
     BacktestMetrics {
         final_balance: event_handler.current_balance,
@@ -236,24 +244,26 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
         median_minutes_in_the_market_per_day: 0,
         total_fees_paid,
         minutes_in_the_market: 0,
-        win_rate_percentage: 100.0 * (total_wins as f64 / total_trades as f64),
+        win_rate_percentage: 100.0 * win_rate,
         total_trades,
         total_long_trades,
         total_short_trades,
         quantity_of_contracts: total_contracts,
         total_wins,
         total_loses,
-        avg_risk_reward: 0.0,
+        avg_risk_reward: expected_return,
         max_win_streak,
         max_lose_streak,
         total_trading_days,
         max_draw_down_percentage: max_draw_down_percentage * 100.0,
         sharp_ratio,
-        avg_winning_trade: sum_winning_trades / total_wins as f64,
-        avg_losing_trade: sum_losing_trades / total_loses as f64,
+        avg_winning_trade,
+        avg_losing_trade,
         profit_factor: sum_winning_trades/(-1.0*sum_losing_trades),
         profit_factor_log_sum,
-        aborted: event_handler.removed_for_lack_of_margin
+        aborted: event_handler.removed_for_lack_of_margin,
+        balance_evolution: vec![],
+        avg_contracts_traded: avg_contracts_traded as usize
     }
 }
 

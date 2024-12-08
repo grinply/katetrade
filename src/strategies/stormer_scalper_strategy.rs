@@ -1,6 +1,6 @@
 use chrono::{NaiveTime, Timelike};
 use ta::indicators::{BollingerBands, BollingerBandsOutput, SlowStochastic};
-use ta::Next;
+use ta::{Next, Reset};
 use crate::indicators::relative_strength_index::RelativeStrengthIndex;
 use crate::models::action::{market_order_from_side, OrderAction, TradeAction};
 use crate::models::asset::Asset;
@@ -12,7 +12,7 @@ use crate::services::trailing_stop::TrailingStop;
 use crate::strategies::strategy::HighResolutionTradingStrategy;
 use crate::utils::date;
 
-const QUANTITY_PER_POSITION: usize = 8;
+const QUANTITY_PER_POSITION: usize = 16;
 const CANDLESTICK_PERIOD: u64 = 10;
 const BOLLINGER_PERIOD: usize = 21;
 const BOLLINGER_MULTIPLIER: f64 = 0.45;
@@ -58,8 +58,8 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         StormerScalperStrategy {
             quantity_per_position: QUANTITY_PER_POSITION,
             points_per_tick_asset: Some(5.0),
-            cut_off_time_sending_orders: NaiveTime::from_hms_opt(17, 50, 00).unwrap(),
-            time_force_close_open_positions: NaiveTime::from_hms_opt(17, 55, 00).unwrap(),
+            cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 20, 00).unwrap(),
+            time_force_close_open_positions: NaiveTime::from_hms_opt(10, 40, 00).unwrap(),
             rsi: RelativeStrengthIndex::new(RSI_PERIOD),
 
             candle_count: 0,
@@ -84,18 +84,11 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         self.points_per_tick_asset = Some(asset.min_point_variation);
         self.candle_count = 0;
 
-        let cut_off_time_send_orders = date::decrease_time(
-            &asset.end_trading_time,
-            5,
-            TimeUnit::Minutes,
-        );
-        let time_to_close_open_positions = date::increase_time(
-            &cut_off_time_send_orders,
-            2,
-            TimeUnit::Minutes,
-        );
-        self.cut_off_time_sending_orders = cut_off_time_send_orders;
-        self.time_force_close_open_positions = time_to_close_open_positions;
+        self.rsi.reset();
+        self.bollinger_bands.reset();
+        self.stochastic.reset();
+        self.last_three_closed_candles = [Candlestick::default();3];
+        self.open_position = None;
 
         for trade in trades {
             if let Some(fast_candle) = self.candle_parser.parse_only_closed_candles(trade) {
