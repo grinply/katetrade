@@ -93,6 +93,7 @@ pub fn convert_to_naive_time(time: i32) -> Option<NaiveTime> {
 /// when using hours you cannot decrease more than 24 hours. **If you do the code will panic !!**
 ///
 /// for example: 18:00:00 decreased of 5 minutes will result in 17:55:00
+#[allow(unused)]
 pub fn decrease_time(current_time: &NaiveTime, amount_to_decrease: u8, unit: TimeUnit) -> NaiveTime {
     match unit {
         TimeUnit::Seconds => {
