@@ -183,7 +183,6 @@ impl StormerScalperStrategy {
             return Some(force_exit);
         }
 
-
         let mut quantity_to_close: usize = 0;
 
         let is_first_chunk_finished = self.open_position.as_ref()?.first_chunk.is_finished();
@@ -198,13 +197,6 @@ impl StormerScalperStrategy {
 
         if !is_second_chunk_finished && should_close_second_chunk {
             quantity_to_close += self.open_position.as_ref()?.quantity_per_chunk[1];
-        }
-
-        let is_final_chunk_finished = self.open_position.as_ref()?.final_chunk.is_finished();
-        let should_close_final_chunk = self.open_position.as_mut()?.final_chunk.should_close_position(new_trade.price);
-
-        if !is_final_chunk_finished && should_close_final_chunk {
-            quantity_to_close += self.open_position.as_ref()?.quantity_per_chunk[2];
         }
 
         if quantity_to_close > 0 {
@@ -250,22 +242,20 @@ impl StormerScalperStrategy {
 struct ScalperPosition {
     side: Side,
     open_quantity: usize,
-    quantity_per_chunk: [usize; 3],
+    quantity_per_chunk: [usize; 2],
     first_chunk: TrailingStop,
     second_chunk: TrailingStop,
-    final_chunk: TrailingStop,
 }
 
 impl ScalperPosition {
     fn new(side: Side, entry_price: f64, points_per_tick: f64, quantity_to_trade: usize) -> Self {
         assert!(quantity_to_trade % 2 == 0);
-        assert!(quantity_to_trade % 4 == 0);
 
         ScalperPosition {
             side,
             open_quantity: quantity_to_trade,
 
-            quantity_per_chunk: [quantity_to_trade / 2, quantity_to_trade / 4, quantity_to_trade / 4],
+            quantity_per_chunk: [quantity_to_trade / 2, quantity_to_trade / 2],
             first_chunk: TrailingStop::new(
                 entry_price,
                 side,
@@ -282,16 +272,6 @@ impl ScalperPosition {
                 points_per_tick,
                 TICKS_STOP_LOSS,
                 TICKS_SECOND_TARGET,
-                TICKS_START_TRAILING,
-                TICKS_DISTANCE_FROM_PRICE,
-                TICKS_UPDATE_TRAILING_FREQUENCY,
-            ),
-            final_chunk: TrailingStop::new(
-                entry_price,
-                side,
-                points_per_tick,
-                TICKS_STOP_LOSS,
-                TICKS_THIRD_TARGET,
                 TICKS_START_TRAILING,
                 TICKS_DISTANCE_FROM_PRICE,
                 TICKS_UPDATE_TRAILING_FREQUENCY,
