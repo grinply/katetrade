@@ -23,7 +23,7 @@ use crate::services::optimization::brkga::{run_brkga_optimization, BrkgaConfig};
 use crate::strategies::custom::trade_rule_strategy::optimization::fitness_optimizer_trade_rule_strategy;
 use crate::strategies::execution_manager::{ExecutionRequest, LiveStrategyExecutor};
 use crate::strategies::strategy;
-use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name, CandlestickTradingStrategy, HighResolutionTradingStrategy, StrategyInputData};
+use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name, CandlestickTradingStrategy, HighResolutionTradingStrategy};
 
 pub fn process_matches(matches: &ArgMatches, configuration: KateConfiguration, client: MarketConnectorClient) {
     match matches.subcommand() {
@@ -81,7 +81,6 @@ pub fn get_command_matches() -> ArgMatches {
                 .arg(arg!(-s --strategy <STRATEGY> "Identifier (id) for the strategy you want to executed'").required(true))
                 .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'").required(true))
                 .arg(arg!(-a --account <ACCOUNT> "AccountId used when sending trades in live mode to the market-connector'").required(true))
-                .arg(arg!(-q --qty <QUANTITY> "Amount of shares/contracts that will be requested with the order").required(true))
                 .arg(arg!(-d --data <DATA> "Type of data used as input for the trading strategy")
                     .value_parser([constants::CANDLESTICK, constants::TRADE])
                     .num_args(0..=1)
@@ -420,28 +419,16 @@ fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, 
         .expect("market is required")
     ).unwrap();
 
-    let strategy_input_data_type = StrategyInputData::from_str(sub_matches
-        .get_one::<String>("data")
-        .expect("account is required")
-    ).unwrap();
-
-    let quantity_to_trade: u32 = sub_matches
-        .get_one::<String>("qty")
-        .expect("quantity is required")
-        .parse().expect("quantity should be a valid integer");
-
     let mut manager = LiveStrategyExecutor::new(
         client,
         configuration,
     );
 
     let strategy_execution_request = ExecutionRequest::new(
-        strategy_input_data_type,
         strategy_id.clone(),
         account_id.clone(),
         ticker.clone(),
         market,
-        quantity_to_trade
     );
 
     let result = manager.run_strategy(strategy_execution_request);
@@ -452,7 +439,7 @@ fn process_run_command(sub_matches: &ArgMatches, client: MarketConnectorClient, 
     }
 
     println!(
-        "started trading ticker {} for the account {} using strategy {}",
+        "started trading {} for the account {} using {}",
         ticker, account_id, strategy_id
     );
 

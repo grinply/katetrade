@@ -1,7 +1,6 @@
 use ta::{Close, High, Low, Next, Reset};
 use crate::indicators::average_true_range::AverageTrueRange;
 use crate::indicators::simple_moving_average::SimpleMovingAverage;
-use crate::indicators::true_range::TrueRange;
 
 /// https://en.wikipedia.org/wiki/Average_directional_movement_index
 pub struct AverageDirectionalIndex {

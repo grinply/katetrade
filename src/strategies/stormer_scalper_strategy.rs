@@ -99,8 +99,6 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         self.keltner_channel.reset();
         self.last_three_closed_candles = [Candlestick::default(); 3];
 
-
-
         for trade in trades {
             if let Some(candle) = self.candle_parser.parse_only_closed_candles(trade) {
                 self.stochastic.next(candle.close);
@@ -152,6 +150,7 @@ impl StormerScalperStrategy {
     ) -> Option<OrderAction> {
         let first_candle = self.last_three_closed_candles[2];
         if self.candle_count < self.min_candles ||
+            !self.open_positions.is_empty() ||
             first_candle.close_time.expect("candlestick should be closed")
                 .num_seconds_from_midnight() >= self.cut_off_time_sending_orders.num_seconds_from_midnight() {
             return None;
@@ -222,27 +221,27 @@ impl StormerScalperStrategy {
         }
 
         // looking for short positions
-        // if current_price < bollinger_output.lower &&
-        //     stochastic < STOCHASTIC_SHORT_THRESHOLD &&
-        //     second_candle.direction() == LONG &&
-        //     first_candle.direction() == SHORT &&
-        //     (first_candle.open - first_candle.close) > (second_candle.high - second_candle.low) {
-        //     for position in self.open_positions.iter_mut() {
-        //         if current_price < position.entry_price && !position.first_chunk.is_finished() {
-        //             position.first_chunk.start_trailing_now(current_price);
-        //         }
-        //     }
-        //
-        //     let mut position = ScalperPosition::new(
-        //         Side::SELL,
-        //         current_price,
-        //         self.points_per_tick_asset?,
-        //         self.quantity_per_position,
-        //     );
-        //     Self::set_all_stop_loses(&mut position, bollinger_output.upper);
-        //     self.open_positions.push(position);
-        //     return Some(OrderAction::MarketShort(self.quantity_per_position));
-        // }
+        if current_price < bollinger_output.lower &&
+            stochastic < STOCHASTIC_SHORT_THRESHOLD &&
+            second_candle.direction() == LONG &&
+            first_candle.direction() == SHORT &&
+            (first_candle.open - first_candle.close) > (second_candle.high - second_candle.low) {
+            for position in self.open_positions.iter_mut() {
+                if current_price < position.entry_price && !position.first_chunk.is_finished() {
+                    position.first_chunk.start_trailing_now(current_price);
+                }
+            }
+
+            let mut position = ScalperPosition::new(
+                Side::SELL,
+                current_price,
+                self.points_per_tick_asset?,
+                self.quantity_per_position,
+            );
+            Self::set_all_stop_loses(&mut position, bollinger_output.upper);
+            self.open_positions.push(position);
+            return Some(OrderAction::MarketShort(self.quantity_per_position));
+        }
         None
     }
 
