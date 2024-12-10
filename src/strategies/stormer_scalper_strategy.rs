@@ -28,7 +28,6 @@ const RSI_PERIOD: usize = 9;
 const TICKS_STOP_LOSS: usize = 39;
 const TICKS_FIRST_TARGET: usize = 15;
 const TICKS_SECOND_TARGET: usize = 20;
-const TICKS_THIRD_TARGET: usize = 28;
 const TICKS_START_TRAILING: usize = 5;
 const TICKS_UPDATE_TRAILING_FREQUENCY: usize = 1;
 const TICKS_DISTANCE_FROM_PRICE: usize = 2;
