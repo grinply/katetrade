@@ -25,7 +25,7 @@ const RSI_SHORT_THRESHOLD: f64 = 30.0;
 const RSI_PERIOD: usize = 9;
 
 // scalping trailing stop loss configuration
-const TICKS_STOP_LOSS: usize = 39;
+const TICKS_STOP_LOSS: usize = 35;
 const TICKS_FIRST_TARGET: usize = 15;
 const TICKS_SECOND_TARGET: usize = 20;
 const TICKS_START_TRAILING: usize = 5;
