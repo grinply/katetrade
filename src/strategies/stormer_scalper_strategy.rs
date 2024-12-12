@@ -32,6 +32,9 @@ const TICKS_START_TRAILING: usize = 5;
 const TICKS_UPDATE_TRAILING_FREQUENCY: usize = 1;
 const TICKS_DISTANCE_FROM_PRICE: usize = 2;
 
+const SOFT_STOP_CANDLESTICK_COUNT: usize = 20;
+const HARD_STOP_CANDLESTICK_COUNT: usize = 50;
+
 pub struct StormerScalperStrategy {
     quantity_per_position: usize,
     points_per_tick_asset: Option<f64>,
@@ -185,14 +188,19 @@ impl StormerScalperStrategy {
         let mut quantity_to_close: usize = 0;
 
         let is_first_chunk_finished = self.open_position.as_ref()?.first_chunk.is_finished();
+
         let should_close_first_chunk = self.open_position.as_mut()?.first_chunk.should_close_position(new_trade.price);
+                                            // || (self.candle_count >= SOFT_STOP_CANDLESTICK_COUNT && new_trade.price >= self.last_three_closed_candles[2].close)
+                                            // || self.candle_count >= HARD_STOP_CANDLESTICK_COUNT;
 
         if !is_first_chunk_finished && should_close_first_chunk {
             quantity_to_close += self.open_position.as_mut()?.quantity_per_chunk[0];
         }
 
         let is_second_chunk_finished = self.open_position.as_ref()?.second_chunk.is_finished();
-        let should_close_second_chunk = self.open_position.as_mut()?.second_chunk.should_close_position(new_trade.price);
+        let should_close_second_chunk = self.open_position.as_mut()?.second_chunk.should_close_position(new_trade.price)
+                                              || (self.candle_count >= SOFT_STOP_CANDLESTICK_COUNT && is_first_chunk_finished && new_trade.price >= self.last_three_closed_candles[2].close)
+                                                || self.candle_count >= HARD_STOP_CANDLESTICK_COUNT && is_first_chunk_finished;
 
         if !is_second_chunk_finished && should_close_second_chunk {
             quantity_to_close += self.open_position.as_ref()?.quantity_per_chunk[1];
