@@ -12,7 +12,7 @@ use crate::services::trailing_stop::TrailingStop;
 use crate::strategies::strategy::HighResolutionTradingStrategy;
 use crate::utils::date;
 
-const QUANTITY_PER_POSITION: usize = 16;
+const QUANTITY_PER_POSITION: usize = 20;
 const CANDLESTICK_PERIOD: u64 = 10;
 const BOLLINGER_PERIOD: usize = 21;
 const BOLLINGER_MULTIPLIER: f64 = 0.45;
@@ -47,6 +47,7 @@ pub struct StormerScalperStrategy {
     candle_parser: TimeCandlestickGenerator,
     last_three_closed_candles: [Candlestick; 3],
     rsi: RelativeStrengthIndex,
+    candles_on_position: usize,
 }
 
 impl HighResolutionTradingStrategy for StormerScalperStrategy {
@@ -68,6 +69,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             candle_parser: TimeCandlestickGenerator::new(TimeUnit::Seconds, CANDLESTICK_PERIOD),
             last_three_closed_candles: [Candlestick::default(); 3],
             open_position: None,
+            candles_on_position: 0,
         }
     }
 
@@ -105,6 +107,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
 
         if let Some(fast_candle) = self.candle_parser.parse_only_closed_candles(new_trade) {
             self.candle_count += 1;
+            self.candles_on_position +=1;
             let stochastic = self.stochastic.next(fast_candle.close);
             let bollinger_output = self.bollinger_bands.next(fast_candle.close);
             let rsi = self.rsi.next(fast_candle.close);
@@ -173,6 +176,10 @@ impl StormerScalperStrategy {
             return None;
         }
 
+        if self.candles_on_position >= 50 {
+            self.candles_on_position +=0;
+        }
+
         if let Some(force_exit) = self.should_force_close_position_end_trading_day(
             new_trade,
             self.open_position.as_ref()?.side,
@@ -185,23 +192,38 @@ impl StormerScalperStrategy {
         let mut quantity_to_close: usize = 0;
 
         let is_first_chunk_finished = self.open_position.as_ref()?.first_chunk.is_finished();
+
         let should_close_first_chunk = self.open_position.as_mut()?.first_chunk.should_close_position(new_trade.price);
 
+
         if !is_first_chunk_finished && should_close_first_chunk {
+            //let is_positive = self.open_position.as_ref()?.first_chunk.is_result_positive(new_trade.price);
             quantity_to_close += self.open_position.as_mut()?.quantity_per_chunk[0];
+            // date,time,profit_target,candlestick_count,is_target_profitable, position_side, max_ticks_positive_direction
+        //     println!("{},{},1,{},{},{}, {}",  new_trade.date, new_trade.time,
+        //              self.candles_on_position, is_positive, self.open_position.as_ref()?.side,
+        //              self.open_position.as_ref()?.first_chunk.max_tick_in_positive_direction());
+        //
         }
 
         let is_second_chunk_finished = self.open_position.as_ref()?.second_chunk.is_finished();
         let should_close_second_chunk = self.open_position.as_mut()?.second_chunk.should_close_position(new_trade.price);
 
         if !is_second_chunk_finished && should_close_second_chunk {
+            //let is_positive = self.open_position.as_ref()?.second_chunk.is_result_positive(new_trade.price);
             quantity_to_close += self.open_position.as_ref()?.quantity_per_chunk[1];
+
+
+            // println!("{},{},2,{},{},{}, {}",  new_trade.date, new_trade.time,
+            //          self.candles_on_position, is_positive, self.open_position.as_ref()?.side,
+            //          self.open_position.as_ref()?.second_chunk.max_tick_in_positive_direction());
         }
 
         if quantity_to_close > 0 {
             let side = self.open_position.as_ref()?.side;
             self.open_position.as_mut()?.open_quantity -= quantity_to_close;
             if self.open_position.as_ref()?.open_quantity == 0 {
+                self.candles_on_position = 0;
                 self.open_position = None;
             }
 
@@ -244,6 +266,7 @@ struct ScalperPosition {
     quantity_per_chunk: [usize; 2],
     first_chunk: TrailingStop,
     second_chunk: TrailingStop,
+    //third_chunk: TrailingStop,
 }
 
 impl ScalperPosition {
