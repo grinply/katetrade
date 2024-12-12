@@ -80,6 +80,26 @@ impl TrailingStop {
         }
     }
 
+    pub fn new_not_automatic_trailing(entry_price: f64, side: Side, points_per_tick: f64) -> Self {
+        let limit = match side {
+            Side::BUY => f64::MIN,
+            Side::SELL => f64::MAX
+        };
+        TrailingStop {
+            entry_price,
+            stop_loss_price: limit,
+            points_per_tick,
+            direction: side,
+            is_finished: false,
+            is_trailing_active: false,
+            activation_price: limit,
+            price_next_trailing_move:limit,
+            ticks_frequency_trailing_update: 99999,
+            distance_in_ticks_from_current_price: 999999,
+            max_ticks_in_positive_direction: 0,
+        }
+    }
+
     #[allow(unused)]
     /// will ignore the previously defined activation_price and start trailing the current price
     pub fn start_trailing_now(&mut self) {
@@ -95,6 +115,10 @@ impl TrailingStop {
     
     pub fn max_tick_in_positive_direction(&self) -> usize {
         self.max_ticks_in_positive_direction
+    }
+
+    pub fn set_stop_loss(&mut self, new_stop_loss_price: f64) {
+        self.stop_loss_price = new_stop_loss_price;
     }
 
     /// check if the position should be closed now
