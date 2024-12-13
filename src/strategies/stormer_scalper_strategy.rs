@@ -2,6 +2,7 @@ use chrono::{NaiveTime, Timelike};
 use ta::indicators::{BollingerBands, BollingerBandsOutput, SlowStochastic};
 use ta::{Next, Reset};
 use crate::indicators::relative_strength_index::RelativeStrengthIndex;
+use crate::indicators::simple_moving_average::SimpleMovingAverage;
 use crate::models::action::{market_order_from_side, OrderAction, TradeAction};
 use crate::models::asset::Asset;
 use crate::models::candlestick::{Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
@@ -27,10 +28,8 @@ const RSI_PERIOD: usize = 9;
 // scalping trailing stop loss configuration
 const TICKS_STOP_LOSS: usize = 35;
 const TICKS_FIRST_TARGET: usize = 15;
-const TICKS_SECOND_TARGET: usize = 20;
-const TICKS_START_TRAILING: usize = 5;
-const TICKS_UPDATE_TRAILING_FREQUENCY: usize = 1;
-const TICKS_DISTANCE_FROM_PRICE: usize = 2;
+const TRAILING_SMA_PERIOD: usize = 9;
+const HARD_STOP_CANDLESTICK_COUNT_TO_EXIT_POSITION: usize = 60;
 
 pub struct StormerScalperStrategy {
     quantity_per_position: usize,
@@ -41,12 +40,14 @@ pub struct StormerScalperStrategy {
     // indicators & context variables used for candlesticks with period of 15 seconds
     min_candles: usize,
     candle_count: usize,
+    candles_elapsed_open_position: usize,
     bollinger_bands: BollingerBands,
     stochastic: SlowStochastic,
     open_position: Option<ScalperPosition>,
     candle_parser: TimeCandlestickGenerator,
     last_three_closed_candles: [Candlestick; 3],
     rsi: RelativeStrengthIndex,
+    sma: SimpleMovingAverage,
 }
 
 impl HighResolutionTradingStrategy for StormerScalperStrategy {
@@ -55,6 +56,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         Self: Sized,
     {
         StormerScalperStrategy {
+
             quantity_per_position: QUANTITY_PER_POSITION,
             points_per_tick_asset: Some(5.0),
             cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 20, 00).unwrap(),
@@ -63,11 +65,13 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
 
             candle_count: 0,
             min_candles: 21,
+            candles_elapsed_open_position: 0,
             bollinger_bands: BollingerBands::new(BOLLINGER_PERIOD, BOLLINGER_MULTIPLIER).unwrap(),
             stochastic: SlowStochastic::new(SLOW_STOCHASTIC_PERIOD, SLOW_STOCHASTIC_SMA_PERIOD).unwrap(),
             candle_parser: TimeCandlestickGenerator::new(TimeUnit::Seconds, CANDLESTICK_PERIOD),
             last_three_closed_candles: [Candlestick::default(); 3],
             open_position: None,
+            sma: SimpleMovingAverage::new(TRAILING_SMA_PERIOD).unwrap(),
         }
     }
 
@@ -82,6 +86,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
     fn init_trading_day(&mut self, asset: &Asset, trades: &[Trade]) {
         self.points_per_tick_asset = Some(asset.min_point_variation);
         self.candle_count = 0;
+        self.candles_elapsed_open_position = 0;
 
         self.rsi.reset();
         self.bollinger_bands.reset();
@@ -90,11 +95,12 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         self.open_position = None;
 
         for trade in trades {
-            if let Some(fast_candle) = self.candle_parser.parse_only_closed_candles(trade) {
-                self.rsi.next(fast_candle.close);
-                self.stochastic.next(fast_candle.close);
-                self.bollinger_bands.next(fast_candle.close);
-                self.update_fast_candles(fast_candle);
+            if let Some(candle) = self.candle_parser.parse_only_closed_candles(trade) {
+                self.rsi.next(candle.close);
+                self.stochastic.next(candle.close);
+                self.bollinger_bands.next(candle.close);
+                self.sma.next(candle);
+                self.update_fast_candles(candle);
             }
         }
     }
@@ -103,13 +109,22 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         let mut fast_order_enter: Option<OrderAction> = None;
         let fast_order_exit: Option<OrderAction> = self.should_exit_fast_position(new_trade);
 
-        if let Some(fast_candle) = self.candle_parser.parse_only_closed_candles(new_trade) {
+        if let Some(candlestick) = self.candle_parser.parse_only_closed_candles(new_trade) {
             self.candle_count += 1;
-            let stochastic = self.stochastic.next(fast_candle.close);
-            let bollinger_output = self.bollinger_bands.next(fast_candle.close);
-            let rsi = self.rsi.next(fast_candle.close);
-            self.update_fast_candles(fast_candle);
+
+            let stochastic = self.stochastic.next(candlestick.close);
+            let bollinger_output = self.bollinger_bands.next(candlestick.close);
+            let rsi = self.rsi.next(candlestick.close);
+            let sma = self.sma.next(candlestick.close);
+            self.update_fast_candles(candlestick);
             fast_order_enter = self.should_open_position(stochastic, bollinger_output, rsi);
+
+            if let Some(position) = self.open_position.as_mut() {
+                self.candles_elapsed_open_position+=1;
+                if position.first_chunk.is_finished() {
+                    position.second_chunk.set_stop_loss(sma);
+                }
+            }
         }
 
         TradeAction::custom_order(fast_order_exit, fast_order_enter, None, None)
@@ -147,6 +162,7 @@ impl StormerScalperStrategy {
                 self.quantity_per_position,
             ));
             let order = OrderAction::MarketLong(self.quantity_per_position);
+            self.candles_elapsed_open_position = 0;
             return Some(order);
         }
 
@@ -163,6 +179,7 @@ impl StormerScalperStrategy {
                 self.quantity_per_position,
             ));
             let order = OrderAction::MarketShort(self.quantity_per_position);
+            self.candles_elapsed_open_position = 0;
             return Some(order);
         }
         None
@@ -187,7 +204,9 @@ impl StormerScalperStrategy {
         let is_first_chunk_finished = self.open_position.as_ref()?.first_chunk.is_finished();
         let should_close_first_chunk = self.open_position.as_mut()?.first_chunk.should_close_position(new_trade.price);
 
-        if !is_first_chunk_finished && should_close_first_chunk {
+
+        if !is_first_chunk_finished && (should_close_first_chunk || self.candles_elapsed_open_position >= HARD_STOP_CANDLESTICK_COUNT_TO_EXIT_POSITION) {
+            self.open_position.as_mut()?.first_chunk.finish_trailing();
             quantity_to_close += self.open_position.as_mut()?.quantity_per_chunk[0];
         }
 
@@ -253,7 +272,6 @@ impl ScalperPosition {
         ScalperPosition {
             side,
             open_quantity: quantity_to_trade,
-
             quantity_per_chunk: [quantity_to_trade / 2, quantity_to_trade / 2],
             first_chunk: TrailingStop::new(
                 entry_price,
@@ -265,15 +283,10 @@ impl ScalperPosition {
                 1,
                 1,
             ),
-            second_chunk: TrailingStop::new(
+            second_chunk: TrailingStop::new_not_automatic_trailing(
                 entry_price,
                 side,
                 points_per_tick,
-                TICKS_STOP_LOSS,
-                TICKS_SECOND_TARGET,
-                TICKS_START_TRAILING,
-                TICKS_DISTANCE_FROM_PRICE,
-                TICKS_UPDATE_TRAILING_FREQUENCY,
             ),
         }
     }
