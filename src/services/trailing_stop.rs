@@ -110,13 +110,15 @@ impl TrailingStop {
         self.is_finished = true;
     }
 
+    #[allow(unused)]
     pub fn is_result_positive(&self, current_price: f64) -> bool {
         match self.direction {
             Side::BUY => current_price >= self.entry_price,
             Side::SELL => current_price <= self.entry_price,
         }
     }
-    
+
+    #[allow(unused)]
     pub fn max_tick_in_positive_direction(&self) -> usize {
         self.max_ticks_in_positive_direction
     }
