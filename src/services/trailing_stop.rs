@@ -8,6 +8,7 @@ use crate::models::side::Side;
 /// **important:** you must call the function [TrailingStop::should_close_position] with every new price update
 /// to allow the trailing stop to properly **adjust** the desired **stop loss**
 pub struct TrailingStop {
+    entry_price: f64,
     stop_loss_price: f64,
     points_per_tick: f64,
     direction: Side,
@@ -17,6 +18,7 @@ pub struct TrailingStop {
     price_next_trailing_move: f64,
     ticks_frequency_trailing_update: usize,
     distance_in_ticks_from_current_price: usize,
+    max_ticks_in_positive_direction: usize,
 }
 
 impl TrailingStop {
@@ -46,6 +48,7 @@ impl TrailingStop {
             Side::BUY => {
                 let trailing_activation_price = current_price + (points_per_tick * ticks_trigger_start_trailing as f64);
                 TrailingStop {
+                    entry_price: current_price,
                     stop_loss_price: current_price - points_per_tick * ticks_stop_loss as f64,
                     points_per_tick,
                     direction,
@@ -55,11 +58,13 @@ impl TrailingStop {
                     price_next_trailing_move: trailing_activation_price + (ticks_first_trailing_trigger as f64 * points_per_tick),
                     ticks_frequency_trailing_update,
                     distance_in_ticks_from_current_price: ticks_distance_when_trailing_current_price,
+                    max_ticks_in_positive_direction: 0,
                 }
             }
             Side::SELL => {
                 let trailing_activation_price = current_price - (points_per_tick * ticks_trigger_start_trailing as f64);
                 TrailingStop {
+                    entry_price: current_price,
                     stop_loss_price: current_price + points_per_tick * ticks_stop_loss as f64,
                     points_per_tick,
                     direction,
@@ -69,8 +74,29 @@ impl TrailingStop {
                     price_next_trailing_move: trailing_activation_price - (ticks_first_trailing_trigger as f64 * points_per_tick),
                     ticks_frequency_trailing_update,
                     distance_in_ticks_from_current_price: ticks_distance_when_trailing_current_price,
+                    max_ticks_in_positive_direction: 0,
                 }
             }
+        }
+    }
+
+    pub fn new_not_automatic_trailing(entry_price: f64, side: Side, points_per_tick: f64) -> Self {
+        let limit = match side {
+            Side::BUY => f64::MIN,
+            Side::SELL => f64::MAX
+        };
+        TrailingStop {
+            entry_price,
+            stop_loss_price: limit,
+            points_per_tick,
+            direction: side,
+            is_finished: false,
+            is_trailing_active: false,
+            activation_price: limit,
+            price_next_trailing_move:limit,
+            ticks_frequency_trailing_update: 99999,
+            distance_in_ticks_from_current_price: 999999,
+            max_ticks_in_positive_direction: 0,
         }
     }
 
@@ -80,10 +106,36 @@ impl TrailingStop {
         self.is_trailing_active = true;
     }
 
+    pub fn finish_trailing(&mut self){
+        self.is_finished = true;
+    }
+
+    pub fn is_result_positive(&self, current_price: f64) -> bool {
+        match self.direction {
+            Side::BUY => current_price >= self.entry_price,
+            Side::SELL => current_price <= self.entry_price,
+        }
+    }
+    
+    pub fn max_tick_in_positive_direction(&self) -> usize {
+        self.max_ticks_in_positive_direction
+    }
+
+    pub fn set_stop_loss(&mut self, new_stop_loss_price: f64) {
+        self.stop_loss_price = new_stop_loss_price;
+    }
+
     /// check if the position should be closed now
     pub fn should_close_position(&mut self, current_price: f64) -> bool {
         match self.direction {
             Side::BUY => {
+                if current_price > self.entry_price {
+                    let diff = (current_price - self.entry_price) / self.points_per_tick;
+                    if diff > self.max_ticks_in_positive_direction as f64 {
+                        self.max_ticks_in_positive_direction= diff as usize;
+                    }
+                }
+
                 if self.is_finished || current_price <= self.stop_loss_price {
                     self.is_finished = true;
                     return true;
@@ -101,6 +153,13 @@ impl TrailingStop {
                 }
             }
             Side::SELL => {
+                if current_price < self.entry_price {
+                    let diff = (self.entry_price - current_price)  / self.points_per_tick;
+                    if diff > self.max_ticks_in_positive_direction as f64 {
+                        self.max_ticks_in_positive_direction = diff as usize;
+                    }
+                }
+
                 if self.is_finished || current_price >= self.stop_loss_price {
                     self.is_finished = true;
                     return true;
