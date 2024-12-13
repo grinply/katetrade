@@ -13,7 +13,7 @@ use crate::services::trailing_stop::TrailingStop;
 use crate::strategies::strategy::HighResolutionTradingStrategy;
 use crate::utils::date;
 
-const QUANTITY_PER_POSITION: usize = 16;
+const QUANTITY_PER_POSITION: usize = 20;
 const CANDLESTICK_PERIOD: u64 = 10;
 const BOLLINGER_PERIOD: usize = 21;
 const BOLLINGER_MULTIPLIER: f64 = 0.45;
