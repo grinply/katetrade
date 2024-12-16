@@ -12,7 +12,7 @@ use crate::services::backtest::data_point::DataPoint;
 use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
 use crate::utils::date;
 
-pub const INITIAL_BALANCE: f64 = 500_000.0;
+pub const INITIAL_BALANCE: f64 = 15_000.0;
 pub const MINIMUM_BALANCE: f64 = 800.0;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
