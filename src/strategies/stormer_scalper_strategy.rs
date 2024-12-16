@@ -13,6 +13,8 @@ use crate::services::trailing_stop::TrailingStop;
 use crate::strategies::strategy::HighResolutionTradingStrategy;
 use crate::utils::date;
 
+const CANDLES_TO_TRACK: usize = 9;
+
 const QUANTITY_PER_POSITION: usize = 20;
 const CANDLESTICK_PERIOD: u64 = 10;
 const BOLLINGER_PERIOD: usize = 21;
@@ -45,7 +47,7 @@ pub struct StormerScalperStrategy {
     stochastic: SlowStochastic,
     open_position: Option<ScalperPosition>,
     candle_parser: TimeCandlestickGenerator,
-    last_three_closed_candles: [Candlestick; 3],
+    latest_closed_candles: [Candlestick; CANDLES_TO_TRACK],
     rsi: RelativeStrengthIndex,
     sma: SimpleMovingAverage,
 }
@@ -69,7 +71,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             bollinger_bands: BollingerBands::new(BOLLINGER_PERIOD, BOLLINGER_MULTIPLIER).unwrap(),
             stochastic: SlowStochastic::new(SLOW_STOCHASTIC_PERIOD, SLOW_STOCHASTIC_SMA_PERIOD).unwrap(),
             candle_parser: TimeCandlestickGenerator::new(TimeUnit::Seconds, CANDLESTICK_PERIOD),
-            last_three_closed_candles: [Candlestick::default(); 3],
+            latest_closed_candles: [Candlestick::default(); CANDLES_TO_TRACK],
             open_position: None,
             sma: SimpleMovingAverage::new(TRAILING_SMA_PERIOD).unwrap(),
         }
@@ -91,7 +93,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         self.rsi.reset();
         self.bollinger_bands.reset();
         self.stochastic.reset();
-        self.last_three_closed_candles = [Candlestick::default();3];
+        self.latest_closed_candles = [Candlestick::default(); CANDLES_TO_TRACK];
         self.open_position = None;
 
         for trade in trades {
@@ -100,7 +102,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
                 self.stochastic.next(candle.close);
                 self.bollinger_bands.next(candle.close);
                 self.sma.next(candle);
-                self.update_fast_candles(candle);
+                self.update_candles(candle);
             }
         }
     }
@@ -116,7 +118,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             let bollinger_output = self.bollinger_bands.next(candlestick.close);
             let rsi = self.rsi.next(candlestick.close);
             let sma = self.sma.next(candlestick.close);
-            self.update_fast_candles(candlestick);
+            self.update_candles(candlestick);
             fast_order_enter = self.should_open_position(stochastic, bollinger_output, rsi);
 
             if let Some(position) = self.open_position.as_mut() {
@@ -132,21 +134,22 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
 }
 
 impl StormerScalperStrategy {
-    fn update_fast_candles(&mut self, new_closed_candle: Candlestick) {
-        self.last_three_closed_candles[0] = self.last_three_closed_candles[1];
-        self.last_three_closed_candles[1] = self.last_three_closed_candles[2];
-        self.last_three_closed_candles[2] = new_closed_candle;
+    fn update_candles(&mut self, new_closed_candle: Candlestick) {
+        for index in 0..CANDLES_TO_TRACK-1 {
+            self.latest_closed_candles[index] = self.latest_closed_candles[index+1];
+        }
+        self.latest_closed_candles[CANDLES_TO_TRACK-1] = new_closed_candle;
     }
 
     fn should_open_position(&mut self, stochastic: f64, bollinger_output: BollingerBandsOutput, rsi: f64) -> Option<OrderAction> {
-        let first_candle = self.last_three_closed_candles[2];
+        let first_candle = self.latest_closed_candles[CANDLES_TO_TRACK-1];
         if self.candle_count < self.min_candles || self.open_position.is_some() ||
             first_candle.close_time.expect("candlestick should be closed")
                 .num_seconds_from_midnight() >= self.cut_off_time_sending_orders.num_seconds_from_midnight() {
             return None;
         }
 
-        let second_candle = self.last_three_closed_candles[1];
+        let second_candle = self.latest_closed_candles[CANDLES_TO_TRACK-2];
         let current_price = first_candle.close;
 
         // looking for long positions
