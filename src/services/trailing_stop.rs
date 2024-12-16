@@ -81,13 +81,12 @@ impl TrailingStop {
     }
 
     pub fn new_not_automatic_trailing(entry_price: f64, side: Side, points_per_tick: f64) -> Self {
-        let limit = match side {
-            Side::BUY => f64::MIN,
-            Side::SELL => f64::MAX
-        };
         TrailingStop {
             entry_price,
-            stop_loss_price: limit,
+            stop_loss_price: match side {
+                Side::BUY => f64::MIN,
+                Side::SELL => f64::MAX
+            },
             points_per_tick,
             direction: side,
             is_finished: false,
