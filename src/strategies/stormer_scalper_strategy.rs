@@ -121,7 +121,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
 
             if let Some(position) = self.open_position.as_mut() {
                 self.candles_elapsed_open_position+=1;
-                if position.first_chunk.is_finished() {
+                if position.first_chunk.is_finished(){
                     position.second_chunk.set_stop_loss(sma);
                 }
             }
@@ -203,7 +203,6 @@ impl StormerScalperStrategy {
 
         let is_first_chunk_finished = self.open_position.as_ref()?.first_chunk.is_finished();
         let should_close_first_chunk = self.open_position.as_mut()?.first_chunk.should_close_position(new_trade.price);
-
 
         if !is_first_chunk_finished && (should_close_first_chunk || self.candles_elapsed_open_position >= HARD_STOP_CANDLESTICK_COUNT_TO_EXIT_POSITION) {
             self.open_position.as_mut()?.first_chunk.finish_trailing();
