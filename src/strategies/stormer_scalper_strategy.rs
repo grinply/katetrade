@@ -38,7 +38,6 @@ pub struct StormerScalperStrategy {
     points_per_tick_asset: Option<f64>,
     cut_off_time_sending_orders: NaiveTime,
     time_force_close_open_positions: NaiveTime,
-    time_reduced_position_size: NaiveTime,
 
     // indicators & context variables used for candlesticks with period of 15 seconds
     min_candles: usize,
@@ -63,7 +62,6 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             points_per_tick_asset: Some(5.0),
             cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 20, 00).unwrap(),
             time_force_close_open_positions: NaiveTime::from_hms_opt(10, 40, 00).unwrap(),
-            time_reduced_position_size: NaiveTime::from_hms_opt(9, 45, 00).unwrap(),
             rsi: RelativeStrengthIndex::new(RSI_PERIOD),
 
             candle_count: 0,
