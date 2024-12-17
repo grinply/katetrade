@@ -865,19 +865,5 @@ mod tests {
             volume,
         }
     }
-
-    // fn download_from_s3(file_name: &str){
-    //     let temp_dir = env::temp_dir();
-    //     let bucket_name = "profitpirates".to_string();
-    //     let file = format!("/{TRADES_FOLDER_NAME}/IND/TRADE-B3-FUTURES-IND-20240614");
-    //     let output_dir = format!("{}/{}",
-    //                              temp_dir.as_path().to_str().unwrap(),
-    //                              "TRADE-B3-FUTURES-IND-20240614"
-    //     );
-    //
-    //     println!("File saved to : {}", output_dir);
-    //     let aws = AwsClient::new(AWS_REGION.to_string()).unwrap();
-    //     aws.download_file_from_s3(bucket_name.as_str(), file.as_str(), output_dir.as_str()).unwrap();
-    // }
 }
 
