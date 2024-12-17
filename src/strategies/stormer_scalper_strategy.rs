@@ -58,7 +58,6 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         Self: Sized,
     {
         StormerScalperStrategy {
-
             quantity_per_position: QUANTITY_PER_POSITION,
             points_per_tick_asset: Some(5.0),
             cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 20, 00).unwrap(),
