@@ -30,7 +30,7 @@ const RSI_PERIOD: usize = 9;
 // scalping trailing stop loss configuration
 const TICKS_STOP_LOSS: usize = 35;
 const TICKS_FIRST_TARGET: usize = 15;
-const TRAILING_SMA_PERIOD: usize = 9;
+const TRAILING_SMA_PERIOD: usize = 5;
 const HARD_STOP_CANDLESTICK_COUNT_TO_EXIT_POSITION: usize = 60;
 
 pub struct StormerScalperStrategy {
