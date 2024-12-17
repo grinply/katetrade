@@ -132,6 +132,13 @@ impl TrailingStop {
         self.stop_loss_price = new_stop_loss_price;
     }
 
+    pub fn resulting_ticks_pnl(&self, current_price: f64) -> i64 {
+        match self.direction {
+            Side::BUY => ((current_price - self.entry_price) / self.points_per_tick)  as i64,
+            Side::SELL => ((self.entry_price - current_price) / self.points_per_tick) as i64,
+        }
+    }
+
     /// check if the position should be closed now
     pub fn should_close_position(&mut self, current_price: f64) -> bool {
         match self.direction {

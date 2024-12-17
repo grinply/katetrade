@@ -83,7 +83,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
     }
 
     fn days_of_context(&self) -> u32 {
-        1
+        0
     }
 
     fn init_trading_day(&mut self, asset: &Asset, trades: &[Trade]) {
@@ -111,7 +111,6 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
     fn process_new_trade(&mut self, new_trade: &Trade) -> TradeAction {
         let mut fast_order_enter: Option<OrderAction> = None;
         let fast_order_exit: Option<OrderAction> = self.should_exit_fast_position(new_trade);
-
         if let Some(candlestick) = self.candle_parser.parse_only_closed_candles(new_trade) {
             self.candle_count += 1;
 
@@ -160,20 +159,13 @@ impl StormerScalperStrategy {
             second_candle.direction() == SHORT &&
             first_candle.direction() == LONG {
 
-            let quantity_to_trade = if first_candle.close_time?
-                .num_seconds_from_midnight() > self.time_reduced_position_size.num_seconds_from_midnight() {
-                self.quantity_per_position / 8
-            }else{
-                self.quantity_per_position
-            };
-
             self.open_position = Some(ScalperPosition::new(
                 Side::BUY,
                 current_price,
                 self.points_per_tick_asset?,
-                quantity_to_trade,
+                self.quantity_per_position,
             ));
-            let order = OrderAction::MarketLong(quantity_to_trade);
+            let order = OrderAction::MarketLong(self.quantity_per_position);
             self.candles_elapsed_open_position = 0;
             return Some(order);
         }
@@ -185,20 +177,13 @@ impl StormerScalperStrategy {
             second_candle.direction() == LONG &&
             first_candle.direction() == SHORT {
 
-            let quantity_to_trade = if first_candle.close_time?
-                .num_seconds_from_midnight() > self.time_reduced_position_size.num_seconds_from_midnight() {
-                self.quantity_per_position / 8
-            }else{
-                self.quantity_per_position
-            };
-
             self.open_position = Some(ScalperPosition::new(
                 Side::SELL,
                 current_price,
                 self.points_per_tick_asset?,
-                quantity_to_trade,
+                self.quantity_per_position,
             ));
-            let order = OrderAction::MarketShort(quantity_to_trade);
+            let order = OrderAction::MarketShort(self.quantity_per_position);
             self.candles_elapsed_open_position = 0;
             return Some(order);
         }
