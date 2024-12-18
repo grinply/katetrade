@@ -616,6 +616,9 @@ mod tests {
         assert_eq!(date::convert_to_naive_time(09_01_00_000).unwrap(), second_candle.start_time);
     }
 
+
+    #[ignore = "there is hack here is this file to handle a problem in the historical data when parsing candlesticks, this potentially breaks parsing open candles"]
+    #[test]
     fn time_candlesticks_generator_handles_day_change() {
         let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let trades = vec![

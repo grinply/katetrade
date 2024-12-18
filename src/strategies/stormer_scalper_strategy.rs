@@ -28,7 +28,7 @@ const RSI_SHORT_THRESHOLD: f64 = 30.0;
 const RSI_PERIOD: usize = 9;
 
 // scalping trailing stop loss configuration
-const TICKS_STOP_LOSS: usize = 35;
+const TICKS_STOP_LOSS: usize = 100;
 const TICKS_FIRST_TARGET: usize = 15;
 const TRAILING_SMA_PERIOD: usize = 5;
 const HARD_STOP_CANDLESTICK_COUNT_TO_EXIT_POSITION: usize = 60;
@@ -38,7 +38,6 @@ pub struct StormerScalperStrategy {
     points_per_tick_asset: Option<f64>,
     cut_off_time_sending_orders: NaiveTime,
     time_force_close_open_positions: NaiveTime,
-    time_reduced_position_size: NaiveTime,
 
     // indicators & context variables used for candlesticks with period of 15 seconds
     min_candles: usize,
@@ -63,9 +62,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
             points_per_tick_asset: Some(5.0),
             cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 20, 00).unwrap(),
             time_force_close_open_positions: NaiveTime::from_hms_opt(10, 40, 00).unwrap(),
-            time_reduced_position_size: NaiveTime::from_hms_opt(9, 45, 00).unwrap(),
             rsi: RelativeStrengthIndex::new(RSI_PERIOD),
-
             candle_count: 0,
             min_candles: 21,
             candles_elapsed_open_position: 0,
@@ -167,6 +164,7 @@ impl StormerScalperStrategy {
             ));
             let order = OrderAction::MarketLong(self.quantity_per_position);
             self.candles_elapsed_open_position = 0;
+            //println!("[{}|{}]sending market long {}", first_candle.date, first_candle.close_time?, first_candle.close);
             return Some(order);
         }
 
@@ -185,6 +183,7 @@ impl StormerScalperStrategy {
             ));
             let order = OrderAction::MarketShort(self.quantity_per_position);
             self.candles_elapsed_open_position = 0;
+            //println!("[{}|{}]sending market short {}", first_candle.date, first_candle.close_time?, first_candle.close);
             return Some(order);
         }
         None
@@ -219,9 +218,6 @@ impl StormerScalperStrategy {
 
         if !is_second_chunk_finished && should_close_second_chunk {
             quantity_to_close += self.open_position.as_ref()?.quantity_per_chunk[1];
-
-            let ticks = self.open_position.as_ref()?.second_chunk.resulting_ticks_pnl(new_trade.price);
-            //println!("ticks rp2: {}", ticks);
         }
 
         if quantity_to_close > 0 {

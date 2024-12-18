@@ -1,5 +1,6 @@
 use std::cmp;
 use std::fmt::{Display, Formatter};
+use chrono::{NaiveTime, Timelike};
 use crate::models::side::Side;
 use crate::services::backtest::exchange_event_handler::{ExchangeEventHandler, INITIAL_BALANCE};
 use crate::utils::math;
@@ -139,8 +140,15 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
     let mut sum_losing_trades: f64 = 0.0;
     let mut balance_evolution_over_time: Vec<f64> = vec![INITIAL_BALANCE];
 
+    let mut sum_mistakes = 0.0;
+
     for position in &event_handler.positions {
         profit_factor_log_sum += position.sum_per_candle_total_log_returns;
+
+        if position.exit_time.unwrap().num_seconds_from_midnight() >= NaiveTime::from_hms_opt(10, 40, 00).unwrap().num_seconds_from_midnight() {
+            println!("[{}|{}/{}]pnl: {}", position.date, position.entry_time,position.exit_time.unwrap(), position.liquid_pnl);
+            sum_mistakes+= position.liquid_pnl;
+        }
 
         if position.date != current_day {
             // update daily liquid worst/best daily liquid profits
@@ -225,6 +233,8 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
             }
         }
     }
+
+    println!("sum mistakes {}", sum_mistakes);
 
     // check the pnl of the last day to see if it is the worst or best pnl
     let index_liquid_profit = liquid_profit_per_day.len() - 1;
