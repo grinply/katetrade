@@ -137,9 +137,25 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
         profit_factor_log_sum += position.sum_per_candle_total_log_returns;
 
         if position.date != current_day {
+            // update daily liquid worst/best daily liquid profits
+            let index_liquid_profit = liquid_profit_per_day.len() - 1;
+            let pnl_current_day = liquid_profit_per_day[index_liquid_profit];
+            if pnl_current_day > liquid_profit_best_day {
+                liquid_profit_best_day = pnl_current_day;
+            }
+            if pnl_current_day < liquid_profit_worst_day {
+                liquid_profit_worst_day = pnl_current_day;
+            }
+
             liquid_profit_per_day.push(0.0);
             total_trading_days += 1;
             daily_start_balance.push(current_balance);
+            // if position.liquid_pnl > liquid_profit_best_day {
+            //     liquid_profit_best_day = position.liquid_pnl;
+            // }
+            // if position.liquid_pnl < liquid_profit_worst_day {
+            //     liquid_profit_worst_day = position.liquid_pnl;
+            // }
         }
 
         let index_liquid_profit = liquid_profit_per_day.len() - 1;
@@ -184,14 +200,6 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
             }
         }
 
-        if position.liquid_pnl > liquid_profit_best_day {
-            liquid_profit_best_day = position.liquid_pnl;
-        }
-        if position.liquid_pnl < liquid_profit_worst_day {
-            liquid_profit_worst_day = position.liquid_pnl;
-        }
-
-
         current_balance += position.liquid_pnl;
         balance_evolution_over_time.push(current_balance);
         if current_balance > local_max_balance {
@@ -207,6 +215,17 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
             }
         }
     }
+
+    // check the pnl of the last day to see if it is the worst or best pnl
+    let index_liquid_profit = liquid_profit_per_day.len() - 1;
+    let pnl_current_day = liquid_profit_per_day[index_liquid_profit];
+    if pnl_current_day > liquid_profit_best_day {
+        liquid_profit_best_day = pnl_current_day;
+    }
+    if pnl_current_day < liquid_profit_worst_day {
+        liquid_profit_worst_day = pnl_current_day;
+    }
+
 
     let avg_contracts_traded = if total_trades == 0 {
         0

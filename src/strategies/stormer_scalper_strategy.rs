@@ -61,7 +61,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
         StormerScalperStrategy {
             quantity_per_position: QUANTITY_PER_POSITION,
             points_per_tick_asset: Some(5.0),
-            cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 20, 00).unwrap(),
+            cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 30, 00).unwrap(),
             time_force_close_open_positions: NaiveTime::from_hms_opt(10, 40, 00).unwrap(),
             time_reduced_position_size: NaiveTime::from_hms_opt(9, 45, 00).unwrap(),
             rsi: RelativeStrengthIndex::new(RSI_PERIOD),
@@ -219,6 +219,9 @@ impl StormerScalperStrategy {
 
         if !is_second_chunk_finished && should_close_second_chunk {
             quantity_to_close += self.open_position.as_ref()?.quantity_per_chunk[1];
+
+            let ticks = self.open_position.as_ref()?.second_chunk.resulting_ticks_pnl(new_trade.price);
+            //println!("ticks rp2: {}", ticks);
         }
 
         if quantity_to_close > 0 {
