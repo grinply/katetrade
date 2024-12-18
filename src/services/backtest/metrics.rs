@@ -42,7 +42,9 @@ pub struct BacktestMetrics {
     pub profit_factor_log_sum: f64,
     pub aborted: bool,
     pub avg_contracts_traded: usize,
-    pub balance_evolution: Vec<f64>
+    pub balance_evolution: Vec<f64>,
+    pub liquid_profit_best_trade: f64,
+    pub liquid_profit_worst_trade: f64,
 }
 
 impl Display for BacktestMetrics {
@@ -74,7 +76,9 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Contracts per Trade", self.avg_contracts_traded)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Best Day", self.best_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)
+        writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "PNL Best Trade", self.liquid_profit_best_trade)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "PNL Worst Trade", self.liquid_profit_worst_trade)
     }
 }
 
@@ -119,6 +123,8 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
 
     let mut daily_start_balance: Vec<f64> = vec![INITIAL_BALANCE];
 
+    let mut liquid_profit_best_trade = 0.0;
+    let mut liquid_profit_worst_trade = 0.0;
     let mut liquid_profit_per_day = vec![0.0];
     let mut liquid_profit_best_day = 0.0;
     let mut liquid_profit_worst_day = 0.0;
@@ -150,12 +156,7 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
             liquid_profit_per_day.push(0.0);
             total_trading_days += 1;
             daily_start_balance.push(current_balance);
-            // if position.liquid_pnl > liquid_profit_best_day {
-            //     liquid_profit_best_day = position.liquid_pnl;
-            // }
-            // if position.liquid_pnl < liquid_profit_worst_day {
-            //     liquid_profit_worst_day = position.liquid_pnl;
-            // }
+
         }
 
         let index_liquid_profit = liquid_profit_per_day.len() - 1;
@@ -169,6 +170,15 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
         total_fees_paid += position.total_paid_in_fees;
         current_day = position.date;
 
+
+
+        if position.liquid_pnl > liquid_profit_best_trade {
+            liquid_profit_best_trade = position.liquid_pnl;
+        }
+
+        if position.liquid_pnl < liquid_profit_worst_trade {
+            liquid_profit_worst_trade = position.liquid_pnl;
+        }
 
         if position.side == Side::BUY {
             total_long_trades+=1;
@@ -222,10 +232,10 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
     if pnl_current_day > liquid_profit_best_day {
         liquid_profit_best_day = pnl_current_day;
     }
+
     if pnl_current_day < liquid_profit_worst_day {
         liquid_profit_worst_day = pnl_current_day;
     }
-
 
     let avg_contracts_traded = if total_trades == 0 {
         0
@@ -282,7 +292,9 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
         profit_factor_log_sum,
         aborted: event_handler.removed_for_lack_of_margin,
         balance_evolution: vec![],
-        avg_contracts_traded: avg_contracts_traded as usize
+        avg_contracts_traded: avg_contracts_traded as usize,
+        liquid_profit_worst_trade,
+        liquid_profit_best_trade
     }
 }
 

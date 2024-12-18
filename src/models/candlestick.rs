@@ -616,8 +616,6 @@ mod tests {
         assert_eq!(date::convert_to_naive_time(09_01_00_000).unwrap(), second_candle.start_time);
     }
 
-    #[test]
-    #[ignore]
     fn time_candlesticks_generator_handles_day_change() {
         let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
         let trades = vec![
