@@ -276,7 +276,6 @@ impl ScalperPosition {
         quantity_to_trade: usize,
     ) -> Self {
         assert!(quantity_to_trade % 2 == 0, "{} quantity must be divisible by 2", quantity_to_trade);
-
         ScalperPosition {
             side,
             open_quantity: quantity_to_trade,

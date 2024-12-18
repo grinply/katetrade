@@ -1,4 +1,5 @@
-
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
 /// select a value inside the continuous range
 /// continuous_range represent a continuous range of values where (start,end) where start < end

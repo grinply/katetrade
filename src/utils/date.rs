@@ -1,8 +1,8 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
 use chrono::{NaiveDate, NaiveTime, Timelike};
 use crate::models::candlestick::TimeUnit;
 
-
-#[allow(unused)]
 /// Convert a [NaiveTime] into a [i32] with the format hhMMss
 pub fn convert_to_formatted_time(naive_time: NaiveTime) -> i32 {
     ((naive_time.hour() * 10000) + (100 * naive_time.minute()) + naive_time.second()) as i32

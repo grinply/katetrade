@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 pub const FILE: &str = "file";
 pub const TRANSFORM: &str = "transform";
 pub const BACKTEST: &str = "backtest";

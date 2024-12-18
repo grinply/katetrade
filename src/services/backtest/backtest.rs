@@ -143,8 +143,8 @@ impl<'a> TradingBacktester<'a> {
     ///
     /// [HighResolutionTradingStrategy] defines how and when to send orders to buy and sell the asset being traded
     /// after evaluating each new [Trade] as they become available
-    pub fn run_high_resolution_backtest(&self, mut strategy: Box<dyn HighResolutionTradingStrategy>, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
-        let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
+    pub fn run_high_resolution_backtest(&self, mut strategy: Box<dyn HighResolutionTradingStrategy>) -> BacktestMetrics {
+        let mut event_handler = ExchangeEventHandler::new(self.asset);
 
         // running using cached trades from main memory
         if self.data_provider.trades.len() > 0 {
@@ -237,8 +237,8 @@ impl<'a> TradingBacktester<'a> {
     ///
     /// [CandlestickTradingStrategy] defines how and when to send orders to buy and sell the asset being traded
     /// after evaluating each new [Candlestick] as they become available
-    pub fn run_candlestick_backtest(&self, mut strategy: Box<dyn CandlestickTradingStrategy>, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
-        let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
+    pub fn run_candlestick_backtest(&self, mut strategy: Box<dyn CandlestickTradingStrategy>) -> BacktestMetrics {
+        let mut event_handler = ExchangeEventHandler::new(self.asset);
 
         // iterating with cached Candlesticks from main memory
         if self.data_provider.candlesticks.len() > 0 {
@@ -596,6 +596,7 @@ fn get_backtest_files_metadata(
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
     use crate::models::action::TradeAction;
     use crate::models::asset::Asset;
     use crate::models::candlestick::{Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
@@ -604,6 +605,7 @@ mod tests {
     use crate::models::trade::Trade;
     use crate::services::backtest::backtest::TradingBacktester;
     use crate::services::backtest::exchange_event_handler::INITIAL_BALANCE;
+    use crate::strategies::custom::stormer_scalper_strategy::{StormerScalperStrategy};
     use crate::strategies::custom::dummy_strategy::{DummyCandlestickStrategy, DummyHighResolutionStrategy};
     use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
 
@@ -657,8 +659,6 @@ mod tests {
         let strategy = DummyCandlestickStrategy::new();
         let metrics = backtester_engine.run_candlestick_backtest(
             Box::new(strategy),
-            12,
-            true,
         );
         assert_eq!(14, metrics.total_wins);
         assert_eq!(17, metrics.total_loses);
@@ -677,8 +677,6 @@ mod tests {
         let strategy = DummyCandlestickStrategy::new();
         let metrics = backtester_engine.run_candlestick_backtest(
             Box::new(strategy),
-            12,
-            true,
         );
 
         assert_eq!(20, metrics.total_wins);
@@ -699,8 +697,6 @@ mod tests {
         let strategy = DummyHighResolutionStrategy::new();
         let metrics = backtester_engine.run_high_resolution_backtest(
             Box::new(strategy),
-            12,
-            true,
         );
 
         assert_eq!(249, metrics.total_wins);
@@ -760,8 +756,6 @@ mod tests {
         let strategy = InitTrackerStrategy::new();
         let metrics = backtester.run_candlestick_backtest(
             Box::new(strategy),
-            1,
-            true,
         );
 
         assert_eq!(
@@ -819,8 +813,6 @@ mod tests {
         let strategy = InitTrackerStrategy::new();
         let metrics = backtester.run_high_resolution_backtest(
             Box::new(strategy),
-            1,
-            true,
         );
 
         assert_eq!(
@@ -833,6 +825,62 @@ mod tests {
         assert_eq!(INITIAL_BALANCE, metrics.final_balance);
     }
 
+    #[test]
+    fn should_correctly_compute_the_total_return_when_running_multiple_days_at_once_on_real_data() {
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+        let metrics_first_day = TradingBacktester::new(
+            &asset,
+            20241216,
+            20241216,
+            true,
+            None,
+            true,
+        ).unwrap().run_high_resolution_backtest(
+            Box::new(StormerScalperStrategy::new()),
+        );
+
+        let metrics_second_day = TradingBacktester::new(
+            &asset,
+            20241217,
+            20241217,
+            true,
+            None,
+            true,
+        ).unwrap().run_high_resolution_backtest(
+            Box::new(StormerScalperStrategy::new()),
+        );
+
+        let metrics_combined_days = TradingBacktester::new(
+            &asset,
+            20241216,
+            20241217,
+            true,
+            None,
+            true,
+        ).unwrap().run_high_resolution_backtest(
+            Box::new(StormerScalperStrategy::new()),
+        );
+
+        let sum_result_individual_days = metrics_first_day.total_liquid_profit + metrics_second_day.total_liquid_profit;
+        let result_combined_days = metrics_combined_days.total_liquid_profit;
+
+        let mut dates = metrics_combined_days.trades.iter().map(|trade| trade.date)
+            .collect_vec();
+        dates.sort();
+        dates.dedup();
+
+        assert_eq!(
+            vec![20241216, 20241217],
+            dates,
+            "the dates when running combined days should be the same of when running the backtest for individual days"
+        );
+
+        assert_eq!(
+            sum_result_individual_days,
+            result_combined_days,
+            "the result when running combined days is {result_combined_days} but should be equal to the sum of individual days of {sum_result_individual_days}",
+        );
+    }
 
     fn candle_backtester(cache_in_memory: bool, candle_parser: impl CandlestickGenerator + 'static) -> TradingBacktester<'static> {
         let asset = Asset::get_asset("IND", Market::FUTURES, Exchange::B3).unwrap();

@@ -19,8 +19,6 @@ use crate::services::backtest::backtest::TradingBacktester;
 use crate::services::configuration;
 use crate::services::configuration::KateConfiguration;
 use crate::services::market_connector::MarketConnectorClient;
-use crate::services::optimization::brkga::{run_brkga_optimization, BrkgaConfig};
-use crate::strategies::custom::trade_rule_strategy::optimization::fitness_optimizer_trade_rule_strategy;
 use crate::strategies::execution_manager::{ExecutionRequest, LiveStrategyExecutor};
 use crate::strategies::strategy;
 use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name, CandlestickTradingStrategy, HighResolutionTradingStrategy};
@@ -155,12 +153,6 @@ pub fn get_command_matches() -> ArgMatches {
                 .arg(arg!(--cache_on_memory <CACHE_ON_MEMORY> "select if the complete dataset used by the backtest should be stored in main memory ( will greatly increase execution speed at the cost of available memory)")
                     .default_value("true")
                     .num_args(0..=1)
-                    .required(false))
-                .arg(arg!(-q --qty_to_trade <QUANTITY_TO_TRADE> "base traded quantity to trade on each order sent to the market")
-                    .default_value("1")
-                    .required(false))
-                .arg(arg!(--fixed_trade_qty <FIXED_TRADE_QTY> "defines if the quantity traded should increase and decrease as the current balance changes to keep the traded amount proportional")
-                    .default_value("true")
                     .required(false))
         )
         .subcommand(
@@ -297,20 +289,6 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
         .expect("exchange is required")
     ).unwrap();
 
-    let qty_to_trade: u32 = if sub_matches.get_one::<String>("qty_to_trade").is_some() {
-        sub_matches.get_one::<String>("qty_to_trade").expect("required")
-            .parse().expect("should be a positive number")
-    } else {
-        1
-    };
-
-    let fixed_trade_qty: bool = if sub_matches.get_one::<String>("fixed_trade_qty").is_some() {
-        sub_matches.get_one::<String>("fixed_trade_qty").expect("required")
-            .parse().expect("should be a boolean value")
-    } else {
-        true
-    };
-
     let asset = Asset::get_asset(ticker, market, exchange);
 
     if asset.is_none() {
@@ -333,8 +311,6 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
             begin,
             end,
             asset.unwrap(),
-            qty_to_trade,
-            fixed_trade_qty,
             cache_on_memory,
             no_download
         );
@@ -347,8 +323,6 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
             begin,
             end,
             asset.unwrap(),
-            qty_to_trade,
-            fixed_trade_qty,
             cache_on_memory,
             no_download
         );
@@ -361,8 +335,6 @@ fn run_high_resolution_backtest(
     begin: u32,
     end: u32,
     asset: &Asset,
-    qty_to_trade: u32,
-    fixed_trade_qty: bool,
     cache_on_memory: bool,
     no_download: bool
 ) {
@@ -388,7 +360,7 @@ fn run_high_resolution_backtest(
     println!("{}", backtester);
 
     let now = Instant::now();
-    let metrics = backtester.run_high_resolution_backtest(strategy, qty_to_trade, fixed_trade_qty);
+    let metrics = backtester.run_high_resolution_backtest(strategy);
     let elapsed = now.elapsed();
     println!("backtest executed successfully in {:.2?}", elapsed);
     println!("{}", metrics);
@@ -400,8 +372,6 @@ fn run_candlestick_backtest(
     begin: u32,
     end: u32,
     asset: &Asset,
-    qty_to_trade: u32,
-    fixed_trade_qty: bool,
     cache_on_memory: bool,
     no_download: bool
 ) {
@@ -428,7 +398,7 @@ fn run_candlestick_backtest(
     println!("{}", backtester);
 
     let now = Instant::now();
-    let metrics = backtester.run_candlestick_backtest(strategy, qty_to_trade, fixed_trade_qty);
+    let metrics = backtester.run_candlestick_backtest(strategy);
     let elapsed = now.elapsed();
     println!("backtest executed successfully in {:.2?}", elapsed);
     println!("{}", metrics);
@@ -587,6 +557,7 @@ fn process_connection_status_command(client: MarketConnectorClient) {
     }
 }
 
+#[allow(unused)]
 fn optimize_trade_parameters_command(_: &ArgMatches) {
     let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3)
         .expect("must provide an existing/registered asset to trade");
@@ -608,26 +579,26 @@ fn optimize_trade_parameters_command(_: &ArgMatches) {
 
     // if in the future we have another implementation that has optimizations available we can have
     // a new parameter from the CLI to define which one to choose
-    let trade_rule_fitness_executor = fitness_optimizer_trade_rule_strategy(
-        asset,
-        training_start_date,
-        training_end_date,
-        validation_start_date,
-        validation_end_date,
-    );
+    // let trade_rule_fitness_executor = fitness_optimizer_trade_rule_strategy(
+    //     asset,
+    //     training_start_date,
+    //     training_end_date,
+    //     validation_start_date,
+    //     validation_end_date,
+    // );
 
-    let brkga_configuration = BrkgaConfig::new(
-        fraction_top,
-        fraction_bottom,
-        population_size,
-        max_iterations,
-        elitism_rate,
-    );
+    // let brkga_configuration = BrkgaConfig::new(
+    //     fraction_top,
+    //     fraction_bottom,
+    //     population_size,
+    //     max_iterations,
+    //     elitism_rate,
+    // );
 
-    run_brkga_optimization(
-        seed,
-        brkga_configuration,
-        trade_rule_fitness_executor,
-        true,
-    );
+    // run_brkga_optimization(
+    //     seed,
+    //     brkga_configuration,
+    //     trade_rule_fitness_executor,
+    //     true,
+    // );
 }
