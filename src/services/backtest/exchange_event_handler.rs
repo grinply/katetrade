@@ -5,14 +5,13 @@ use crate::models::market::Market;
 use crate::models::pnl::Position;
 use crate::models::side::Side;
 use crate::models::trade::Trade;
-use crate::services::backtest::backtest::DEBUG_BACKTEST_LOG;
 use crate::services::backtest::data_point::DataPoint;
-
+use crate::services::backtest::logger;
 #[allow(unused)]
 use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
 use crate::utils::date;
 
-pub const INITIAL_BALANCE: f64 = 15_000.0;
+pub const INITIAL_BALANCE: f64 = 14760.0;
 pub const MINIMUM_BALANCE: f64 = 800.0;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
@@ -209,12 +208,17 @@ impl<'a> ExchangeEventHandler<'a> {
             position.open_qty as f64,
         );
 
+
+
         if datapoint.date() != self.last_datapoint.date() ||
-            (gross_pnl < 0.0 && -1.0 * gross_pnl >= MINIMUM_BALANCE) {
-            if DEBUG_BACKTEST_LOG {
-                println!("[{}/{:?}] position with {} | entry: {:.2}, exit: {:.2} | qty: {} | result: {:.2}",
-                         datapoint.date(), datapoint.time(), position.side, position.avg_entry_price, datapoint.current_price(), position.open_qty, gross_pnl);
-            }
+            self.current_balance - gross_pnl < MINIMUM_BALANCE {
+
+            logger::log_compulsory_close(
+                date::convert_to_naive_date(datapoint.date() as u32).unwrap(),
+                datapoint.exit_time().unwrap(),
+                date::convert_to_naive_date(self.last_datapoint.date() as u32).unwrap(),
+            );
+
             let open_qty = position.open_qty;
             let last_datapoint = self.last_datapoint;
             position.total_paid_in_fees += COMPULSORY_CLOSE_FEE;
@@ -271,23 +275,17 @@ impl<'a> ExchangeEventHandler<'a> {
         let current_fee = &self.calculate_fees(quantity_to_increase as u64);
         let position = self.current_position.as_mut().unwrap();
 
-
-        let last_entry = position.avg_entry_price;
         let new_total_open_qty = position.open_qty + quantity_to_increase as i32;
 
         position.avg_entry_price = ((position.avg_entry_price * position.open_qty as f64) + (current_entry_price * quantity_to_increase as f64)) / new_total_open_qty as f64;
 
-        if DEBUG_BACKTEST_LOG {
-            println!(
-                "[{}/{:?}] position of {} contracts increased more {} contracts with price {current_entry_price}, entry updated from {last_entry} to {}",
-                self.last_datapoint.date,
-                self.last_datapoint.close_time.unwrap(),
-                position.open_qty,
-                quantity_to_increase,
-                position.avg_entry_price
-            );
-        }
-
+        logger::log_increase_position(
+            date::convert_to_naive_date(self.last_datapoint.date as u32).unwrap(),
+            self.last_datapoint.close_time.unwrap(),
+            current_entry_price,
+            quantity_to_increase,
+            *current_fee
+        );
 
         assert!(position.avg_entry_price > 0.0);
         position.total_qty = position.total_qty + quantity_to_increase as i32;
@@ -341,10 +339,15 @@ impl<'a> ExchangeEventHandler<'a> {
             quantity_to_decrease as f64,
         );
 
-        if DEBUG_BACKTEST_LOG {
-            println!("[{}/{:?}] position with {} | entry: {:.2}, exit: {:.2} | qty: {quantity_to_decrease} | result: {:.2}",
-                     datapoint.date(), datapoint.time(), self.current_position.as_ref().unwrap().side, self.current_position.as_ref().unwrap().avg_entry_price, current_exit_price, pnl);
-        }
+        logger::log_decrease_position(
+            date::convert_to_naive_date(self.last_datapoint.date as u32).unwrap(),
+            self.last_datapoint.close_time.unwrap(),
+            current_exit_price,
+            quantity_to_decrease as usize,
+            pnl,
+            current_fee
+        );
+
         self.current_position.as_mut().unwrap().gross_pnl += pnl;
         self.current_balance += pnl;
         self.current_balance -= current_fee;
@@ -406,6 +409,15 @@ impl<'a> ExchangeEventHandler<'a> {
         self.current_position = Some(new_position);
         self.current_balance -= fee_open_position;
         self.total_contracts_executed_current_month += quantity as u64;
+
+        logger::log_open_position(
+            date::convert_to_naive_date(datapoint.date() as u32).unwrap(),
+            datapoint.time(),
+            side,
+            entry_price,
+            quantity,
+            fee_open_position
+        );
     }
 
     fn close_position(&mut self, datapoint: &impl DataPoint) {
@@ -434,6 +446,14 @@ impl<'a> ExchangeEventHandler<'a> {
         closed_position.liquid_pnl = closed_position.gross_pnl - closed_position.total_paid_in_fees;
         closed_position.end_datapoint_number = self.total_candlesticks_processed as i32;
         closed_position.open_qty = 0;
+
+        logger::log_close_position(
+            date::convert_to_naive_date(datapoint.date() as u32).unwrap(),
+            datapoint.exit_time().unwrap(),
+            closed_position.avg_entry_price,
+            closed_position.avg_exit_price,
+            closed_position.quantity_of_contracts as usize
+        );
 
         self.positions.push(closed_position);
         self.current_position = None;

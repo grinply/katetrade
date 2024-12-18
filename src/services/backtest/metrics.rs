@@ -141,7 +141,6 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
     let mut sum_losing_trades: f64 = 0.0;
     let mut balance_evolution_over_time: Vec<f64> = vec![INITIAL_BALANCE];
 
-
     let mut positions =  vec![];
 
     for position in &event_handler.positions {
@@ -175,8 +174,6 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
         total_contracts += position.quantity_of_contracts as u64;
         total_fees_paid += position.total_paid_in_fees;
         current_day = position.date;
-
-
 
         if position.liquid_pnl > liquid_profit_best_trade {
             liquid_profit_best_trade = position.liquid_pnl;
@@ -231,7 +228,6 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
             }
         }
     }
-
 
     // check the pnl of the last day to see if it is the worst or best pnl
     let index_liquid_profit = liquid_profit_per_day.len() - 1;

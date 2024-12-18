@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::cmp::max;
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
-use chrono::{Datelike, NaiveDate, Weekday};
+use chrono::{Datelike, NaiveDate, NaiveTime, Timelike, Weekday};
 use itertools::enumerate;
 use crate::models::candlestick::{Candlestick, CandlestickGenerator};
 use crate::models::asset::Asset;
@@ -17,10 +17,9 @@ use crate::constants::{AWS_REGION, TRADES_FOLDER_NAME};
 use crate::models::trade;
 use crate::models::trade::{Trade, TradeFile};
 use crate::services::backtest::exchange_event_handler::{ExchangeEventHandler, MINIMUM_BALANCE};
-use crate::services::backtest::metrics;
+use crate::services::backtest::{logger, metrics};
+use crate::services::backtest::logger::BacktestEvent;
 use crate::services::backtest::metrics::BacktestMetrics;
-
-pub const DEBUG_BACKTEST_LOG: bool = false;
 
 #[allow(unused)]
 pub struct TradingBacktester<'a> {
@@ -138,72 +137,43 @@ impl Display for TradingBacktester<'_> {
                  self.qty_history_trades)
     }
 }
+
 impl<'a> TradingBacktester<'a> {
     /// Starts the execution of a Backtest ( trading simulation ) where each datapoint is a [Trade]
     ///
     /// [HighResolutionTradingStrategy] defines how and when to send orders to buy and sell the asset being traded
     /// after evaluating each new [Trade] as they become available
     pub fn run_high_resolution_backtest(&self, mut strategy: Box<dyn HighResolutionTradingStrategy>) -> BacktestMetrics {
+        if strategy.days_of_context() > 0{
+            panic!("initializing one or more days of context is not supported currently in high resolution backtests");
+        }
+
         let mut event_handler = ExchangeEventHandler::new(self.asset);
 
         // running using cached trades from main memory
         if self.data_provider.trades.len() > 0 {
-            let mut days_on_range = -1;
             let mut current_day = -1;
-
-            let days_of_context = strategy.days_of_context() as i32;
-            let mut index_start_day_list = VecDeque::new();
-            let mut is_initialized = if days_of_context == 0 {
-                true
-            } else {
-                false
-            };
-
-
-            for (index_current_trade, trade) in enumerate(self.data_provider.trades.iter()) {
-                // this section aims to guarantee that the init_trading_day will be called for the strategy
-                // for each new trading day providing the last N days of context as required by the strategy
-                if trade.date != current_day && days_of_context > 0 {
-                    index_start_day_list.push_back(index_current_trade);
+            for trade in self.data_provider.trades.iter() {
+                if current_day != trade.date {
+                    strategy.init_trading_day(self.asset, [].as_ref());
                     current_day = trade.date;
-                    days_on_range += 1;
-
-                    if days_of_context == days_on_range {
-                        let start_index = index_start_day_list.pop_front().unwrap();
-                        strategy.init_trading_day(self.asset, &self.data_provider.trades[start_index..index_current_trade].as_ref());
-                        days_on_range = days_of_context - 1;
-                        is_initialized = true;
-                    }
                 }
-
-                if !is_initialized {
-                    continue;
-                }
-
                 let trade_action = strategy.process_new_trade(trade);
-                let mut execute_order = false;
-                for order_action in trade_action.orders {
-                    if let Some(order) = order_action {
-                        if DEBUG_BACKTEST_LOG {
-                            println!("[{}/{}] executing {:?} order with price {:.2}",
-                                     trade.date, date::convert_to_naive_time(trade.time).unwrap(), order, trade.price);
-                        }
-                        execute_order = true;
-                    }
-                }
+                let current_balance = event_handler.current_balance;
 
                 event_handler.process_trade(trade);
                 event_handler.process_orders(trade_action);
 
-                if execute_order {
-                    if DEBUG_BACKTEST_LOG {
-                        println!(
-                            "[{}/{}] current balance is {:.2}",
-                            trade.date,
-                            date::convert_to_naive_time(trade.time).unwrap(),
-                            event_handler.current_balance,
-                        );
-                    }
+                let updated_balance = event_handler.current_balance;
+
+                if current_balance != updated_balance {
+                    logger::log_balance_change(
+                        date::convert_to_naive_date(trade.date as u32).unwrap(),
+                        date::convert_to_naive_time(trade.time).unwrap(),
+                        BacktestEvent::BalanceUpdate,
+                        updated_balance,
+                        updated_balance - current_balance
+                    );
                 }
 
                 if self.should_abort_execution(&mut event_handler) {
@@ -473,8 +443,12 @@ fn parse_trades_from_file(binary_trades_file_full_path: String) -> Result<Vec<Tr
     let trades_file = TradeFile::new_from_binary_file(binary_trades_file_full_path.as_str())?;
     let mut trades: Vec<Trade> = Vec::new();
 
+    let cut_off_time = NaiveTime::from_hms_opt(18,00,00).unwrap().num_seconds_from_midnight();
+
     for trade in trades_file {
-        trades.push(trade)
+        if date::convert_to_naive_time(trade.time).unwrap().num_seconds_from_midnight() <= cut_off_time {
+            trades.push(trade)
+        }
     }
     Ok(trades)
 }
@@ -906,4 +880,6 @@ mod tests {
             true,
         ).unwrap()
     }
+
+
 }
