@@ -241,7 +241,7 @@ impl<'a> ExchangeEventHandler<'a> {
 
     fn execute_market_order(&mut self, direction: Side, quantity: usize) {
         let datapoint = self.current_datapoint;
-        let entry_price = self.calculate_price_with_slippage(datapoint.current_price(), direction.clone());
+        let entry_price = self.calculate_price_with_slippage(datapoint.current_price(), direction.clone(), quantity);
         match &mut self.current_position {
             None => self.open_new_position(entry_price, direction, &datapoint, quantity),
             Some(position) => {
@@ -261,8 +261,18 @@ impl<'a> ExchangeEventHandler<'a> {
     /// slippage is a multiplier that makes the price bit worse when executing an order in the selected direction
     /// this aims to emulate the real behavior of the market, since between seen the price, executing the order and
     /// the conclusion in the exchange the actual execution price may ( and probably will be ) slight different
-    fn calculate_price_with_slippage(&self, price: f64, _: Side) -> f64 {
-        price
+    fn calculate_price_with_slippage(&self, price: f64, direction: Side, _quantity_traded: usize) -> f64 {
+        //TODO: we may want to model slippage based on the amount of contracts and volume traded
+        const TICKS_OF_SLIPPAGE: f64 = 1.0;
+        let offset = TICKS_OF_SLIPPAGE * self.asset.min_point_variation;
+        match direction {
+            Side::BUY => {
+                price - offset
+            }
+            Side::SELL => {
+                price + offset
+            }
+        }
     }
 
     fn increase_position(&mut self, current_entry_price: f64, quantity_to_increase: usize) {

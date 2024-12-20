@@ -285,17 +285,9 @@ impl TimeCandlestickGenerator {
 
         // if the day rolls over we close the current candle
         if self.last_day != 0 && self.last_day != new_trade.date {
-            //TODO: fix me this should not be here, there is a problem in the historical data
-            // that makes the first trade of the date have a time around 18:30 which doesnt make sense
-            // and breaks everything - you should really sanitize the historical files and remove this hack later
-
             self.last_day = new_trade.date;
             self.last_price = new_trade.price;
             let mut new_candle = Candlestick::new(new_trade);
-
-            if new_candle.start_time.num_seconds_from_midnight() > NaiveTime::from_hms_opt(18, 00, 00)?.num_seconds_from_midnight() {
-                return None;
-            }
 
             new_candle.start_time = round_start_time(new_candle.start_time, self.unit, self.period);
 
@@ -309,13 +301,6 @@ impl TimeCandlestickGenerator {
         if self.last_candle.is_none() { // the very start when no trade was parsed yet
             self.last_price = new_trade.price;
             let mut new_candle = Candlestick::new(new_trade);
-
-            // TODO: fix me this should not be here, there is a problem in the historical data
-            // that makes the first trade of the date have a time around 18:30 which doesnt make sense
-            // and breaks everything - you should really sanitize the historical files and remove this hack later
-            if new_candle.start_time.num_seconds_from_midnight() > NaiveTime::from_hms_opt(18, 00, 00)?.num_seconds_from_midnight() {
-                return None;
-            }
 
             new_candle.start_time = round_start_time(new_candle.start_time, self.unit, self.period);
 
@@ -617,7 +602,6 @@ mod tests {
     }
 
 
-    #[ignore = "there is hack here is this file to handle a problem in the historical data when parsing candlesticks, this potentially breaks parsing open candles"]
     #[test]
     fn time_candlesticks_generator_handles_day_change() {
         let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);

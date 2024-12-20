@@ -61,7 +61,7 @@ pub fn kate_configuration_directory() -> PathBuf{
 /// home directory that will only be return only when running tests
 #[cfg(test)]
 pub fn kate_configuration_directory() -> PathBuf{
-    PathBuf::from("../../../.kate")
+    PathBuf::from("resources")
 }
 
 /// uses either the default home folder or the value defined by the environment variable KATE_HOME

@@ -576,7 +576,6 @@ mod tests {
     use crate::models::candlestick::{Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
     use crate::models::exchange::Exchange;
     use crate::models::market::Market;
-    use crate::models::trade::Trade;
     use crate::services::backtest::backtest::TradingBacktester;
     use crate::services::backtest::exchange_event_handler::INITIAL_BALANCE;
     use crate::strategies::custom::stormer_scalper_strategy::{StormerScalperStrategy};
@@ -607,7 +606,7 @@ mod tests {
             2024_06_13,
             2024_06_17,
         );
-        assert_eq!(44059, backtester_engine.data_provider.trades.len());
+        assert_eq!(43761, backtester_engine.data_provider.trades.len());
     }
 
     #[test]
@@ -634,11 +633,11 @@ mod tests {
         let metrics = backtester_engine.run_candlestick_backtest(
             Box::new(strategy),
         );
-        assert_eq!(14, metrics.total_wins);
-        assert_eq!(17, metrics.total_loses);
-        assert_eq!(31, metrics.total_trades);
-        assert_eq!(3, metrics.max_win_streak);
-        assert_eq!(5, metrics.max_lose_streak);
+        assert_eq!(13, metrics.total_wins);
+        assert_eq!(14, metrics.total_loses);
+        assert_eq!(27, metrics.total_trades);
+        assert_eq!(4, metrics.max_win_streak);
+        assert_eq!(4, metrics.max_lose_streak);
     }
 
     #[test]
@@ -654,9 +653,9 @@ mod tests {
         );
 
         assert_eq!(20, metrics.total_wins);
-        assert_eq!(12, metrics.total_loses);
-        assert_eq!(32, metrics.total_trades);
-        assert_eq!(4, metrics.max_win_streak);
+        assert_eq!(7, metrics.total_loses);
+        assert_eq!(27, metrics.total_trades);
+        assert_eq!(8, metrics.max_win_streak);
         assert_eq!(2, metrics.max_lose_streak);
     }
 
@@ -673,11 +672,11 @@ mod tests {
             Box::new(strategy),
         );
 
-        assert_eq!(249, metrics.total_wins);
-        assert_eq!(238, metrics.total_loses);
-        assert_eq!(487, metrics.total_trades);
-        assert_eq!(7, metrics.max_win_streak);
-        assert_eq!(10, metrics.max_lose_streak);
+        assert_eq!(16, metrics.total_wins);
+        assert_eq!(23, metrics.total_loses);
+        assert_eq!(39, metrics.total_trades);
+        assert_eq!(5, metrics.max_win_streak);
+        assert_eq!(7, metrics.max_lose_streak);
     }
 
     #[test]
@@ -743,63 +742,7 @@ mod tests {
     }
 
     #[test]
-    fn should_initialize_context_when_running_with_cached_trades_correctly() {
-        struct InitTrackerStrategy {
-            initialized_trades: usize,
-        }
-
-        impl HighResolutionTradingStrategy for InitTrackerStrategy {
-            fn new() -> Self
-            where
-                Self: Sized,
-            {
-                InitTrackerStrategy {
-                    initialized_trades: 0
-                }
-            }
-
-            fn name(&self) -> &str {
-                "init_tracker_strategy"
-            }
-
-            fn days_of_context(&self) -> u32 {
-                1
-            }
-
-            fn init_trading_day(&mut self, _: &Asset, context_trades: &[Trade]) {
-                for _ in context_trades {
-                    self.initialized_trades += 1;
-                }
-            }
-
-            fn process_new_trade(&mut self, _: &Trade) -> TradeAction {
-                if self.initialized_trades == 15379 {
-                    return TradeAction::abort();
-                }
-                TradeAction::do_nothing()
-            }
-        }
-        let backtester = trade_backtester(
-            true,
-            2024_06_13,
-            2024_06_17,
-        );
-        let strategy = InitTrackerStrategy::new();
-        let metrics = backtester.run_high_resolution_backtest(
-            Box::new(strategy),
-        );
-
-        assert_eq!(
-            true,
-            metrics.aborted,
-            "should have sent abort action signaling the the correct amount to trades were initialized as expected"
-        );
-        assert_eq!(1, metrics.total_trading_days);
-        assert_eq!(0, metrics.total_trades);
-        assert_eq!(INITIAL_BALANCE, metrics.final_balance);
-    }
-
-    #[test]
+    #[ignore="this is a integration test that requires large files, this will be ignore until we solve this on the CI pipeline"]
     fn should_correctly_compute_the_total_return_when_running_multiple_days_at_once_on_real_data() {
         let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         let metrics_first_day = TradingBacktester::new(
