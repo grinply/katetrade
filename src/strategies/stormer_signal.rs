@@ -58,6 +58,7 @@ impl StormerIndicator {
 
     fn reset(&mut self) {
         self.candle_count = 0;
+        self.current_signal_count = 0;
         self.rsi.reset();
         self.bollinger_bands.reset();
         self.stochastic.reset();
