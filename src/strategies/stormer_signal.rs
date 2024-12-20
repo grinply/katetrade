@@ -25,7 +25,6 @@ pub struct StormerIndicator {
     cut_off_time_sending_orders: NaiveTime,
     time_force_close_open_positions: NaiveTime,
 
-    // indicators & context variables used for candlesticks with period of 15 seconds
     min_candles: usize,
     candle_count: usize,
     bollinger_bands: BollingerBands,
