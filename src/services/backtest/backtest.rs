@@ -741,8 +741,8 @@ mod tests {
         assert_eq!(INITIAL_BALANCE, metrics.final_balance);
     }
 
-    #[test]
     #[ignore="this is a integration test that requires large files, this will be ignore until we solve this on the CI pipeline"]
+    #[test]
     fn should_correctly_compute_the_total_return_when_running_multiple_days_at_once_on_real_data() {
         let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
         let metrics_first_day = TradingBacktester::new(
