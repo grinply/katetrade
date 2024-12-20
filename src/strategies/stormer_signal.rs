@@ -36,7 +36,7 @@ pub struct StormerIndicator {
 }
 
 impl StormerIndicator {
-    fn default() -> Self
+    pub fn default() -> Self
     where
         Self: Sized,
     {
@@ -55,7 +55,7 @@ impl StormerIndicator {
         }
     }
 
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.candle_count = 0;
         self.current_signal_count = 0;
         self.rsi.reset();
@@ -64,7 +64,7 @@ impl StormerIndicator {
         self.latest_closed_candles = [Candlestick::default(); CANDLES_TO_TRACK];
     }
 
-    fn next(&mut self, new_trade: &Trade) -> f64 {
+    pub fn next(&mut self, new_trade: &Trade) -> f64 {
         let signal = if let Some(candlestick) = self.candle_parser.parse_only_closed_candles(new_trade) {
             if self.current_signal_count > 0 {
                 self.current_signal_count -= 1;
