@@ -7,7 +7,6 @@ use clap::{arg, ArgMatches, Command};
 use rayon::iter::IntoParallelIterator;
 use simple_bar::ProgressBar;
 use crate::{constants, VERSION};
-use crate::constants::OPTIMIZE;
 use crate::models::asset::Asset;
 use crate::models::exchange::Exchange;
 use crate::models::market::Market;
@@ -19,8 +18,6 @@ use crate::services::backtest::backtest::TradingBacktester;
 use crate::services::configuration;
 use crate::services::configuration::KateConfiguration;
 use crate::services::market_connector::MarketConnectorClient;
-use crate::services::optimization::brkga::{run_brkga_optimization, BrkgaConfig};
-use crate::strategies::custom::trade_rule_strategy::optimization::fitness_optimizer_trade_rule_strategy;
 use crate::strategies::execution_manager::{ExecutionRequest, LiveStrategyExecutor};
 use crate::strategies::strategy;
 use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name, CandlestickTradingStrategy, HighResolutionTradingStrategy};
@@ -59,9 +56,6 @@ pub fn process_matches(matches: &ArgMatches, configuration: KateConfiguration, c
                 }
                 _ => unreachable!(),
             }
-        }
-        Some((OPTIMIZE, sub_matches)) => {
-            optimize_trade_parameters_command(sub_matches);
         }
         _ => unreachable!(), // If all subcommands are defined above, anything else is unreachable
     }
@@ -156,12 +150,6 @@ pub fn get_command_matches() -> ArgMatches {
                     .default_value("true")
                     .num_args(0..=1)
                     .required(false))
-                .arg(arg!(-q --qty_to_trade <QUANTITY_TO_TRADE> "base traded quantity to trade on each order sent to the market")
-                    .default_value("1")
-                    .required(false))
-                .arg(arg!(--fixed_trade_qty <FIXED_TRADE_QTY> "defines if the quantity traded should increase and decrease as the current balance changes to keep the traded amount proportional")
-                    .default_value("true")
-                    .required(false))
         )
         .subcommand(
             Command::new(constants::FILE)
@@ -196,10 +184,6 @@ pub fn get_command_matches() -> ArgMatches {
                     Command::new(constants::STATUS)
                         .about("evaluate the network connection with market connector (service responsible for processing orders and providing live market data")
                 )
-        )
-        .subcommand(
-            Command::new(OPTIMIZE)
-                .about("Optimize/train a group for best solutions for a customized trading strategy")
         ).get_matches()
 }
 
@@ -297,20 +281,6 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
         .expect("exchange is required")
     ).unwrap();
 
-    let qty_to_trade: u32 = if sub_matches.get_one::<String>("qty_to_trade").is_some() {
-        sub_matches.get_one::<String>("qty_to_trade").expect("required")
-            .parse().expect("should be a positive number")
-    } else {
-        1
-    };
-
-    let fixed_trade_qty: bool = if sub_matches.get_one::<String>("fixed_trade_qty").is_some() {
-        sub_matches.get_one::<String>("fixed_trade_qty").expect("required")
-            .parse().expect("should be a boolean value")
-    } else {
-        true
-    };
-
     let asset = Asset::get_asset(ticker, market, exchange);
 
     if asset.is_none() {
@@ -333,8 +303,6 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
             begin,
             end,
             asset.unwrap(),
-            qty_to_trade,
-            fixed_trade_qty,
             cache_on_memory,
             no_download
         );
@@ -347,8 +315,6 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
             begin,
             end,
             asset.unwrap(),
-            qty_to_trade,
-            fixed_trade_qty,
             cache_on_memory,
             no_download
         );
@@ -361,8 +327,6 @@ fn run_high_resolution_backtest(
     begin: u32,
     end: u32,
     asset: &Asset,
-    qty_to_trade: u32,
-    fixed_trade_qty: bool,
     cache_on_memory: bool,
     no_download: bool
 ) {
@@ -388,7 +352,7 @@ fn run_high_resolution_backtest(
     println!("{}", backtester);
 
     let now = Instant::now();
-    let metrics = backtester.run_high_resolution_backtest(strategy, qty_to_trade, fixed_trade_qty);
+    let metrics = backtester.run_high_resolution_backtest(strategy);
     let elapsed = now.elapsed();
     println!("backtest executed successfully in {:.2?}", elapsed);
     println!("{}", metrics);
@@ -400,8 +364,6 @@ fn run_candlestick_backtest(
     begin: u32,
     end: u32,
     asset: &Asset,
-    qty_to_trade: u32,
-    fixed_trade_qty: bool,
     cache_on_memory: bool,
     no_download: bool
 ) {
@@ -428,7 +390,7 @@ fn run_candlestick_backtest(
     println!("{}", backtester);
 
     let now = Instant::now();
-    let metrics = backtester.run_candlestick_backtest(strategy, qty_to_trade, fixed_trade_qty);
+    let metrics = backtester.run_candlestick_backtest(strategy);
     let elapsed = now.elapsed();
     println!("backtest executed successfully in {:.2?}", elapsed);
     println!("{}", metrics);
@@ -585,49 +547,4 @@ fn process_connection_status_command(client: MarketConnectorClient) {
             }
         }
     }
-}
-
-fn optimize_trade_parameters_command(_: &ArgMatches) {
-    let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3)
-        .expect("must provide an existing/registered asset to trade");
-
-    // BRKGA optimization configuration
-    // internal BRKGA parameters are hard coded
-    // if you must tune this you can recompile the code
-    let population_size = 15_000;
-    let max_iterations = 1000;
-    let fraction_top = 0.1;
-    let fraction_bottom = 0.3;
-    let elitism_rate = 0.6;
-    let seed = 11223344;
-
-    let training_start_date = 2022_01_01;
-    let training_end_date = 2024_02_28;
-    let validation_start_date = 2024_06_13;
-    let validation_end_date = 2024_11_20;
-
-    // if in the future we have another implementation that has optimizations available we can have
-    // a new parameter from the CLI to define which one to choose
-    let trade_rule_fitness_executor = fitness_optimizer_trade_rule_strategy(
-        asset,
-        training_start_date,
-        training_end_date,
-        validation_start_date,
-        validation_end_date,
-    );
-
-    let brkga_configuration = BrkgaConfig::new(
-        fraction_top,
-        fraction_bottom,
-        population_size,
-        max_iterations,
-        elitism_rate,
-    );
-
-    run_brkga_optimization(
-        seed,
-        brkga_configuration,
-        trade_rule_fitness_executor,
-        true,
-    );
 }
