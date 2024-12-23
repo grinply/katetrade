@@ -84,7 +84,7 @@ fn evaluate_sharp_ratio(sharp_ratio: f64) -> String {
         (1.0..2.0) => "Acceptable".to_string(),
         (2.0..3.0) => "Very Good".to_string(),
         (3.0..) => "Excellent".to_string(),
-        _ => unreachable!()
+        _ => "unkown".parse().unwrap(),
     }
 }
 

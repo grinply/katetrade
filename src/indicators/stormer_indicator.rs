@@ -33,6 +33,12 @@ pub struct StormerIndicator {
     latest_closed_candles: [Candlestick; CANDLES_TO_TRACK],
     rsi: RelativeStrengthIndex,
     current_signal_count: usize,
+    suggested_side: Side,
+}
+
+pub struct StormerOutput {
+    pub value: f64,
+    pub suggested_direction: Option<Side>,
 }
 
 impl StormerIndicator {
@@ -52,6 +58,7 @@ impl StormerIndicator {
             candle_parser: TimeCandlestickGenerator::new(TimeUnit::Seconds, CANDLESTICK_PERIOD),
             latest_closed_candles: [Candlestick::default(); CANDLES_TO_TRACK],
             current_signal_count: 0,
+            suggested_side: Side::BUY,
         }
     }
 
@@ -64,7 +71,7 @@ impl StormerIndicator {
         self.latest_closed_candles = [Candlestick::default(); CANDLES_TO_TRACK];
     }
 
-    pub fn next(&mut self, new_trade: &Trade) -> f64 {
+    pub fn next(&mut self, new_trade: &Trade) -> StormerOutput {
         let signal = if let Some(candlestick) = self.candle_parser.parse_only_closed_candles(new_trade) {
             if self.current_signal_count > 0 {
                 self.current_signal_count -= 1;
@@ -75,18 +82,31 @@ impl StormerIndicator {
             let rsi = self.rsi.next(candlestick.close);
             self.update_candles(candlestick);
 
-            if self.should_open_position(stochastic, bollinger_output, rsi).is_some() {
+            if let Some(side) = self.should_open_position(stochastic, bollinger_output, rsi) {
+                self.suggested_side = side;
                 self.current_signal_count = SIGNAL_DURATION_CANDLES;
-                1.0
+                StormerOutput {
+                    value: 1.0,
+                    suggested_direction: Some(side)
+                }
             } else {
-                0.0
+                StormerOutput {
+                    value: 0.0,
+                    suggested_direction: None,
+                }
             }
         } else {
-            0.0
+            StormerOutput {
+                value: 0.0,
+                suggested_direction: None,
+            }
         };
 
         if self.current_signal_count > 0 {
-            return 1.0;
+            return StormerOutput {
+                value: 0.0,
+                suggested_direction: Some(self.suggested_side),
+            };
         }
 
         signal

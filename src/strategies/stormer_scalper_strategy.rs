@@ -82,7 +82,7 @@ impl HighResolutionTradingStrategy for StormerScalperStrategy {
     }
 
     fn days_of_context(&self) -> u32 {
-        1
+        0
     }
 
     fn init_trading_day(&mut self, asset: &Asset, trades: &[Trade]) {

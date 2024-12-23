@@ -1,4 +1,4 @@
-FROM rust:1.83-slim as build
+.gitFROM rust:1.83-slim as build
 
 # create a new empty shell project
 RUN USER=root cargo new --bin katetrade

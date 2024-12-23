@@ -3,4 +3,5 @@ pub mod indicators;
 pub mod execution_manager;
 pub mod custom;
 mod stormer_scalper_strategy;
+mod stormer_scalper_reverse_strategy;
 
