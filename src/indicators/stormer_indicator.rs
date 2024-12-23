@@ -72,7 +72,7 @@ impl StormerIndicator {
     }
 
     pub fn next(&mut self, new_trade: &Trade) -> StormerOutput {
-        let signal = if let Some(candlestick) = self.candle_parser.parse_only_closed_candles(new_trade) {
+        if let Some(candlestick) = self.candle_parser.parse_only_closed_candles(new_trade) {
             if self.current_signal_count > 0 {
                 self.current_signal_count -= 1;
             }
@@ -85,31 +85,24 @@ impl StormerIndicator {
             if let Some(side) = self.should_open_position(stochastic, bollinger_output, rsi) {
                 self.suggested_side = side;
                 self.current_signal_count = SIGNAL_DURATION_CANDLES;
-                StormerOutput {
+                return StormerOutput {
                     value: 1.0,
                     suggested_direction: Some(side)
                 }
-            } else {
-                StormerOutput {
-                    value: 0.0,
-                    suggested_direction: None,
-                }
             }
-        } else {
-            StormerOutput {
-                value: 0.0,
-                suggested_direction: None,
-            }
-        };
+        }
 
         if self.current_signal_count > 0 {
             return StormerOutput {
-                value: 0.0,
+                value: 1.0,
                 suggested_direction: Some(self.suggested_side),
             };
         }
 
-        signal
+        StormerOutput {
+            value: 0.0,
+            suggested_direction: None,
+        }
     }
 
     fn update_candles(&mut self, new_closed_candle: Candlestick) {

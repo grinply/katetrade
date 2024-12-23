@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::cmp::max;
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
-use chrono::{Datelike, NaiveDate, Weekday};
+use chrono::{Datelike, NaiveDate, NaiveTime, Timelike, Weekday};
 use itertools::enumerate;
 use crate::models::candlestick::{Candlestick, CandlestickGenerator};
 use crate::models::asset::Asset;
@@ -17,10 +17,9 @@ use crate::constants::{AWS_REGION, TRADES_FOLDER_NAME};
 use crate::models::trade;
 use crate::models::trade::{Trade, TradeFile};
 use crate::services::backtest::exchange_event_handler::{ExchangeEventHandler, MINIMUM_BALANCE};
-use crate::services::backtest::metrics;
+use crate::services::backtest::{logger, metrics};
+use crate::services::backtest::logger::BacktestEvent;
 use crate::services::backtest::metrics::BacktestMetrics;
-
-pub const DEBUG_BACKTEST_LOG: bool = false;
 
 #[allow(unused)]
 pub struct TradingBacktester<'a> {
@@ -138,72 +137,43 @@ impl Display for TradingBacktester<'_> {
                  self.qty_history_trades)
     }
 }
+
 impl<'a> TradingBacktester<'a> {
     /// Starts the execution of a Backtest ( trading simulation ) where each datapoint is a [Trade]
     ///
     /// [HighResolutionTradingStrategy] defines how and when to send orders to buy and sell the asset being traded
     /// after evaluating each new [Trade] as they become available
-    pub fn run_high_resolution_backtest(&self, mut strategy: Box<dyn HighResolutionTradingStrategy>, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
-        let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
+    pub fn run_high_resolution_backtest(&self, mut strategy: Box<dyn HighResolutionTradingStrategy>) -> BacktestMetrics {
+        if strategy.days_of_context() > 0{
+            panic!("initializing one or more days of context is not supported currently in high resolution backtests");
+        }
+
+        let mut event_handler = ExchangeEventHandler::new(self.asset);
 
         // running using cached trades from main memory
         if self.data_provider.trades.len() > 0 {
-            let mut days_on_range = -1;
             let mut current_day = -1;
-
-            let days_of_context = strategy.days_of_context() as i32;
-            let mut index_start_day_list = VecDeque::new();
-            let mut is_initialized = if days_of_context == 0 {
-                true
-            } else {
-                false
-            };
-
-
-            for (index_current_trade, trade) in enumerate(self.data_provider.trades.iter()) {
-                // this section aims to guarantee that the init_trading_day will be called for the strategy
-                // for each new trading day providing the last N days of context as required by the strategy
-                if trade.date != current_day && days_of_context > 0 {
-                    index_start_day_list.push_back(index_current_trade);
+            for trade in self.data_provider.trades.iter() {
+                if current_day != trade.date {
+                    strategy.init_trading_day(self.asset, [].as_ref());
                     current_day = trade.date;
-                    days_on_range += 1;
-
-                    if days_of_context == days_on_range {
-                        let start_index = index_start_day_list.pop_front().unwrap();
-                        strategy.init_trading_day(self.asset, &self.data_provider.trades[start_index..index_current_trade].as_ref());
-                        days_on_range = days_of_context - 1;
-                        is_initialized = true;
-                    }
                 }
-
-                if !is_initialized {
-                    continue;
-                }
-
                 let trade_action = strategy.process_new_trade(trade);
-                let mut execute_order = false;
-                for order_action in trade_action.orders {
-                    if let Some(order) = order_action {
-                        if DEBUG_BACKTEST_LOG {
-                            println!("[{}/{}] executing {:?} order with price {:.2}",
-                                     trade.date, date::convert_to_naive_time(trade.time).unwrap(), order, trade.price);
-                        }
-                        execute_order = true;
-                    }
-                }
+                let current_balance = event_handler.current_balance;
 
                 event_handler.process_trade(trade);
                 event_handler.process_orders(trade_action);
 
-                if execute_order {
-                    if DEBUG_BACKTEST_LOG {
-                        println!(
-                            "[{}/{}] current balance is {:.2}",
-                            trade.date,
-                            date::convert_to_naive_time(trade.time).unwrap(),
-                            event_handler.current_balance,
-                        );
-                    }
+                let updated_balance = event_handler.current_balance;
+
+                if current_balance != updated_balance {
+                    logger::log_balance_change(
+                        date::convert_to_naive_date(trade.date as u32).unwrap(),
+                        date::convert_to_naive_time(trade.time).unwrap(),
+                        BacktestEvent::BalanceUpdate,
+                        updated_balance,
+                        updated_balance - current_balance
+                    );
                 }
 
                 if self.should_abort_execution(&mut event_handler) {
@@ -237,8 +207,8 @@ impl<'a> TradingBacktester<'a> {
     ///
     /// [CandlestickTradingStrategy] defines how and when to send orders to buy and sell the asset being traded
     /// after evaluating each new [Candlestick] as they become available
-    pub fn run_candlestick_backtest(&self, mut strategy: Box<dyn CandlestickTradingStrategy>, base_qty_to_trade: u32, fixed_traded_qty: bool) -> BacktestMetrics {
-        let mut event_handler = ExchangeEventHandler::new(self.asset, base_qty_to_trade, fixed_traded_qty);
+    pub fn run_candlestick_backtest(&self, mut strategy: Box<dyn CandlestickTradingStrategy>) -> BacktestMetrics {
+        let mut event_handler = ExchangeEventHandler::new(self.asset);
 
         // iterating with cached Candlesticks from main memory
         if self.data_provider.candlesticks.len() > 0 {
@@ -473,8 +443,12 @@ fn parse_trades_from_file(binary_trades_file_full_path: String) -> Result<Vec<Tr
     let trades_file = TradeFile::new_from_binary_file(binary_trades_file_full_path.as_str())?;
     let mut trades: Vec<Trade> = Vec::new();
 
+    let cut_off_time = NaiveTime::from_hms_opt(18,00,00).unwrap().num_seconds_from_midnight();
+
     for trade in trades_file {
-        trades.push(trade)
+        if date::convert_to_naive_time(trade.time).unwrap().num_seconds_from_midnight() <= cut_off_time {
+            trades.push(trade)
+        }
     }
     Ok(trades)
 }
@@ -596,14 +570,15 @@ fn get_backtest_files_metadata(
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
     use crate::models::action::TradeAction;
     use crate::models::asset::Asset;
     use crate::models::candlestick::{Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
     use crate::models::exchange::Exchange;
     use crate::models::market::Market;
-    use crate::models::trade::Trade;
     use crate::services::backtest::backtest::TradingBacktester;
     use crate::services::backtest::exchange_event_handler::INITIAL_BALANCE;
+    use crate::strategies::custom::stormer_scalper_strategy::{StormerScalperStrategy};
     use crate::strategies::custom::dummy_strategy::{DummyCandlestickStrategy, DummyHighResolutionStrategy};
     use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
 
@@ -631,7 +606,7 @@ mod tests {
             2024_06_13,
             2024_06_17,
         );
-        assert_eq!(44059, backtester_engine.data_provider.trades.len());
+        assert_eq!(43761, backtester_engine.data_provider.trades.len());
     }
 
     #[test]
@@ -657,14 +632,12 @@ mod tests {
         let strategy = DummyCandlestickStrategy::new();
         let metrics = backtester_engine.run_candlestick_backtest(
             Box::new(strategy),
-            12,
-            true,
         );
-        assert_eq!(14, metrics.total_wins);
-        assert_eq!(17, metrics.total_loses);
-        assert_eq!(31, metrics.total_trades);
-        assert_eq!(3, metrics.max_win_streak);
-        assert_eq!(5, metrics.max_lose_streak);
+        assert_eq!(13, metrics.total_wins);
+        assert_eq!(14, metrics.total_loses);
+        assert_eq!(27, metrics.total_trades);
+        assert_eq!(4, metrics.max_win_streak);
+        assert_eq!(4, metrics.max_lose_streak);
     }
 
     #[test]
@@ -677,14 +650,12 @@ mod tests {
         let strategy = DummyCandlestickStrategy::new();
         let metrics = backtester_engine.run_candlestick_backtest(
             Box::new(strategy),
-            12,
-            true,
         );
 
         assert_eq!(20, metrics.total_wins);
-        assert_eq!(12, metrics.total_loses);
-        assert_eq!(32, metrics.total_trades);
-        assert_eq!(4, metrics.max_win_streak);
+        assert_eq!(7, metrics.total_loses);
+        assert_eq!(27, metrics.total_trades);
+        assert_eq!(8, metrics.max_win_streak);
         assert_eq!(2, metrics.max_lose_streak);
     }
 
@@ -699,15 +670,13 @@ mod tests {
         let strategy = DummyHighResolutionStrategy::new();
         let metrics = backtester_engine.run_high_resolution_backtest(
             Box::new(strategy),
-            12,
-            true,
         );
 
-        assert_eq!(249, metrics.total_wins);
-        assert_eq!(238, metrics.total_loses);
-        assert_eq!(487, metrics.total_trades);
-        assert_eq!(7, metrics.max_win_streak);
-        assert_eq!(10, metrics.max_lose_streak);
+        assert_eq!(16, metrics.total_wins);
+        assert_eq!(23, metrics.total_loses);
+        assert_eq!(39, metrics.total_trades);
+        assert_eq!(5, metrics.max_win_streak);
+        assert_eq!(7, metrics.max_lose_streak);
     }
 
     #[test]
@@ -760,8 +729,6 @@ mod tests {
         let strategy = InitTrackerStrategy::new();
         let metrics = backtester.run_candlestick_backtest(
             Box::new(strategy),
-            1,
-            true,
         );
 
         assert_eq!(
@@ -774,65 +741,63 @@ mod tests {
         assert_eq!(INITIAL_BALANCE, metrics.final_balance);
     }
 
-    #[test]
-    fn should_initialize_context_when_running_with_cached_trades_correctly() {
-        struct InitTrackerStrategy {
-            initialized_trades: usize,
-        }
-
-        impl HighResolutionTradingStrategy for InitTrackerStrategy {
-            fn new() -> Self
-            where
-                Self: Sized,
-            {
-                InitTrackerStrategy {
-                    initialized_trades: 0
-                }
-            }
-
-            fn name(&self) -> &str {
-                "init_tracker_strategy"
-            }
-
-            fn days_of_context(&self) -> u32 {
-                1
-            }
-
-            fn init_trading_day(&mut self, _: &Asset, context_trades: &[Trade]) {
-                for _ in context_trades {
-                    self.initialized_trades += 1;
-                }
-            }
-
-            fn process_new_trade(&mut self, _: &Trade) -> TradeAction {
-                if self.initialized_trades == 15379 {
-                    return TradeAction::abort();
-                }
-                TradeAction::do_nothing()
-            }
-        }
-        let backtester = trade_backtester(
+    //#[test]
+    #[allow(unused)]
+    fn should_correctly_compute_the_total_return_when_running_multiple_days_at_once_on_real_data() {
+        let asset = Asset::get_asset("WIN", Market::FUTURES, Exchange::B3).unwrap();
+        let metrics_first_day = TradingBacktester::new(
+            &asset,
+            20241216,
+            20241216,
             true,
-            2024_06_13,
-            2024_06_17,
+            None,
+            true,
+        ).unwrap().run_high_resolution_backtest(
+            Box::new(StormerScalperStrategy::new()),
         );
-        let strategy = InitTrackerStrategy::new();
-        let metrics = backtester.run_high_resolution_backtest(
-            Box::new(strategy),
-            1,
+
+        let metrics_second_day = TradingBacktester::new(
+            &asset,
+            20241217,
+            20241217,
             true,
+            None,
+            true,
+        ).unwrap().run_high_resolution_backtest(
+            Box::new(StormerScalperStrategy::new()),
+        );
+
+        let metrics_combined_days = TradingBacktester::new(
+            &asset,
+            20241216,
+            20241217,
+            true,
+            None,
+            true,
+        ).unwrap().run_high_resolution_backtest(
+            Box::new(StormerScalperStrategy::new()),
+        );
+
+        let sum_result_individual_days = metrics_first_day.total_liquid_profit + metrics_second_day.total_liquid_profit;
+        let result_combined_days = metrics_combined_days.total_liquid_profit;
+
+        let mut dates = metrics_combined_days.trades.iter().map(|trade| trade.date)
+            .collect_vec();
+        dates.sort();
+        dates.dedup();
+
+        assert_eq!(
+            vec![20241216, 20241217],
+            dates,
+            "the dates when running combined days should be the same of when running the backtest for individual days"
         );
 
         assert_eq!(
-            true,
-            metrics.aborted,
-            "should have sent abort action signaling the the correct amount to trades were initialized as expected"
+            sum_result_individual_days,
+            result_combined_days,
+            "the result when running combined days is {result_combined_days} but should be equal to the sum of individual days of {sum_result_individual_days}",
         );
-        assert_eq!(1, metrics.total_trading_days);
-        assert_eq!(0, metrics.total_trades);
-        assert_eq!(INITIAL_BALANCE, metrics.final_balance);
     }
-
 
     fn candle_backtester(cache_in_memory: bool, candle_parser: impl CandlestickGenerator + 'static) -> TradingBacktester<'static> {
         let asset = Asset::get_asset("IND", Market::FUTURES, Exchange::B3).unwrap();
@@ -858,4 +823,6 @@ mod tests {
             true,
         ).unwrap()
     }
+
+
 }
