@@ -11,7 +11,8 @@ pub struct Candlestick {
     pub high: f64,
     pub low: f64,
     pub close: f64,
-    pub volume: f64,
+    pub volume: u64,
+    pub amount_traded: f64,
     pub date: i32,
     pub start_time: NaiveTime,
     pub close_time: Option<NaiveTime>,
@@ -94,7 +95,7 @@ impl Close for Candlestick {
 
 impl Volume for Candlestick {
     fn volume(&self) -> f64 {
-        self.volume
+        self.volume as f64
     }
 }
 
@@ -105,11 +106,12 @@ impl Candlestick {
             high: first_trade.price,
             low: first_trade.price,
             close: first_trade.price,
-            volume: first_trade.volume,
+            amount_traded: first_trade.amount_traded,
             date: first_trade.date,
             start_time: date::convert_to_naive_time(first_trade.time)
                 .expect("time used in the candlestick should be valid"),
             close_time: None,
+            volume: first_trade.volume as u64,
             is_closed: false,
             trades: 1,
         }
@@ -121,10 +123,11 @@ impl Candlestick {
             high: 0.0,
             low: 0.0,
             close: 0.0,
-            volume: 0.0,
+            amount_traded: 0.0,
             date: 0,
             start_time: NaiveTime::default(),
             close_time: None,
+            volume: 0,
             is_closed: false,
             trades: 0,
         }
@@ -187,7 +190,8 @@ impl CandlestickGenerator for TickCandlestickGenerator {
         existing_candle.close_time = Some(date::convert_to_naive_time(new_trade.time)
             .expect("candlestick close_time should be a valid value"));
 
-        existing_candle.volume += new_trade.volume;
+        existing_candle.amount_traded += new_trade.amount_traded;
+        existing_candle.volume += new_trade.volume as u64;
 
         if new_trade.price < existing_candle.low {
             existing_candle.low = new_trade.price;
@@ -327,7 +331,8 @@ impl TimeCandlestickGenerator {
         let is_candle_closed = current_time.unwrap().num_seconds_from_midnight() >= end_time.num_seconds_from_midnight();
         if !is_candle_closed {
             existing_candle.trades += 1;
-            existing_candle.volume += new_trade.volume;
+            existing_candle.amount_traded += new_trade.amount_traded;
+            existing_candle.volume += new_trade.volume as u64;
 
             if new_trade.price < existing_candle.low {
                 existing_candle.low = new_trade.price;
@@ -757,7 +762,7 @@ mod tests {
         assert_eq!(first_candle.close, 131060.0);
         assert_eq!(first_candle.trades, 5);
         assert_eq!(
-            first_candle.volume,
+            first_candle.amount_traded,
             100.0 + 150.0 + 120.0 + 130.0 + 110.0
         );
 
@@ -771,7 +776,7 @@ mod tests {
         assert_eq!(second_candle.close, 131090.0);
         assert_eq!(second_candle.trades, 5);
         assert_eq!(
-            second_candle.volume,
+            second_candle.amount_traded,
             200.0 + 220.0 + 210.0 + 230.0 + 240.0
         );
 
@@ -786,7 +791,7 @@ mod tests {
             assert_eq!(last_candle.close, 131085.0);
             assert_eq!(last_candle.trades, 5);
             assert_eq!(
-                last_candle.volume,
+                last_candle.amount_traded,
                 300.0 + 310.0 + 320.0 + 330.0 + 340.0
             );
         } else {
@@ -844,12 +849,12 @@ mod tests {
             trade_number,
             date,
             time,
-            qty: 1,
+            volume: 1,
             buy_agent: 2,
             sell_agent: 2,
             trade_type: 13,
             price,
-            volume,
+            amount_traded: volume,
         }
     }
 }

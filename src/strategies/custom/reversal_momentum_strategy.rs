@@ -367,7 +367,7 @@ fn aggregate_daily_candles(context_candles: &[Candlestick]) -> Vec<Candlestick> 
             existing_candle.low = existing_candle.low.min(candle.low);
             existing_candle.close = candle.close;
             existing_candle.close_time = candle.close_time;
-            existing_candle.volume += candle.volume;
+            existing_candle.amount_traded += candle.amount_traded;
             existing_candle.trades += candle.trades;
         } else {
             daily_map.insert(
@@ -378,9 +378,10 @@ fn aggregate_daily_candles(context_candles: &[Candlestick]) -> Vec<Candlestick> 
                     high: candle.high,
                     low: candle.low,
                     close: candle.close,
-                    volume: candle.volume,
+                    amount_traded: candle.amount_traded,
                     start_time: candle.start_time,
                     close_time: candle.close_time,
+                    volume: candle.volume,
                     is_closed: true,
                     trades: candle.trades,
                 },
@@ -540,11 +541,11 @@ mod classic_reversal_momentum_strategy_tests {
         classic_strategy.entry_price_range_percentage= (1.0, 1.01);
 
         let initial_candlesticks = vec![
-            Candlestick { date: 20231110, open: 130821.754224, high: 132715.797145, low: 130758.852429, close: 132541.069938, volume: 1500.0, start_time: date::convert_to_naive_time(93000).unwrap(), close_time: Some(date::convert_to_naive_time(93100).unwrap()), is_closed: true, trades: 300 },
-            Candlestick { date: 20231110, open: 132792.677116, high: 132932.458881, low: 131059.383225, close: 132205.593701, volume: 1500.0, start_time: date::convert_to_naive_time(93100).unwrap(), close_time: Some(date::convert_to_naive_time(93200).unwrap()), is_closed: true, trades: 300 },
-            Candlestick { date: 20231110, open: 132513.113585, high: 132513.113585, low: 131464.750344, close: 132506.124497, volume: 1500.0, start_time: date::convert_to_naive_time(93200).unwrap(), close_time: Some(date::convert_to_naive_time(93300).unwrap()), is_closed: true, trades: 300 },
-            Candlestick { date: 20231110, open: 131967.964700, high: 134323.287447, low: 131765.281140, close: 133868.996709, volume: 1500.0, start_time: date::convert_to_naive_time(93300).unwrap(), close_time: Some(date::convert_to_naive_time(93400).unwrap()), is_closed: true, trades: 300 },
-            Candlestick { date: 20231110, open: 133715.236767, high: 135301.759804, low: 133610.400443, close: 134581.883712, volume: 1500.0, start_time: date::convert_to_naive_time(93400).unwrap(), close_time: Some(date::convert_to_naive_time(93500).unwrap()), is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 130821.754224, high: 132715.797145, low: 130758.852429, close: 132541.069938, amount_traded: 1500.0, start_time: date::convert_to_naive_time(93000).unwrap(), close_time: Some(date::convert_to_naive_time(93100).unwrap()), volume: 0, is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 132792.677116, high: 132932.458881, low: 131059.383225, close: 132205.593701, amount_traded: 1500.0, start_time: date::convert_to_naive_time(93100).unwrap(), close_time: Some(date::convert_to_naive_time(93200).unwrap()), volume: 0, is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 132513.113585, high: 132513.113585, low: 131464.750344, close: 132506.124497, amount_traded: 1500.0, start_time: date::convert_to_naive_time(93200).unwrap(), close_time: Some(date::convert_to_naive_time(93300).unwrap()), volume: 0, is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 131967.964700, high: 134323.287447, low: 131765.281140, close: 133868.996709, amount_traded: 1500.0, start_time: date::convert_to_naive_time(93300).unwrap(), close_time: Some(date::convert_to_naive_time(93400).unwrap()), volume: 0, is_closed: true, trades: 300 },
+            Candlestick { date: 20231110, open: 133715.236767, high: 135301.759804, low: 133610.400443, close: 134581.883712, amount_traded: 1500.0, start_time: date::convert_to_naive_time(93400).unwrap(), close_time: Some(date::convert_to_naive_time(93500).unwrap()), volume: 0, is_closed: true, trades: 300 },
         ];
 
         let aggregated_candle = aggregate_daily_candles(&initial_candlesticks);
@@ -570,9 +571,10 @@ mod classic_reversal_momentum_strategy_tests {
                 high: 104.0,
                 low: 98.0,
                 close: 102.0,
-                volume: 1500.0,
+                amount_traded: 1500.0,
                 start_time: date::convert_to_naive_time(9_00_00).unwrap(),
                 close_time: Some(date::convert_to_naive_time(18_00_00).unwrap()),
+                volume: 0,
                 is_closed: true,
                 trades: 300
             }];
@@ -582,9 +584,10 @@ mod classic_reversal_momentum_strategy_tests {
             high: 103.0,
             low: 96.0,
             close: 97.5,
-            volume: 3000.0,
+            amount_traded: 3000.0,
             start_time: date::convert_to_naive_time(9_33_00).unwrap(),
             close_time: Some(date::convert_to_naive_time(9_34_00).unwrap()),
+            volume: 0,
             is_closed: true,
             trades: 3000,
         };
@@ -620,9 +623,10 @@ mod classic_reversal_momentum_strategy_tests {
                 high: 104.0,
                 low: 98.0,
                 close: 102.0,
-                volume: 1500.0,
+                amount_traded: 1500.0,
                 start_time: date::convert_to_naive_time(9_00_00).unwrap(),
                 close_time: Some(date::convert_to_naive_time(18_00_00).unwrap()),
+                volume: 0,
                 is_closed: true,
                 trades: 300
             }];
@@ -632,9 +636,10 @@ mod classic_reversal_momentum_strategy_tests {
             high: 103.0,
             low: 96.0,
             close: 98.1,
-            volume: 3000.0,
+            amount_traded: 3000.0,
             start_time: date::convert_to_naive_time(9_33_00).unwrap(),
             close_time: Some(date::convert_to_naive_time(9_34_00).unwrap()),
+            volume: 0,
             is_closed: true,
             trades: 3000,
         };
