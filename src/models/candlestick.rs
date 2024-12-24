@@ -106,12 +106,12 @@ impl Candlestick {
             high: first_trade.price,
             low: first_trade.price,
             close: first_trade.price,
-            amount_traded: first_trade.volume, // for a Trade `volume` is the total dollar amount traded, the actual volume is the quantity
+            amount_traded: first_trade.amount_traded,
             date: first_trade.date,
             start_time: date::convert_to_naive_time(first_trade.time)
                 .expect("time used in the candlestick should be valid"),
             close_time: None,
-            volume: first_trade.qty as u64,
+            volume: first_trade.volume as u64,
             is_closed: false,
             trades: 1,
         }
@@ -190,8 +190,8 @@ impl CandlestickGenerator for TickCandlestickGenerator {
         existing_candle.close_time = Some(date::convert_to_naive_time(new_trade.time)
             .expect("candlestick close_time should be a valid value"));
 
-        existing_candle.amount_traded += new_trade.volume;
-        existing_candle.volume += new_trade.qty as u64;
+        existing_candle.amount_traded += new_trade.amount_traded;
+        existing_candle.volume += new_trade.volume as u64;
 
         if new_trade.price < existing_candle.low {
             existing_candle.low = new_trade.price;
@@ -331,8 +331,8 @@ impl TimeCandlestickGenerator {
         let is_candle_closed = current_time.unwrap().num_seconds_from_midnight() >= end_time.num_seconds_from_midnight();
         if !is_candle_closed {
             existing_candle.trades += 1;
-            existing_candle.amount_traded += new_trade.volume;
-            existing_candle.volume += new_trade.qty as u64;
+            existing_candle.amount_traded += new_trade.amount_traded;
+            existing_candle.volume += new_trade.volume as u64;
 
             if new_trade.price < existing_candle.low {
                 existing_candle.low = new_trade.price;
@@ -849,12 +849,12 @@ mod tests {
             trade_number,
             date,
             time,
-            qty: 1,
+            volume: 1,
             buy_agent: 2,
             sell_agent: 2,
             trade_type: 13,
             price,
-            volume,
+            amount_traded: volume,
         }
     }
 }

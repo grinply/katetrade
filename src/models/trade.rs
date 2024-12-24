@@ -18,12 +18,12 @@ pub struct Trade {
     pub trade_number: i32,
     pub date: i32,
     pub time: i32,
-    pub qty: i32,
+    pub volume: i32,
     pub buy_agent: i32,
     pub sell_agent: i32,
     pub trade_type: i32,
     pub price: f64,
-    pub volume: f64,
+    pub amount_traded: f64,
 }
 pub struct TradeFile {
     reader: BufReader<File>,
@@ -73,14 +73,14 @@ impl Trade {
     pub fn to_bytes(&self) -> Result<Vec<u8>, anyhow::Error> {
         let mut buffer: Vec<u8> = vec![];
         buffer.write_all(&self.trade_number.to_be_bytes())?;
-        buffer.write_all(&self.qty.to_be_bytes())?;
+        buffer.write_all(&self.volume.to_be_bytes())?;
         buffer.write_all(&self.buy_agent.to_be_bytes())?;
         buffer.write_all(&self.sell_agent.to_be_bytes())?;
         buffer.write_all(&self.trade_type.to_be_bytes())?;
         buffer.write_all(&self.date.to_be_bytes())?;
         buffer.write_all(&self.time.to_be_bytes())?;
         buffer.write_all(&self.price.to_be_bytes())?;
-        buffer.write_all(&self.volume.to_be_bytes())?;
+        buffer.write_all(&self.amount_traded.to_be_bytes())?;
         Ok(buffer)
     }
 
@@ -103,10 +103,10 @@ impl Trade {
         Ok(Trade {
             trade_number,
             price,
-            volume,
+            amount_traded: volume,
             date,
             time,
-            qty,
+            volume: qty,
             buy_agent,
             sell_agent,
             trade_type,
@@ -153,10 +153,10 @@ impl Trade {
         Ok(Trade {
             trade_number,
             price,
-            volume,
+            amount_traded: volume,
             date,
             time,
-            qty,
+            volume: qty,
             buy_agent: *buy_agent,
             sell_agent: *sell_agent,
             trade_type: *trade_type,
@@ -172,8 +172,8 @@ impl Trade {
             self.time,
             self.trade_number,
             self.price,
-            self.qty,
-            self.volume
+            self.volume,
+            self.amount_traded
         )
     }
 }
@@ -524,8 +524,8 @@ mod tests {
             price: 127800.0061701,
             date: 20241013, // yyyyMMdd
             time: 090034, // HHmmSS or HHmmSSsss
-            volume: 40000.321,
-            qty: 4,
+            amount_traded: 40000.321,
+            volume: 4,
             buy_agent: 1,
             sell_agent: 2,
             trade_type: 13,
@@ -549,8 +549,8 @@ mod tests {
             price: 87800.00000020,
             date: 20190102,
             time: 090034,
-            volume: 40000.3000,
-            qty: 12,
+            amount_traded: 40000.3000,
+            volume: 12,
             buy_agent: 1,
             sell_agent: 2,
             trade_type: 13,
@@ -561,8 +561,8 @@ mod tests {
             price: 87801.00000020,
             date: 20190102,
             time: 090035,
-            volume: 30000.300,
-            qty: 3,
+            amount_traded: 30000.300,
+            volume: 3,
             buy_agent: 3,
             sell_agent: 3,
             trade_type: 4,
@@ -589,8 +589,8 @@ mod tests {
         assert_eq!(87800.00000020, first_trade.price);
         assert_eq!(20190102, first_trade.date);
         assert_eq!(090034, first_trade.time);
-        assert_eq!(40000.3000, first_trade.volume);
-        assert_eq!(12, first_trade.qty);
+        assert_eq!(40000.3000, first_trade.amount_traded);
+        assert_eq!(12, first_trade.volume);
         assert_eq!(1, first_trade.buy_agent);
         assert_eq!(2, first_trade.sell_agent);
         assert_eq!(13, first_trade.trade_type);
