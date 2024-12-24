@@ -11,7 +11,7 @@ use crate::services::backtest::logger;
 use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
 use crate::utils::date;
 
-pub const INITIAL_BALANCE: f64 = 14760.0;
+pub const INITIAL_BALANCE: f64 = 10_000.0;
 pub const MINIMUM_BALANCE: f64 = 800.0;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
@@ -209,10 +209,8 @@ impl<'a> ExchangeEventHandler<'a> {
         );
 
 
-
         if datapoint.date() != self.last_datapoint.date() ||
             self.current_balance - gross_pnl < MINIMUM_BALANCE {
-
             logger::log_compulsory_close(
                 date::convert_to_naive_date(datapoint.date() as u32).unwrap(),
                 datapoint.exit_time().unwrap(),
@@ -261,18 +259,8 @@ impl<'a> ExchangeEventHandler<'a> {
     /// slippage is a multiplier that makes the price bit worse when executing an order in the selected direction
     /// this aims to emulate the real behavior of the market, since between seen the price, executing the order and
     /// the conclusion in the exchange the actual execution price may ( and probably will be ) slight different
-    fn calculate_price_with_slippage(&self, price: f64, direction: Side, _quantity_traded: usize) -> f64 {
-        //TODO: we may want to model slippage based on the amount of contracts and volume traded
-        const TICKS_OF_SLIPPAGE: f64 = 1.0;
-        let offset = TICKS_OF_SLIPPAGE * self.asset.min_point_variation;
-        match direction {
-            Side::BUY => {
-                price - offset
-            }
-            Side::SELL => {
-                price + offset
-            }
-        }
+    fn calculate_price_with_slippage(&self, price: f64, _: Side, _quantity_traded: usize) -> f64 {
+        price
     }
 
     fn increase_position(&mut self, current_entry_price: f64, quantity_to_increase: usize) {
@@ -294,7 +282,7 @@ impl<'a> ExchangeEventHandler<'a> {
             self.last_datapoint.close_time.unwrap(),
             current_entry_price,
             quantity_to_increase,
-            *current_fee
+            *current_fee,
         );
 
         assert!(position.avg_entry_price > 0.0);
@@ -327,7 +315,7 @@ impl<'a> ExchangeEventHandler<'a> {
         let quantity_to_decrease = if quantity_to_decrease as i32 > self.current_position.as_ref().unwrap().open_qty {
             open_inverse_position_qty = quantity_to_decrease - self.current_position.as_ref().unwrap().open_qty as usize;
             self.current_position.as_ref().unwrap().open_qty
-        }else{
+        } else {
             quantity_to_decrease as i32
         };
 
@@ -355,7 +343,7 @@ impl<'a> ExchangeEventHandler<'a> {
             current_exit_price,
             quantity_to_decrease as usize,
             pnl,
-            current_fee
+            current_fee,
         );
 
         self.current_position.as_mut().unwrap().gross_pnl += pnl;
@@ -374,10 +362,9 @@ impl<'a> ExchangeEventHandler<'a> {
                 datapoint.current_price(),
                 side,
                 datapoint,
-                open_inverse_position_qty
+                open_inverse_position_qty,
             );
         }
-
     }
 
 
@@ -426,7 +413,7 @@ impl<'a> ExchangeEventHandler<'a> {
             side,
             entry_price,
             quantity,
-            fee_open_position
+            fee_open_position,
         );
     }
 
@@ -462,7 +449,7 @@ impl<'a> ExchangeEventHandler<'a> {
             datapoint.exit_time().unwrap(),
             closed_position.avg_entry_price,
             closed_position.avg_exit_price,
-            closed_position.quantity_of_contracts as usize
+            closed_position.quantity_of_contracts as usize,
         );
 
         self.positions.push(closed_position);
@@ -480,10 +467,10 @@ impl<'a> ExchangeEventHandler<'a> {
 
     //TODO: we need a better way to define and calculate the fees for each orders send to the market
     // https://investimentos.btgpactual.com/custos
-    fn calculate_fees(&self, total_orders: u64) -> f64 {
+    fn calculate_fees(&self, quantity_of_contracts: u64) -> f64 {
         let asset = self.asset;
-        let brokerage = if asset.market == Market::FUTURES && asset.ticker == "WIN" || asset.ticker == "WDO" {
-            0.0 // no fees due to using RLP
+        let mut brokerage = if asset.market == Market::FUTURES && asset.ticker == "WIN" || asset.ticker == "WDO" {
+            0.3 // this is here to simulate slippage since it is not modelled explicitly ( and dont pay brokerage with RLP )
         } else if asset.market == Market::FUTURES && asset.ticker == "DOL" || asset.ticker == "IND" {
             match self.total_contracts_executed_current_month {
                 0..=50 => 3.90,
@@ -498,25 +485,27 @@ impl<'a> ExchangeEventHandler<'a> {
             panic!("no brokerage rate defined for asset with ticker {}", asset.ticker);
         };
 
+        brokerage *= quantity_of_contracts as f64;
+
         let iss_percentage = 0.067;
-        let iss_amount = iss_percentage * brokerage * total_orders as f64;
+        let iss_amount = iss_percentage * brokerage;
         let exchange_registration_fees = if asset.ticker == "WIN" {
-            0.16 * total_orders as f64
+            0.16 * quantity_of_contracts as f64
         } else if asset.ticker == "WDO" {
-            0.75 * total_orders as f64
+            0.75 * quantity_of_contracts as f64
         } else {
             // TODO: this is not right just temporary to allow testing
-            0.75 * total_orders as f64
+            0.75 * quantity_of_contracts as f64
             //panic!("no exchange registration fee defined for asset with ticker {}", asset.ticker);
         };
 
         let exchange_emolument_fees = if asset.ticker == "WIN" {
-            0.09 * total_orders as f64
+            0.09 * quantity_of_contracts as f64
         } else if asset.ticker == "WDO" {
-            0.40 * total_orders as f64
+            0.40 * quantity_of_contracts as f64
         } else {
             // TODO: this is not right just temporary to allow testing
-            0.40 * total_orders as f64
+            0.40 * quantity_of_contracts as f64
             //panic!("no exchange registration fee defined for asset with ticker {}", asset.ticker);
         };
 

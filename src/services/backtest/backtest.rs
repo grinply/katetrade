@@ -633,10 +633,10 @@ mod tests {
         let metrics = backtester_engine.run_candlestick_backtest(
             Box::new(strategy),
         );
-        assert_eq!(13, metrics.total_wins);
-        assert_eq!(14, metrics.total_loses);
+        assert_eq!(12, metrics.total_wins);
+        assert_eq!(15, metrics.total_loses);
         assert_eq!(27, metrics.total_trades);
-        assert_eq!(4, metrics.max_win_streak);
+        assert_eq!(3, metrics.max_win_streak);
         assert_eq!(4, metrics.max_lose_streak);
     }
 
@@ -652,10 +652,10 @@ mod tests {
             Box::new(strategy),
         );
 
-        assert_eq!(20, metrics.total_wins);
-        assert_eq!(7, metrics.total_loses);
+        assert_eq!(17, metrics.total_wins);
+        assert_eq!(10, metrics.total_loses);
         assert_eq!(27, metrics.total_trades);
-        assert_eq!(8, metrics.max_win_streak);
+        assert_eq!(5, metrics.max_win_streak);
         assert_eq!(2, metrics.max_lose_streak);
     }
 
@@ -672,11 +672,11 @@ mod tests {
             Box::new(strategy),
         );
 
-        assert_eq!(16, metrics.total_wins);
-        assert_eq!(23, metrics.total_loses);
-        assert_eq!(39, metrics.total_trades);
-        assert_eq!(5, metrics.max_win_streak);
-        assert_eq!(7, metrics.max_lose_streak);
+        assert_eq!(2, metrics.total_wins);
+        assert_eq!(4, metrics.total_loses);
+        assert_eq!(6, metrics.total_trades);
+        assert_eq!(2, metrics.max_win_streak);
+        assert_eq!(4, metrics.max_lose_streak);
     }
 
     #[test]

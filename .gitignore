@@ -60,3 +60,4 @@ target/
 *.csv
 
 resources/test_trades.csv
+resources/history_trades/**
