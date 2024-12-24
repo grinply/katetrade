@@ -142,7 +142,7 @@ impl<'a> ExchangeEventHandler<'a> {
         self.current_datapoint.high = new_trade.price;
         self.current_datapoint.low = new_trade.price;
         self.current_datapoint.close = new_trade.price;
-        self.current_datapoint.volume = new_trade.volume;
+        self.current_datapoint.amount_traded = new_trade.volume;
     }
 
     fn update_internal_candlesticks(&mut self, new_candle: &Candlestick) {
@@ -154,7 +154,7 @@ impl<'a> ExchangeEventHandler<'a> {
         self.current_datapoint.high = new_candle.high;
         self.current_datapoint.low = new_candle.low;
         self.current_datapoint.close = new_candle.close;
-        self.current_datapoint.volume = new_candle.volume;
+        self.current_datapoint.amount_traded = new_candle.amount_traded;
         self.current_datapoint.trades = new_candle.trades;
         self.current_datapoint.is_closed = new_candle.is_closed;
     }

@@ -91,7 +91,7 @@ mod tests {
             high,
             low,
             close,
-            volume: 0.0,
+            amount_traded: 0.0,
             date: 0,
             start_time: date::convert_to_naive_time(09_00_00).unwrap(),
             close_time: None,
