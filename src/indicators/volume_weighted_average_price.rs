@@ -1,7 +1,13 @@
 
-/***
-VolumeWeightedAveragePrice = ((High + Low + Close)/3) de todos os candles desde a abertura * Volume do candle / Soma de todos os volumes desde a abertura
- */
+
+/// The volume-weighted average price (VWAP) is a technical analysis indicator used on intraday
+/// charts that resets at the start of every new trading session. It's the average price a security
+/// has traded at throughout the day, based on both volume and price.
+/// Calculation:
+/// Typical Price = ((High + Low + Close)/3)
+/// Cumulative = Total trades since the trading session opened
+/// VolumeWeightedAveragePrice (VWAP) = Cumulative Typical Price x Volume / Cumulative Volume
+
 
 use std::fmt;
 use ta::{Close, High, Low, Next, Volume};
