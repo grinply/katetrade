@@ -35,6 +35,9 @@ impl VolumeWeightedAveragePrice {
         self.current_value
     }
 
+    pub fn get_index(&self) -> usize {
+        self.index
+    }
 
     pub fn reset(&mut self) {
         self.index = 0;
@@ -53,6 +56,8 @@ impl<T: High + Low + Close + Volume> Next<&T> for VolumeWeightedAveragePrice {
         self.cumulative_volume += input.volume();
 
         self.current_value = self.cumulative_typical_price * input.volume() / self.cumulative_volume;
+
+        self.index += 1;
         self.current_value
     }
 }
@@ -87,16 +92,19 @@ mod tests {
             (158.5, 151.0, 154.5, 4500, 140.62),
             (162.0, 153.5, 159.0, 5500, 168.85)
         ];
+        let mut expected_index = 0usize;
 
         let mut vwap = VolumeWeightedAveragePrice::new().unwrap();
 
         for (high, low, close, volume, expected) in test_data {
+            expected_index += 1;
             let mut candle = Candlestick::default();
             candle.high = high;
             candle.low = low;
             candle.close = close;
             candle.volume = volume;
             assert_eq!(((vwap.next(&candle) * 100.0).round() / 100.0), expected);
+            assert_eq!(vwap.get_index(), expected_index);
         }
     }
 
