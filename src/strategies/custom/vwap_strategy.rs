@@ -158,7 +158,6 @@ impl HighResolutionTradingStrategy for VWAPDayInitStrategy {
         for trade in trades {
             if let Some(candle) = self.candle_parser.parse_only_closed_candles(trade) {
                 self.sma.next(candle);
-                self.update_candles(candle);
             }
         }
     }

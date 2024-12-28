@@ -7,6 +7,8 @@ use crate::models::side::Side;
 ///
 /// **important:** you must call the function [TrailingStop::should_close_position] with every new price update
 /// to allow the trailing stop to properly **adjust** the desired **stop loss**
+
+#[derive(Clone)]
 pub struct TrailingStop {
     entry_price: f64,
     stop_loss_price: f64,
