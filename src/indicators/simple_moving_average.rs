@@ -35,6 +35,8 @@ impl SimpleMovingAverage {
             unimplemented!();
         }
 
+        assert!(self.count >= 3, "The SimpleMovingAverage needs to have at least 3 valid values.");
+
         let last_but_one_value = self.results[2];
         let last_value = self.results[1];
         let current_value = self.results[0];
@@ -49,6 +51,8 @@ impl SimpleMovingAverage {
         if self.period < 3 {
             unimplemented!();
         }
+
+        assert!(self.count >= 3, "The SimpleMovingAverage needs to have at least 3 valid values.");
 
         let last_but_one_value = self.results[2];
         let last_value = self.results[1];
