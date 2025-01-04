@@ -7,7 +7,7 @@ use crate::models::candlestick::{Candlestick, CandlestickGenerator, TimeCandlest
 use crate::models::candlestick::CandleDirection::{LONG, SHORT};
 use crate::models::side::Side;
 use crate::models::trade::Trade;
-use crate::strategies::strategy::HighResolutionTradingStrategy;
+use crate::strategies::strategy::TradingStrategy;
 const CANDLES_TO_TRACK: usize = 3;
 const CANDLESTICK_PERIOD: u64 = 10;
 const BOLLINGER_PERIOD: usize = 21;

@@ -10,7 +10,7 @@ use crate::models::candlestick::CandleDirection::{LONG, SHORT};
 use crate::models::side::Side;
 use crate::models::trade::Trade;
 use crate::services::trailing_stop::TrailingStop;
-use crate::strategies::strategy::HighResolutionTradingStrategy;
+use crate::strategies::strategy::TradingStrategy;
 use crate::utils::date;
 
 const CANDLES_TO_TRACK: usize = 9;
@@ -52,7 +52,7 @@ pub struct StormerScalperStrategy {
     sma: SimpleMovingAverage,
 }
 
-impl HighResolutionTradingStrategy for StormerScalperStrategy {
+impl TradingStrategy for StormerScalperStrategy {
     fn new() -> Self
     where
         Self: Sized,
