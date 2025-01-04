@@ -535,11 +535,11 @@ mod tests {
             Box::new(strategy),
         );
 
-        assert_eq!(2, metrics.total_wins);
-        assert_eq!(4, metrics.total_loses);
-        assert_eq!(6, metrics.total_trades);
-        assert_eq!(2, metrics.max_win_streak);
-        assert_eq!(4, metrics.max_lose_streak);
+        assert_eq!(86, metrics.total_wins);
+        assert_eq!(99, metrics.total_loses);
+        assert_eq!(185, metrics.total_trades);
+        assert_eq!(6, metrics.max_win_streak);
+        assert_eq!(7, metrics.max_lose_streak);
     }
 
     //#[test]

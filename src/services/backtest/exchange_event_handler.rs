@@ -496,7 +496,7 @@ impl<'a> ExchangeEventHandler<'a> {
     fn calculate_fees(&self, quantity_of_contracts: u64) -> f64 {
         let asset = self.asset;
         let mut brokerage = if asset.market == Market::FUTURES && asset.ticker == "WIN" || asset.ticker == "WDO" {
-            0.0 // this is here to simulate slippage since it is not modelled explicitly ( and dont pay brokerage with RLP )
+            0.1 // this is here to simulate slippage since it is not modelled explicitly ( and dont pay brokerage with RLP )
         } else if asset.market == Market::FUTURES && asset.ticker == "DOL" || asset.ticker == "IND" {
             match self.total_contracts_executed_current_month {
                 0..=50 => 3.90,
