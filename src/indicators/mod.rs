@@ -6,3 +6,4 @@ pub mod true_range;
 pub mod average_true_range;
 pub mod slow_stochastic;
 pub mod stormer_indicator;
+pub mod volume_weighted_average_price;
