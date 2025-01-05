@@ -1,3 +1,4 @@
+use chrono::{NaiveDate, NaiveTime};
 use crate::models::action::{OrderAction, TradeAction};
 use crate::models::asset::Asset;
 use crate::models::candlestick::Candlestick;
@@ -7,11 +8,12 @@ use crate::models::side::Side;
 use crate::models::trade::Trade;
 use crate::services::backtest::data_point::DataPoint;
 use crate::services::backtest::logger;
+use crate::services::backtest::logger::log_lack_of_margin;
 #[allow(unused)]
-use crate::strategies::strategy::{CandlestickTradingStrategy, HighResolutionTradingStrategy};
+use crate::strategies::strategy::{TradingStrategy};
 use crate::utils::date;
 
-pub const INITIAL_BALANCE: f64 = 10_000.0;
+pub const INITIAL_BALANCE: f64 = 40_000.0;
 pub const MINIMUM_BALANCE: f64 = 800.0;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
@@ -22,7 +24,7 @@ const COMPULSORY_CLOSE_FEE: f64 = 25.0;
 ///
 /// There are two types of strategies that can be used with [ExchangeEventHandler]:
 /// + [CandlestickTradingStrategy] that operates using closed [Candlestick]
-/// + [HighResolutionTradingStrategy] that operates using raw [Trade]
+/// + [TradingStrategy] that operates using raw [Trade]
 #[allow(unused)]
 pub(crate) struct ExchangeEventHandler<'a> {
     asset: &'a Asset,
@@ -73,11 +75,6 @@ impl<'a> ExchangeEventHandler<'a> {
 
     pub(crate) fn process_trade(&mut self, trade: &Trade) {
         let event = TradeEvent::NewTrade(trade);
-        self.process_events(event);
-    }
-
-    pub(crate) fn process_candlestick(&mut self, candlestick: &Candlestick) {
-        let event = TradeEvent::NewCandle(candlestick);
         self.process_events(event);
     }
 
@@ -265,7 +262,12 @@ impl<'a> ExchangeEventHandler<'a> {
 
     fn increase_position(&mut self, current_entry_price: f64, quantity_to_increase: usize) {
         assert!(self.current_position.is_some(), "sanity check, should not try to increase a position that doesnt exit");
-        if !self.has_margin_execute_order(quantity_to_increase) {
+
+        if !self.has_margin_execute_order(
+            date::convert_to_naive_date(self.last_datapoint.date as u32).unwrap(),
+            self.last_datapoint.close_time.unwrap(),
+            quantity_to_increase
+        ) {
             self.removed_for_lack_of_margin = true;
             return;
         }
@@ -297,12 +299,25 @@ impl<'a> ExchangeEventHandler<'a> {
         assert!(position.total_qty >= position.open_qty, "open quantity cannot be greater than total quantity");
     }
 
-    fn has_margin_execute_order(&self, quantity_of_contracts: usize) -> bool {
-        self.asset.margin_per_contract * (quantity_of_contracts as f64) < self.current_balance
+    fn has_margin_execute_order(&self, date: NaiveDate, time: NaiveTime, quantity_of_contracts: usize) -> bool {
+        let has_margin = self.asset.margin_per_contract * (quantity_of_contracts as f64) < self.current_balance;
+        if !has_margin {
+            log_lack_of_margin(
+                date,
+                time,
+                quantity_of_contracts as f64,
+                self.current_balance
+            )
+        }
+        has_margin
     }
 
     fn decrease_position(&mut self, current_exit_price: f64, datapoint: &impl DataPoint, quantity_to_decrease: usize) {
-        if !self.has_margin_execute_order(quantity_to_decrease) {
+        if !self.has_margin_execute_order(
+            date::convert_to_naive_date(datapoint.date() as u32).unwrap(),
+            datapoint.time(),
+            quantity_to_decrease
+        ) {
             self.removed_for_lack_of_margin = true;
             return;
         }
@@ -382,6 +397,17 @@ impl<'a> ExchangeEventHandler<'a> {
 
     fn open_new_position(&mut self, entry_price: f64, side: Side, datapoint: &impl DataPoint, quantity: usize) {
         assert!(self.current_position.is_none(), "sanity check, should not try open a position without closing the existing one");
+        let has_enough_margin = self.has_margin_execute_order(
+            date::convert_to_naive_date(datapoint.date() as u32).unwrap(),
+            datapoint.time(),
+            quantity
+        );
+
+        if !has_enough_margin {
+            self.removed_for_lack_of_margin = true;
+            return;
+        }
+
         let fee_open_position = self.calculate_fees(quantity as u64);
         let new_position = Position {
             side,
@@ -470,7 +496,7 @@ impl<'a> ExchangeEventHandler<'a> {
     fn calculate_fees(&self, quantity_of_contracts: u64) -> f64 {
         let asset = self.asset;
         let mut brokerage = if asset.market == Market::FUTURES && asset.ticker == "WIN" || asset.ticker == "WDO" {
-            0.3 // this is here to simulate slippage since it is not modelled explicitly ( and dont pay brokerage with RLP )
+            0.1 // this is here to simulate slippage since it is not modelled explicitly ( and dont pay brokerage with RLP )
         } else if asset.market == Market::FUTURES && asset.ticker == "DOL" || asset.ticker == "IND" {
             match self.total_contracts_executed_current_month {
                 0..=50 => 3.90,
@@ -504,9 +530,7 @@ impl<'a> ExchangeEventHandler<'a> {
         } else if asset.ticker == "WDO" {
             0.40 * quantity_of_contracts as f64
         } else {
-            // TODO: this is not right just temporary to allow testing
             0.40 * quantity_of_contracts as f64
-            //panic!("no exchange registration fee defined for asset with ticker {}", asset.ticker);
         };
 
         brokerage + iss_amount + exchange_registration_fees + exchange_emolument_fees

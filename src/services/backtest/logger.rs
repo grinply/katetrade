@@ -1,5 +1,6 @@
 use chrono::{NaiveDate, NaiveTime};
 use crate::models::side::Side;
+use crate::services::backtest::logger::BacktestEvent::RemovedForLackOfMargin;
 
 #[derive(Debug)]
 #[allow(unused)]
@@ -10,6 +11,7 @@ pub enum BacktestEvent {
     ClosePosition,
     ReducePosition,
     IncreasePosition,
+    RemovedForLackOfMargin,
 }
 
 const LOG_ACTIVE: bool = false;
@@ -104,6 +106,21 @@ pub fn log_decrease_position(
         println!("{{\"date\": \"{date}\",\"time\": \"{time}\",\"event\": \"ReducePosition\",\"reduce_price\": {entry_price},\"contracts\": {contracts}, \"gross_pnl\": {pnl}, \"fee_paid\": {fee}}}");
     }
 }
+
+pub fn log_lack_of_margin(
+    date: NaiveDate,
+    time: NaiveTime,
+    contracts: f64,
+    current_balance: f64
+){
+    if LOG_ACTIVE {
+        let date = format_date(date);
+        let time = format_time(time);
+        println!("{{\"date\": \"{date}\",\"time\": \"{time}\",\"event\": \"{:?}\",\"contracts\": {contracts}, \"balance\": {current_balance}}}", RemovedForLackOfMargin);
+    }
+
+}
+
 
 fn format_time(time: NaiveTime) -> String {
     time.format("%H:%M:%S").to_string()
