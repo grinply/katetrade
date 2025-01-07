@@ -117,6 +117,7 @@ impl SimpleMovingAverage {
         self.current_value = 0.0;
         for i in 0..self.period {
             self.deque[i] = 0.0;
+            self.results[i] = 0.0;
         }
     }
 }
