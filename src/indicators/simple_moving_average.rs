@@ -134,7 +134,6 @@ impl Next<f64> for SimpleMovingAverage {
     fn next(&mut self, input: f64) -> Self::Output {
         let old_val = self.deque[self.index];
         self.deque[self.index] = input;
-        let initial_index = self.index;
 
 
         self.index = if self.index + 1 < self.period {
