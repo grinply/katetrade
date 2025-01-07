@@ -31,8 +31,6 @@ pub enum CandlestickType {
 pub trait CandlestickGenerator: DynClone + Send + Sync {
     fn description(&self) -> String;
 
-    fn evaluate_closed_candlestick(&mut self, current_time: NaiveTime) -> Option<Candlestick>;
-
     /// generates a brand-new Candlestick for every new trade, representing the still open candle
     /// it and also the closed when they finally do close.
     fn parse_with_open_candles(&mut self, new_trade: &Trade) -> Candlestick;
@@ -58,6 +56,13 @@ pub struct TimeCandlestickGenerator {
 pub struct TickCandlestickGenerator {
     ticks_per_candle: u64,
     last_candle: Option<Candlestick>,
+    date_last_trade: i32,
+}
+
+#[derive(Clone)]
+pub struct DollarCandlestickGenerator {
+    dollars_per_candle: f64,
+    current_candle: Option<Candlestick>,
     date_last_trade: i32,
 }
 
@@ -154,6 +159,90 @@ pub enum CandleDirection {
     UNDEFINED,
 }
 
+#[allow(unused)]
+impl DollarCandlestickGenerator {
+    pub(crate) fn new(dollar_amount_per_candle: f64) -> DollarCandlestickGenerator {
+        DollarCandlestickGenerator {
+            dollars_per_candle: dollar_amount_per_candle,
+            current_candle: None,
+            date_last_trade: -1,
+        }
+    }
+
+    fn parse(&mut self, new_trade: &Trade, include_open_candles: bool) -> Option<Candlestick> {
+        if self.current_candle.is_none() {
+            self.date_last_trade = new_trade.date;
+            self.current_candle = Some(Candlestick::new(new_trade));
+
+            return if include_open_candles {
+                Some(self.current_candle?.clone())
+            }else{
+                None
+            };
+        }
+
+        if self.date_last_trade != new_trade.date {
+            let mut last_candle_of_day = self.current_candle?.clone();
+            let close_time = date::convert_to_naive_time(new_trade.time)
+                .expect("close time should be correctly generated from trade");
+            last_candle_of_day.close_time = Some(close_time);
+            last_candle_of_day.is_closed = true;
+
+            self.date_last_trade = new_trade.date;
+            self.current_candle = Some(Candlestick::new(new_trade));
+
+            return Some(last_candle_of_day);
+        }
+
+        self.current_candle.as_mut()?.volume += new_trade.volume as u64;
+        self.current_candle.as_mut()?.trades += 1;
+        self.date_last_trade = new_trade.date;
+        self.current_candle.as_mut()?.amount_traded += new_trade.amount_traded;
+
+        // update open,high,low,close,volume
+        if new_trade.price > self.current_candle?.high {
+            self.current_candle.as_mut()?.high = new_trade.price;
+        }
+
+        if new_trade.price < self.current_candle?.low {
+            self.current_candle.as_mut()?.low = new_trade.price;
+        }
+
+        if self.current_candle?.amount_traded >= self.dollars_per_candle {
+            let close_time = date::convert_to_naive_time(new_trade.time)
+                .expect("close time should be correctly generated from trade");
+            self.current_candle.as_mut()?.close_time = Some(close_time);
+            self.current_candle.as_mut()?.close = new_trade.price;
+            self.current_candle.as_mut()?.is_closed = true;
+            let closed_candle = self.current_candle?.clone();
+
+            self.current_candle = None;
+            return Some(closed_candle);
+        }
+
+        if include_open_candles {
+            Some(self.current_candle?.clone())
+        }else{
+            None
+        }
+    }
+}
+
+impl CandlestickGenerator for DollarCandlestickGenerator {
+    fn description(&self) -> String {
+        "Candlestick grouped by dollar amount".to_string()
+    }
+
+    fn parse_with_open_candles(&mut self, new_trade: &Trade) -> Candlestick {
+        self.parse(new_trade, true).unwrap()
+    }
+
+    fn parse_only_closed_candles(&mut self, new_trade: &Trade) -> Option<Candlestick> {
+        self.parse(new_trade, false)
+    }
+}
+
+#[allow(unused)]
 impl TickCandlestickGenerator {
     pub(crate) fn new(input_configuration: u64) -> impl CandlestickGenerator {
         TickCandlestickGenerator {
@@ -167,10 +256,6 @@ impl TickCandlestickGenerator {
 impl CandlestickGenerator for TickCandlestickGenerator {
     fn description(&self) -> String {
         "Candlestick grouped by quantity of trades".to_string()
-    }
-
-    fn evaluate_closed_candlestick(&mut self, _: NaiveTime) -> Option<Candlestick> {
-        None
     }
 
     fn parse_with_open_candles(&mut self, new_trade: &Trade) -> Candlestick {
@@ -227,18 +312,6 @@ impl CandlestickGenerator for TickCandlestickGenerator {
 impl CandlestickGenerator for TimeCandlestickGenerator {
     fn description(&self) -> String {
         String::from(format!("candlesticks based on time slices of {} minutes", self.period))
-    }
-
-    fn evaluate_closed_candlestick(&mut self, _: NaiveTime) -> Option<Candlestick> {
-        if self.last_candle.is_none() {
-            return None;
-        }
-
-        match self.unit {
-            TimeUnit::Seconds => None,
-            TimeUnit::Minutes => None,
-            TimeUnit::Hours => None
-        }
     }
 
     fn parse_with_open_candles(&mut self, new_trade: &Trade) -> Candlestick {

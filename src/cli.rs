@@ -19,8 +19,7 @@ use crate::services::configuration;
 use crate::services::configuration::KateConfiguration;
 use crate::services::market_connector::MarketConnectorClient;
 use crate::strategies::execution_manager::{ExecutionRequest, LiveStrategyExecutor};
-use crate::strategies::strategy;
-use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name, CandlestickTradingStrategy, HighResolutionTradingStrategy};
+use crate::strategies::strategy::{get_strategy_by_name, TradingStrategy};
 
 pub fn process_matches(matches: &ArgMatches, configuration: KateConfiguration, client: MarketConnectorClient) {
     match matches.subcommand() {
@@ -75,11 +74,6 @@ pub fn get_command_matches() -> ArgMatches {
                 .arg(arg!(-s --strategy <STRATEGY> "Identifier (id) for the strategy you want to executed'").required(true))
                 .arg(arg!(-t --ticker <TICKET_SYMBOL> "Ticker symbol for the asset to be traded'").required(true))
                 .arg(arg!(-a --account <ACCOUNT> "AccountId used when sending trades in live mode to the market-connector'").required(true))
-                .arg(arg!(-d --data <DATA> "Type of data used as input for the trading strategy")
-                    .value_parser([constants::CANDLESTICK, constants::TRADE])
-                    .num_args(0..=1)
-                    .default_value(constants::CANDLESTICK)
-                )
                 .arg(
                     arg!(--market <MARKET> "Market where to send the order")
                         .value_parser([constants::FUTURES, constants::SPOT])
@@ -289,10 +283,9 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
     }
 
     let strategy_name = sub_matches.get_one::<String>("strategy").expect("required");
-    let candlestick_strategy = get_candlestick_strategy_by_name(strategy_name.as_str());
-    let high_resolution_strategy = get_high_resolution_strategy_by_name(strategy_name);
+    let high_resolution_strategy = get_strategy_by_name(strategy_name);
 
-    if candlestick_strategy.is_none() && high_resolution_strategy.is_none() {
+    if high_resolution_strategy.is_none() {
         eprintln!("[ERROR] no strategy with name '{}' not found", strategy_name);
         return;
     }
@@ -307,23 +300,11 @@ fn process_backtest_command(sub_matches: &ArgMatches, _: KateConfiguration) {
             no_download
         );
     }
-
-    if let Some(strategy) = candlestick_strategy {
-        run_candlestick_backtest(
-            strategy,
-            strategy_name,
-            begin,
-            end,
-            asset.unwrap(),
-            cache_on_memory,
-            no_download
-        );
-    }
 }
 
 
 fn run_high_resolution_backtest(
-    strategy: Box<dyn HighResolutionTradingStrategy>,
+    strategy: Box<dyn TradingStrategy>,
     begin: u32,
     end: u32,
     asset: &Asset,
@@ -353,44 +334,6 @@ fn run_high_resolution_backtest(
 
     let now = Instant::now();
     let metrics = backtester.run_high_resolution_backtest(strategy);
-    let elapsed = now.elapsed();
-    println!("backtest executed successfully in {:.2?}", elapsed);
-    println!("{}", metrics);
-}
-
-fn run_candlestick_backtest(
-    strategy: Box<dyn CandlestickTradingStrategy>,
-    strategy_name: &str,
-    begin: u32,
-    end: u32,
-    asset: &Asset,
-    cache_on_memory: bool,
-    no_download: bool
-) {
-    let candle_parser = strategy::get_candlestick_generator_for_strategy(strategy_name)
-        .unwrap();
-    let start_load_data = Instant::now();
-    let backtester_engine = TradingBacktester::new(
-        &asset,
-        begin,
-        end,
-        cache_on_memory,
-        Some(candle_parser),
-        no_download,
-    );
-
-    let finish_load_data = start_load_data.elapsed();
-    if backtester_engine.is_err() {
-        eprintln!("failed to initialize backtest engine. err: {}",
-                  backtester_engine.err().unwrap());
-        return;
-    }
-    print!("historical data loaded in {:.2?} | ", finish_load_data);
-    let backtester = backtester_engine.unwrap();
-    println!("{}", backtester);
-
-    let now = Instant::now();
-    let metrics = backtester.run_candlestick_backtest(strategy);
     let elapsed = now.elapsed();
     println!("backtest executed successfully in {:.2?}", elapsed);
     println!("{}", metrics);

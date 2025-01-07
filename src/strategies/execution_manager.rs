@@ -8,11 +8,9 @@ use crate::models::market::Market;
 use crate::services::configuration::KateConfiguration;
 use crate::services::data_feed_reader;
 use crate::services::market_connector::MarketConnectorClient;
-use crate::strategies::strategy::{get_candlestick_strategy_by_name, get_high_resolution_strategy_by_name};
-use crate::strategies::strategy::{StrategyInputData};
+use crate::strategies::strategy::{get_strategy_by_name};
 use crate::models::side::Side;
 use crate::models::trade::Trade;
-use crate::strategies::strategy;
 
 #[allow(unused)]
 pub trait OrderExecutor {
@@ -89,7 +87,7 @@ impl LiveStrategyExecutor {
 
     /// Run the strategy in a thread based on the strategy id
     pub fn run_strategy(&mut self, execution_request: ExecutionRequest) -> anyhow::Result<()> {
-        let (execution_key,strategy_input_data) = self.can_run_strategy(&execution_request)?;
+        let execution_key = self.can_run_strategy(&execution_request)?;
 
         let trade_datafeed = data_feed_reader::TradeFeedStream::new(
             self.configuration.market_connector_socket_url.as_str(),
@@ -110,25 +108,18 @@ impl LiveStrategyExecutor {
             execution_request.market.clone(),
         );
 
-        match strategy_input_data {
-            StrategyInputData::TRADE => self.start_high_resolution_strategy_execution(
-                execution_key,
-                order_executor,
-                consumer_channel,
-            ),
-            StrategyInputData::CANDLESTICK => self.start_candlestick_strategy_execution(
-                execution_key,
-                order_executor,
-                consumer_channel,
-            )
-        }
+        self.start_high_resolution_strategy_execution(
+            execution_key,
+            order_executor,
+            consumer_channel,
+        );
         Ok(())
     }
 
     /// validate if all requirements for the provided ExecutionRequest are met
     /// if everything is ok an `execution_key` will be returned as Result
     /// else an Error will be generated with the reason why the execution isn´t valid
-    fn can_run_strategy(&self, execution_request: &ExecutionRequest) -> Result<(String, StrategyInputData), anyhow::Error> {
+    fn can_run_strategy(&self, execution_request: &ExecutionRequest) -> Result<String, anyhow::Error> {
         let running_key = Self::running_strategy_key(
             execution_request.strategy_name.to_lowercase().as_str(),
             execution_request.ticker.as_str(),
@@ -147,35 +138,10 @@ impl LiveStrategyExecutor {
         let strategy_name = execution_request.strategy_name
             .to_lowercase();
 
-        let mut input_data: StrategyInputData = StrategyInputData::TRADE;
-        if get_candlestick_strategy_by_name(strategy_name.as_str()).is_some() {
-            input_data = StrategyInputData::CANDLESTICK
-        } else if get_high_resolution_strategy_by_name(strategy_name.as_str()).is_none() {
+        if get_strategy_by_name(strategy_name.as_str()).is_none() {
             anyhow::bail!("no strategy found for the provided strategy name '{}'", execution_request.strategy_name);
         }
-
-        Ok((running_key, input_data))
-    }
-
-    fn start_candlestick_strategy_execution(&self, execution_key: String,
-                                            order_executor: LiveOrderExecutor,
-                                            consumer_channel: Receiver<Trade>) {
-        let running = self.running_strategy_map.get(execution_key.as_str()).unwrap().clone();
-
-        thread::spawn(move || {
-            let strategy_name = order_executor.strategy_id.as_str();
-            let mut trading_strategy = get_candlestick_strategy_by_name(strategy_name).unwrap();
-            let mut candlestick_parser = strategy::get_candlestick_generator_for_strategy(strategy_name)
-                .expect("not null");
-
-            while running.load(std::sync::atomic::Ordering::Relaxed) {
-                let new_trade = consumer_channel.recv().unwrap(); // this will block the thread until a new trade is available
-                if let Some(closed_candle) = candlestick_parser.parse_only_closed_candles(&new_trade) {
-                    let action: TradeAction = trading_strategy.process_closed_candlestick(&closed_candle);
-                    order_executor.execute_order_action(action, strategy_name);
-                }
-            }
-        });
+        Ok(running_key)
     }
 
     fn start_high_resolution_strategy_execution(&self, execution_key: String,
@@ -184,7 +150,7 @@ impl LiveStrategyExecutor {
         let running = self.running_strategy_map.get(execution_key.as_str()).unwrap().clone();
         thread::spawn(move || {
             let strategy_name = order_executor.strategy_id.as_str();
-            let mut trading_strategy = get_high_resolution_strategy_by_name(strategy_name).unwrap();
+            let mut trading_strategy = get_strategy_by_name(strategy_name).unwrap();
 
             while running.load(std::sync::atomic::Ordering::Relaxed) {
                 let new_trade = consumer_channel.recv().unwrap(); // this will block the thread until a new trade is available

@@ -47,6 +47,7 @@ pub struct BacktestMetrics {
     pub liquid_profit_best_trade: f64,
     pub liquid_profit_worst_trade: f64,
     pub trades: Vec<Position>,
+    pub largest_contracts_traded: usize,
 }
 
 impl Display for BacktestMetrics {
@@ -80,7 +81,8 @@ impl Display for BacktestMetrics {
         writeln!(f, "{0: <30} {1: <25.2?}", "Liquid PNL Worst Day", self.worse_day_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "Avg Daily Liquid PNL", self.avg_daily_liquid_profit)?;
         writeln!(f, "{0: <30} {1: <25.2?}", "PNL Best Trade", self.liquid_profit_best_trade)?;
-        writeln!(f, "{0: <30} {1: <25.2?}", "PNL Worst Trade", self.liquid_profit_worst_trade)
+        writeln!(f, "{0: <30} {1: <25.2?}", "PNL Worst Trade", self.liquid_profit_worst_trade)?;
+        writeln!(f, "{0: <30} {1: <25.2?}", "Highest Contracts Traded", self.largest_contracts_traded/2)
     }
 }
 
@@ -142,8 +144,12 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
     let mut balance_evolution_over_time: Vec<f64> = vec![INITIAL_BALANCE];
 
     let mut positions =  vec![];
+    let mut largest_contracts_traded: u32 = 0;
 
     for position in &event_handler.positions {
+        if position.quantity_of_contracts > largest_contracts_traded {
+            largest_contracts_traded = position.quantity_of_contracts;
+        }
         positions.push(position.clone());
         profit_factor_log_sum += position.sum_per_candle_total_log_returns;
 
@@ -299,6 +305,7 @@ pub(crate) fn calculate_backtest_results(event_handler: &ExchangeEventHandler) -
         liquid_profit_worst_trade,
         liquid_profit_best_trade,
         trades: positions,
+        largest_contracts_traded: largest_contracts_traded as usize,
     }
 }
 
