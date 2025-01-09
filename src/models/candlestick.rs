@@ -2,8 +2,17 @@ use chrono::{NaiveTime, Timelike};
 use dyn_clone::DynClone;
 use strum_macros::EnumString;
 use ta::{Close, High, Low, Open, Volume};
+use crate::models::side::Side;
 use crate::models::trade::Trade;
 use crate::utils::date;
+
+#[derive(Debug, PartialEq, Eq, Clone, EnumString)]
+pub enum CandlestickType {
+    TIME,
+    TICK,
+    #[allow(unused)]
+    VOLUME,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Candlestick {
@@ -12,20 +21,19 @@ pub struct Candlestick {
     pub low: f64,
     pub close: f64,
     pub volume: u64,
+    pub buy_volume: i64,
+    pub sell_volume: i64,
     pub amount_traded: f64,
     pub date: i32,
     pub start_time: NaiveTime,
     pub close_time: Option<NaiveTime>,
     pub is_closed: bool,
     pub trades: u64,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, EnumString)]
-pub enum CandlestickType {
-    TIME,
-    TICK,
-    #[allow(unused)]
-    VOLUME,
+    pub buy_trades: i64,
+    pub sell_trades: i64,
+    pub trade_imbalance: i64,
+    pub directional_strength: f64,
+    pub cumulative_volume_delta: i64,
 }
 
 pub trait CandlestickGenerator: DynClone + Send + Sync {
@@ -64,6 +72,7 @@ pub struct DollarCandlestickGenerator {
     dollars_per_candle: f64,
     current_candle: Option<Candlestick>,
     date_last_trade: i32,
+    price_last_trade: f64,
 }
 
 #[allow(unused)]
@@ -119,6 +128,13 @@ impl Candlestick {
             volume: first_trade.volume as u64,
             is_closed: false,
             trades: 1,
+            buy_trades: 0,
+            sell_trades: 0,
+            buy_volume: 0,
+            sell_volume: 0,
+            trade_imbalance: 0,
+            directional_strength: 0.0,
+            cumulative_volume_delta: 0,
         }
     }
 
@@ -133,8 +149,16 @@ impl Candlestick {
             start_time: NaiveTime::default(),
             close_time: None,
             volume: 0,
+            buy_volume: 0,
+            sell_volume: 0,
             is_closed: false,
             trades: 0,
+            buy_trades: 0,
+            sell_trades: 0,
+            trade_imbalance: 0,
+            directional_strength: 0.0,
+            cumulative_volume_delta: 0,
+
         }
     }
 
@@ -166,14 +190,20 @@ impl DollarCandlestickGenerator {
             dollars_per_candle: dollar_amount_per_candle,
             current_candle: None,
             date_last_trade: -1,
+            price_last_trade: -1.0,
         }
     }
 
     fn parse(&mut self, new_trade: &Trade, include_open_candles: bool) -> Option<Candlestick> {
         if self.current_candle.is_none() {
+            if self.price_last_trade < 0.0 {
+                self.price_last_trade = new_trade.price;
+            }
             self.date_last_trade = new_trade.date;
-            self.current_candle = Some(Candlestick::new(new_trade));
+            let mut new_candlestick = Candlestick::new(new_trade);
+            update_tick_metrics(&mut new_candlestick, new_trade, self.price_last_trade);
 
+            self.current_candle = Some(new_candlestick);
             return if include_open_candles {
                 Some(self.current_candle?.clone())
             }else{
@@ -182,6 +212,7 @@ impl DollarCandlestickGenerator {
         }
 
         if self.date_last_trade != new_trade.date {
+            self.price_last_trade = new_trade.price;
             let mut last_candle_of_day = self.current_candle?.clone();
             let close_time = date::convert_to_naive_time(new_trade.time)
                 .expect("close time should be correctly generated from trade");
@@ -189,8 +220,10 @@ impl DollarCandlestickGenerator {
             last_candle_of_day.is_closed = true;
 
             self.date_last_trade = new_trade.date;
-            self.current_candle = Some(Candlestick::new(new_trade));
 
+            let mut new_candlestick = Candlestick::new(new_trade);
+            update_tick_metrics(&mut new_candlestick, new_trade, self.price_last_trade);
+            self.current_candle = Some(new_candlestick);
             return Some(last_candle_of_day);
         }
 
@@ -198,6 +231,7 @@ impl DollarCandlestickGenerator {
         self.current_candle.as_mut()?.trades += 1;
         self.date_last_trade = new_trade.date;
         self.current_candle.as_mut()?.amount_traded += new_trade.amount_traded;
+        update_tick_metrics(self.current_candle.as_mut()?, new_trade, self.price_last_trade);
 
         // update open,high,low,close,volume
         if new_trade.price > self.current_candle?.high {
@@ -365,7 +399,7 @@ impl TimeCandlestickGenerator {
             self.last_day = new_trade.date;
             self.last_price = new_trade.price;
             let mut new_candle = Candlestick::new(new_trade);
-
+            update_tick_metrics(&mut new_candle, new_trade, self.last_price);
             new_candle.start_time = round_start_time(new_candle.start_time, self.unit, self.period);
 
             self.add_close_time_to_time_based_candlestick(&mut new_candle);
@@ -376,9 +410,10 @@ impl TimeCandlestickGenerator {
         self.last_day = new_trade.date;
 
         if self.last_candle.is_none() { // the very start when no trade was parsed yet
-            self.last_price = new_trade.price;
             let mut new_candle = Candlestick::new(new_trade);
+            update_tick_metrics(&mut new_candle, new_trade, self.last_price);
 
+            self.last_price = new_trade.price;
             new_candle.start_time = round_start_time(new_candle.start_time, self.unit, self.period);
 
             self.add_close_time_to_time_based_candlestick(&mut new_candle);
@@ -398,8 +433,9 @@ impl TimeCandlestickGenerator {
             current_time.is_some(),
             "should never fail to convert the raw time from a trade into NaiveTime. time used in conversion {}",
             new_trade.time
-        );
+        ); b
 
+        update_tick_metrics(existing_candle, new_trade, self.last_price);
         let end_time = date::increase_time(&existing_candle.start_time, self.period, self.unit);
         let is_candle_closed = current_time.unwrap().num_seconds_from_midnight() >= end_time.num_seconds_from_midnight();
         if !is_candle_closed {
@@ -932,3 +968,42 @@ mod tests {
     }
 }
 
+fn trade_direction(price_current_trade: f64, price_last_trade: f64) -> Option<Side> {
+    if price_current_trade > price_last_trade {
+        Some(Side::BUY)
+    }else if price_current_trade < price_last_trade {
+        Some(Side::SELL)
+    }else{
+        None
+    }
+}
+
+fn update_tick_metrics(candlestick: &mut Candlestick, new_trade: &Trade, price_last_trade: f64) {
+    if let Some(direction) = trade_direction(new_trade.price, price_last_trade) {
+        match direction {
+            Side::BUY => {
+                candlestick.buy_trades+=1;
+                candlestick.buy_volume+=new_trade.volume as i64;
+            },
+            Side::SELL => {
+                candlestick.sell_trades+=1;
+                candlestick.sell_volume+=new_trade.volume as i64;
+            }
+        }
+    }
+    candlestick.trade_imbalance = calculate_trade_imbalance(candlestick);
+    candlestick.cumulative_volume_delta += calculate_cumulative_volume_delta(candlestick);
+    candlestick.directional_strength+= calculate_directional_strength(new_trade, price_last_trade);
+}
+
+fn calculate_cumulative_volume_delta(candlestick: &Candlestick) -> i64 {
+    candlestick.buy_volume - candlestick.sell_volume
+}
+
+fn calculate_trade_imbalance(candlestick: &Candlestick) -> i64 {
+    (candlestick.buy_trades - candlestick.sell_trades) / candlestick.trades as i64
+}
+
+fn calculate_directional_strength(current_trade: &Trade, price_last_trade: f64) -> f64 {
+    ( current_trade.price - price_last_trade ) * current_trade.volume as f64
+}
