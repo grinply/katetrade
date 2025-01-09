@@ -121,6 +121,7 @@ impl VWAPDayInitStrategy {
             self.open_position.as_ref()?.side,
             self.open_position.as_ref()?.open_quantity,
         ) {
+            self.quadrant_changed_signal_buffer = 0;
             self.open_position = None;
             return Some(force_exit);
         }
@@ -142,10 +143,12 @@ impl VWAPDayInitStrategy {
         if let Some(_position) = self.open_position.as_mut() {
             if self.open_position.as_ref()?.side == Side::SELL && self.short_sma.turns_up() {
                 self.open_position = None;
+                self.quadrant_changed_signal_buffer = 0;
                 return Some(OrderAction::MarketLong(QUANTITY_PER_POSITION))
             }
             if self.open_position.as_ref()?.side == Side::BUY && self.short_sma.turns_down() {
                 self.open_position = None;
+                self.quadrant_changed_signal_buffer = 0;
                 return Some(OrderAction::MarketShort(QUANTITY_PER_POSITION))
             }
         }
