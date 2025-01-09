@@ -3,7 +3,7 @@ use ta::Next;
 use crate::indicators::exponential_moving_average::ExponentialMovingAverage;
 use crate::indicators::simple_moving_average::SimpleMovingAverage;
 use crate::indicators::volume_weighted_average_price::VolumeWeightedAveragePrice;
-use crate::models::action::{OrderAction, TradeAction};
+use crate::models::action::{market_order_from_side, OrderAction, TradeAction};
 use crate::models::asset::Asset;
 use crate::models::candlestick::{CandleDirection, Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
 use crate::models::side::Side;
@@ -14,13 +14,13 @@ use crate::utils::date;
 
 const SMA_PERIOD: usize = 9;
 const EMA_PERIOD: usize = 9;
-const CANDLESTICK_PERIOD: u64 = 1;
+const CANDLESTICK_PERIOD: u64 = 10;
 const QUANTITY_PER_POSITION: usize = 2;
 const CANDLESTICK_SIGNAL_BUFFER_SIZE: usize = 10;
 
-// const MAXIMUM_TICKS_STOP_LOSS: usize = 20;
+// const TICKS_STOP_LOSS: usize = 15;
 // const TICKS_FIRST_TARGET_SIGNAL: usize = 20;
-// const TICKS_SECOND_TARGET_SIGNAL: usize = 80;
+// const TICKS_SECOND_TARGET_SIGNAL: usize = 30;
 
 pub struct VWAPDayInitStrategy {
     points_per_tick_asset: Option<f64>,
@@ -30,7 +30,6 @@ pub struct VWAPDayInitStrategy {
     candle_count: usize,
     quadrant_changed_signal_buffer: usize,
     current_side: CandleDirection,
-    candles_elapsed_open_position: usize,
     candle_parser: TimeCandlestickGenerator,
     sma: SimpleMovingAverage,
     ema: ExponentialMovingAverage,
@@ -71,14 +70,19 @@ impl VWAPDayInitStrategy {
     fn should_open_position(&mut self, vwap: f64, candlestick: &Candlestick) -> Option<OrderAction> {
         let pre_signal = self.quadrant_changed_signal_buffer_calculation(&candlestick, vwap);
 
-        if self.candle_count < self.min_candles || !pre_signal || self.open_position.is_some() ||
+        if self.open_position.is_some() {
+            return None;
+        }
+
+        if self.candle_count < self.min_candles ||
             candlestick.close_time.expect("candlestick should be closed")
                 .num_seconds_from_midnight() > self.cut_off_time_sending_orders.num_seconds_from_midnight() {
             return None;
         }
 
         // Keeping it simple. Maybe validate the distance between vwap and sma, or the sma angle in the future;
-        if self.current_side == CandleDirection::SHORT && self.sma.turns_down() {
+        // if self.current_side == CandleDirection::SHORT && self.sma.turns_down() {
+        if pre_signal && self.current_side == CandleDirection::SHORT && (self.sma.turns_down() || self.sma.trending_down() ) {
             self.open_position = Some(OpenPosition::new(
                 Side::SELL,
                 candlestick.close,
@@ -88,7 +92,8 @@ impl VWAPDayInitStrategy {
             return Some(OrderAction::MarketShort(QUANTITY_PER_POSITION))
         }
 
-        if self.current_side == CandleDirection::LONG && self.sma.turns_up() {
+        // if self.current_side == CandleDirection::LONG && self.sma.turns_up() {
+        if pre_signal && self.current_side == CandleDirection::LONG && (self.sma.turns_up() || self.sma.trending_up()) {
             self.open_position = Some(OpenPosition::new(
                 Side::BUY,
                 candlestick.close,
@@ -115,19 +120,46 @@ impl VWAPDayInitStrategy {
             return Some(force_exit);
         }
 
-        if let Some(_position) = self.open_position.as_mut() {
-            self.candles_elapsed_open_position += 1;
+        // let stop_position = self.open_position.as_mut()?.first_chunk.should_close_position(new_trade.price);
+        //
+        // if stop_position {
+        //     if self.open_position.as_ref()?.side == Side::SELL {
+        //         self.open_position = None;
+        //         return Some(OrderAction::MarketLong(QUANTITY_PER_POSITION))
+        //     }
+        //
+        //     if self.open_position.as_ref()?.side == Side::BUY {
+        //         self.open_position = None;
+        //         return Some(OrderAction::MarketShort(QUANTITY_PER_POSITION))
+        //     }
+        // }
 
-            if self.current_side == CandleDirection::SHORT && self.sma.turns_up() {
+        if let Some(_position) = self.open_position.as_mut() {
+            if self.open_position.as_ref()?.side == Side::SELL && self.sma.turns_up() {
                 self.open_position = None;
                 return Some(OrderAction::MarketLong(QUANTITY_PER_POSITION))
             }
-
-            if self.current_side == CandleDirection::LONG && self.sma.turns_down() {
+            if self.open_position.as_ref()?.side == Side::BUY && self.sma.turns_down() {
                 self.open_position = None;
                 return Some(OrderAction::MarketShort(QUANTITY_PER_POSITION))
             }
         }
+
+        // if let Some(_position) = self.open_position.as_mut() {
+        //     if self.open_position.as_ref()?.side == Side::SELL && self.sma.turns_up() {
+        //         if new_trade.price < self.open_position.as_ref()?.first_chunk.entry_price  - (self.open_position.as_ref()?.first_chunk.entry_price * self.points_per_tick_asset.unwrap()) {
+        //             self.open_position = None;
+        //             return Some(OrderAction::MarketLong(QUANTITY_PER_POSITION))
+        //         }
+        //     }
+        //
+        //     if self.open_position.as_ref()?.side == Side::BUY && self.sma.turns_down() {
+        //         if new_trade.price > self.open_position.as_ref()?.first_chunk.entry_price  + (self.open_position.as_ref()?.first_chunk.entry_price * self.points_per_tick_asset.unwrap()) {
+        //             self.open_position = None;
+        //             return Some(OrderAction::MarketShort(QUANTITY_PER_POSITION))
+        //         }
+        //     }
+        // }
 
         None
     }
@@ -162,13 +194,12 @@ impl TradingStrategy for VWAPDayInitStrategy {
     {
         VWAPDayInitStrategy {
             points_per_tick_asset: None,
-            cut_off_time_sending_orders: NaiveTime::from_hms_opt(11, 30, 00).unwrap(),
-            time_force_close_open_positions: NaiveTime::from_hms_opt(17, 00, 00).unwrap(),
+            cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 30, 00).unwrap(),
+            time_force_close_open_positions: NaiveTime::from_hms_opt(17, 30, 00).unwrap(),
             min_candles: 10,
-            candles_elapsed_open_position: 0,
             candle_count: 0,
             quadrant_changed_signal_buffer: 0,
-            candle_parser: TimeCandlestickGenerator::new(TimeUnit::Minutes, CANDLESTICK_PERIOD),
+            candle_parser: TimeCandlestickGenerator::new(TimeUnit::Seconds, CANDLESTICK_PERIOD),
             sma: SimpleMovingAverage::new(SMA_PERIOD).unwrap(),
             ema: ExponentialMovingAverage::default(EMA_PERIOD),
             vwap: VolumeWeightedAveragePrice::new().unwrap(),
@@ -183,7 +214,6 @@ impl TradingStrategy for VWAPDayInitStrategy {
 
     fn init_trading_day(&mut self, asset: &Asset, _trades: &[Trade]) {
         self.points_per_tick_asset = Some(asset.min_point_variation);
-        self.candles_elapsed_open_position = 0;
         self.candle_count = 0;
         self.quadrant_changed_signal_buffer = 0;
 
@@ -204,6 +234,10 @@ impl TradingStrategy for VWAPDayInitStrategy {
             let vwap = self.vwap.next(&candlestick);
 
             order_open_position = self.should_open_position(vwap, &candlestick);
+
+            if let Some(position) = self.open_position.as_mut() {
+                position.first_chunk.set_stop_loss(vwap);
+            }
         }
 
         TradeAction::custom_order(order_close_position, order_open_position, None, None)
@@ -236,6 +270,16 @@ impl OpenPosition {
                 side,
                 points_per_tick,
             ),
+            // first_chunk: TrailingStop::new(
+            //     entry_price,
+            //     side,
+            //     points_per_tick,
+            //     TICKS_STOP_LOSS,
+            //     TICKS_FIRST_TARGET_SIGNAL,
+            //     1,
+            //     1,
+            //     1
+            // )
         }
     }
 }
