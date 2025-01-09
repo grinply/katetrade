@@ -433,7 +433,7 @@ impl TimeCandlestickGenerator {
             current_time.is_some(),
             "should never fail to convert the raw time from a trade into NaiveTime. time used in conversion {}",
             new_trade.time
-        ); b
+        );
 
         update_tick_metrics(existing_candle, new_trade, self.last_price);
         let end_time = date::increase_time(&existing_candle.start_time, self.period, self.unit);
@@ -678,6 +678,7 @@ mod tests {
         assert_eq!(3, last_candle.trades);
         assert_eq!(date::convert_to_naive_time(09_02_00).unwrap(), last_candle.start_time);
     }
+
     #[test]
     fn time_candlesticks_generator_should_correctly_create_closed_only_candles_of_one_minute() {
         let mut generator = TimeCandlestickGenerator::new(TimeUnit::Minutes, 1);
