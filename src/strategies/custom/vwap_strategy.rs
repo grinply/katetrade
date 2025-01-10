@@ -1,13 +1,11 @@
 use chrono::{NaiveTime, Timelike};
 use ta::Next;
-use crate::indicators::exponential_moving_average::ExponentialMovingAverage;
 use crate::indicators::simple_moving_average::SimpleMovingAverage;
 use crate::indicators::volume_weighted_average_price::VolumeWeightedAveragePrice;
-use crate::models::action::{market_order_from_side, OrderAction, TradeAction};
+use crate::models::action::{OrderAction, TradeAction};
 use crate::models::asset::Asset;
 use crate::models::candlestick::{CandleDirection, Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
 use crate::models::side::Side;
-use crate::models::side::Side::BUY;
 use crate::models::trade::Trade;
 use crate::services::trailing_stop::TrailingStop;
 use crate::strategies::strategy::{TradingStrategy};
@@ -16,7 +14,7 @@ use crate::utils::date;
 const SHORT_SMA_PERIOD: usize = 9;
 
 const LONG_SMA_PERIOD: usize = 9;
-const EMA_PERIOD: usize = 9;
+// const EMA_PERIOD: usize = 9;
 const CANDLESTICK_PERIOD: u64 = 1;
 const QUANTITY_PER_POSITION: usize = 8;
 const CANDLESTICK_SIGNAL_BUFFER_SIZE: usize = 10;
