@@ -339,12 +339,19 @@ mod tests {
             low: 0.0,
             close,
             volume: 0,
+            buy_volume: 0,
+            sell_volume: 0,
             amount_traded: 0.0,
             date: 0,
             start_time: date::convert_to_naive_time(09_00_00).unwrap(),
             close_time: None,
             is_closed: false,
             trades: 0,
+            buy_trades: 0,
+            sell_trades: 0,
+            trade_imbalance: 0,
+            directional_strength: 0.0,
+            cumulative_volume_delta: 0,
         }
     }
 }
