@@ -7,6 +7,7 @@ use crate::models::action::{market_order_from_side, OrderAction, TradeAction};
 use crate::models::asset::Asset;
 use crate::models::candlestick::{CandleDirection, Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
 use crate::models::side::Side;
+use crate::models::side::Side::BUY;
 use crate::models::trade::Trade;
 use crate::services::trailing_stop::TrailingStop;
 use crate::strategies::strategy::{TradingStrategy};
@@ -35,9 +36,9 @@ pub struct VWAPDayInitStrategy {
     candle_parser: TimeCandlestickGenerator,
     short_sma: SimpleMovingAverage,
     long_sma: SimpleMovingAverage,
-    ema: ExponentialMovingAverage,
     vwap: VolumeWeightedAveragePrice,
     open_position: Option<OpenPosition>
+    // ema: ExponentialMovingAverage,
 }
 
 impl VWAPDayInitStrategy {
@@ -210,7 +211,7 @@ impl TradingStrategy for VWAPDayInitStrategy {
             candle_parser: TimeCandlestickGenerator::new(TimeUnit::Minutes, CANDLESTICK_PERIOD),
             short_sma: SimpleMovingAverage::new(SHORT_SMA_PERIOD).unwrap(),
             long_sma: SimpleMovingAverage::new(LONG_SMA_PERIOD).unwrap(),
-            ema: ExponentialMovingAverage::default(SHORT_SMA_PERIOD),
+            // ema: ExponentialMovingAverage::default(SHORT_SMA_PERIOD),
             vwap: VolumeWeightedAveragePrice::new().unwrap(),
             current_side: CandleDirection::UNDEFINED,
             open_position: None,
@@ -228,7 +229,7 @@ impl TradingStrategy for VWAPDayInitStrategy {
 
         self.short_sma.reset();
         self.long_sma.reset();
-        self.ema.reset();
+        // self.ema.reset();
         self.vwap.reset();
     }
 
@@ -238,10 +239,11 @@ impl TradingStrategy for VWAPDayInitStrategy {
 
         if let Some(candlestick) = self.candle_parser.parse_only_closed_candles(new_trade) {
             self.candle_count += 1;
+            // println!("IMBALANCE: {}, CUMULATIVE DELTA: {}, STR: {}", candlestick.trade_imbalance, candlestick.cumulative_volume_delta, candlestick.directional_strength);
 
             let _short_sma = self.short_sma.next(candlestick);
             let _long_sma = self.long_sma.next(candlestick);
-            let _ema = self.ema.next(candlestick);
+            // let _ema = self.ema.next(candlestick);
             let vwap = self.vwap.next(&candlestick);
 
             order_open_position = self.should_open_position(vwap, &candlestick);
@@ -260,7 +262,7 @@ struct OpenPosition {
     side: Side,
     open_quantity: usize,
     quantity_per_chunk: [usize; 1],
-    first_chunk: TrailingStop,
+    first_chunk: TrailingStop
 }
 
 #[allow(unused)]
@@ -280,7 +282,7 @@ impl OpenPosition {
                 entry_price,
                 side,
                 points_per_tick,
-            ),
+            )
             // first_chunk: TrailingStop::new(
             //     entry_price,
             //     side,
