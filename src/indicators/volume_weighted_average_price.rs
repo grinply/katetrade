@@ -16,7 +16,7 @@ use ta::{Close, High, Low, Next, Volume};
 pub struct VolumeWeightedAveragePrice {
     index: usize,
     current_value: f64,
-    cumulative_typical_price: f64,
+    cumulative_price_volume: f64,
     cumulative_volume: f64
 }
 
@@ -26,7 +26,7 @@ impl VolumeWeightedAveragePrice {
         Ok(Self {
             index: 0,
             current_value: 0.0,
-            cumulative_typical_price: 0.0,
+            cumulative_price_volume: 0.0,
             cumulative_volume: 0.0
         })
     }
@@ -42,7 +42,7 @@ impl VolumeWeightedAveragePrice {
     pub fn reset(&mut self) {
         self.index = 0;
         self.current_value = 0.0;
-        self.cumulative_typical_price = 0.0;
+        self.cumulative_price_volume = 0.0;
         self.cumulative_volume = 0.0;
     }
 }
@@ -51,11 +51,11 @@ impl<T: High + Low + Close + Volume> Next<&T> for VolumeWeightedAveragePrice {
     type Output = f64;
 
     fn next(&mut self, input: &T) -> Self::Output {
-        let typical_price = (input.high() + input.low() + input.close()) / 3.0;
-        self.cumulative_typical_price += typical_price;
+        let typical_price_volume = ((input.high() + input.low() + input.close()) / 3.0) * input.volume();
+        self.cumulative_price_volume += typical_price_volume;
         self.cumulative_volume += input.volume();
 
-        self.current_value = self.cumulative_typical_price * input.volume() / self.cumulative_volume;
+        self.current_value = self.cumulative_price_volume / self.cumulative_volume;
 
         self.index += 1;
         self.current_value
@@ -78,7 +78,7 @@ mod tests {
     fn test_new() {
         let vwap = VolumeWeightedAveragePrice::new().unwrap();
         assert_eq!(vwap.index, 0);
-        assert_eq!(vwap.cumulative_typical_price, 0.0);
+        assert_eq!(vwap.cumulative_price_volume, 0.0);
         assert_eq!(vwap.cumulative_volume, 0.0);
     }
 
@@ -87,10 +87,8 @@ mod tests {
         let test_data = vec![
             // high, low , close, volume, expected
             (150.5, 145.0, 148.0, 5000, 147.83),
-            (155.0, 147.5, 153.0, 4000, 133.19),
-            (160.0, 150.0, 155.0, 6000, 181.87),
-            (158.5, 151.0, 154.5, 4500, 140.62),
-            (162.0, 153.5, 159.0, 5500, 168.85)
+            (155.0, 147.5, 153.0, 4000, 149.61),
+            (160.0, 150.0, 155.0, 6000, 151.77)
         ];
         let mut expected_index = 0usize;
 
@@ -121,7 +119,7 @@ mod tests {
         vwap.reset();
 
         assert_eq!(vwap.current_value, 0.0);
-        assert_eq!(vwap.cumulative_typical_price, 0.0);
+        assert_eq!(vwap.cumulative_price_volume, 0.0);
         assert_eq!(vwap.cumulative_volume, 0.0);
     }
 }

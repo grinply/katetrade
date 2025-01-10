@@ -3,6 +3,7 @@ use crate::models::asset::Asset;
 use crate::models::trade::Trade;
 use crate::strategies::custom::dummy_strategy::{DummyHighResolutionStrategy};
 use crate::strategies::custom::stormer_scalper_strategy::StormerScalperStrategy;
+use crate::strategies::custom::vwap_strategy::VWAPDayInitStrategy;
 
 /// algorithmic trading strategy to operate in the capital markets using raw Trade data
 pub trait TradingStrategy {
@@ -29,6 +30,7 @@ pub fn list_all_trading_strategies() -> Vec<Box<dyn TradingStrategy>> {
     vec![
         Box::new(DummyHighResolutionStrategy::new()),
         Box::new(StormerScalperStrategy::new()),
+        Box::new(VWAPDayInitStrategy::new()),
     ]
 }
 

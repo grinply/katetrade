@@ -30,6 +30,72 @@ impl SimpleMovingAverage {
         })
     }
 
+    pub fn trending_up(&mut self) -> bool {
+        if self.period < 3 {
+            unimplemented!();
+        }
+        assert!(self.count >= 3, "The SimpleMovingAverage needs to have at least 3 valid values for function trending_up().");
+
+        let last_but_one_value = self.results[2];
+        let last_value = self.results[1];
+        let current_value = self.results[0];
+
+        if last_but_one_value < last_value && last_value < current_value {
+            return true;
+        }
+        false
+    }
+
+    pub fn trending_down(&mut self) -> bool {
+        if self.period < 3 {
+            unimplemented!();
+        }
+        assert!(self.count >= 3, "The SimpleMovingAverage needs to have at least 3 valid values for function trending_down().");
+
+        let last_but_one_value = self.results[2];
+        let last_value = self.results[1];
+        let current_value = self.results[0];
+
+        if last_but_one_value > last_value && last_value > current_value {
+            return true;
+        }
+        false
+    }
+
+    pub fn turns_up(&self) -> bool {
+        if self.period < 3 {
+            unimplemented!();
+        }
+
+        assert!(self.count >= 3, "The SimpleMovingAverage needs to have at least 3 valid values for function turns_up().");
+
+        let last_but_one_value = self.results[2];
+        let last_value = self.results[1];
+        let current_value = self.results[0];
+
+        if self.count >= 3 && last_but_one_value >= last_value && current_value > last_value {
+            return true;
+        }
+        false
+    }
+
+    pub fn turns_down(&self) -> bool {
+        if self.period < 3 {
+            unimplemented!();
+        }
+
+        assert!(self.count >= 3, "The SimpleMovingAverage needs to have at least 3 valid values for function turns_down().");
+
+        let last_but_one_value = self.results[2];
+        let last_value = self.results[1];
+        let current_value = self.results[0];
+
+        if self.count >= 3 && last_but_one_value <= last_value && current_value < last_value {
+            return true;
+        }
+        false
+    }
+
     pub fn value(&self) -> f64 {
         self.current_value
     }
@@ -83,6 +149,7 @@ impl SimpleMovingAverage {
         self.current_value = 0.0;
         for i in 0..self.period {
             self.deque[i] = 0.0;
+            self.results[i] = 0.0;
         }
     }
 }
@@ -99,7 +166,6 @@ impl Next<f64> for SimpleMovingAverage {
     fn next(&mut self, input: f64) -> Self::Output {
         let old_val = self.deque[self.index];
         self.deque[self.index] = input;
-        let initial_index = self.index;
 
 
         self.index = if self.index + 1 < self.period {
@@ -114,7 +180,10 @@ impl Next<f64> for SimpleMovingAverage {
 
         self.sum = self.sum - old_val + input;
         self.current_value = self.sum / (self.count as f64);
-        self.results[initial_index] = self.current_value;
+
+        self.results.rotate_right(1);
+        self.results[0] = self.current_value;
+
         self.current_value
     }
 }
@@ -212,6 +281,55 @@ mod tests {
 
         sma.next(11.0);
         assert_eq!(sma.max_value_on_period(), 31.0);
+    }
+
+    #[test]
+    fn test_turn_up(){
+        let mut sma = SimpleMovingAverage::new(3).unwrap();
+        sma.next(3.0);
+        sma.next(1.0);
+        sma.next(5.0);
+        assert_eq!(sma.turns_up(), true);
+
+        sma.next(6.0);
+        assert_eq!(sma.turns_up(), false);
+        //
+        sma.next(7.0);
+        assert_eq!(sma.turns_up(), false);
+
+        sma.next(1.0);
+        assert_eq!(sma.turns_up(), false);
+
+        sma.next(6.0);
+        assert_eq!(sma.turns_up(), false);
+
+        sma.next(10.0);
+        assert_eq!(sma.turns_up(), true);
+    }
+
+    #[test]
+    fn test_turn_down(){
+        // Values of result [ 3, 2, 3, 4, 5, 4.66, 4.66, 2,66 ]
+        let mut sma = SimpleMovingAverage::new(3).unwrap();
+        sma.next(3.0);
+        sma.next(1.0);
+        sma.next(5.0);
+        assert_eq!(sma.turns_down(), false);
+
+        sma.next(6.0);
+        assert_eq!(sma.turns_down(), false);
+        //
+        sma.next(7.0);
+        assert_eq!(sma.turns_down(), false);
+
+        sma.next(1.0);
+        assert_eq!(sma.turns_down(), true);
+
+        sma.next(6.0);
+        assert_eq!(sma.turns_down(), false);
+
+        sma.next(1.0);
+        assert_eq!(sma.turns_down(), true);
     }
 
     fn new_candle(close: f64) -> Candlestick {
