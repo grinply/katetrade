@@ -13,7 +13,7 @@ use crate::services::backtest::logger::log_lack_of_margin;
 use crate::strategies::strategy::{TradingStrategy};
 use crate::utils::date;
 
-pub const INITIAL_BALANCE: f64 = 10_000.0;
+pub const INITIAL_BALANCE: f64 = 40_000.0;
 pub const MINIMUM_BALANCE: f64 = 800.0;
 const DEFAULT_SLIPPAGE_MULTIPLIER: f64 = 0.0001;
 const COMPULSORY_CLOSE_FEE: f64 = 25.0;
