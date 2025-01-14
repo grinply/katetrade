@@ -30,6 +30,10 @@ impl SimpleMovingAverage {
         })
     }
 
+    pub fn previous_value(&self) -> f64 {
+        self.results[1]
+    }
+
     pub fn trending_up(&mut self) -> bool {
         if self.period < 3 {
             unimplemented!();

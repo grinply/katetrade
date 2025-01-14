@@ -14,7 +14,7 @@ pub enum BacktestEvent {
     RemovedForLackOfMargin,
 }
 
-const LOG_ACTIVE: bool = false;
+const LOG_ACTIVE: bool = true;
 
 pub fn log_balance_change(
     date: NaiveDate,

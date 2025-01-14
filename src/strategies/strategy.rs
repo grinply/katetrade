@@ -1,6 +1,7 @@
 use crate::models::action::TradeAction;
 use crate::models::asset::Asset;
 use crate::models::trade::Trade;
+use crate::strategies::custom::cross_sma_strategy::CrossSMAStrategy;
 use crate::strategies::custom::dummy_strategy::{DummyHighResolutionStrategy};
 use crate::strategies::custom::stormer_scalper_strategy::StormerScalperStrategy;
 use crate::strategies::custom::vwap_strategy::VWAPDayInitStrategy;
@@ -31,6 +32,7 @@ pub fn list_all_trading_strategies() -> Vec<Box<dyn TradingStrategy>> {
         Box::new(DummyHighResolutionStrategy::new()),
         Box::new(StormerScalperStrategy::new()),
         Box::new(VWAPDayInitStrategy::new()),
+        Box::new(CrossSMAStrategy::new())
     ]
 }
 

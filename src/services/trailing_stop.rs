@@ -51,7 +51,7 @@ impl TrailingStop {
                 let trailing_activation_price = current_price + (points_per_tick * ticks_trigger_start_trailing as f64);
                 TrailingStop {
                     entry_price: current_price,
-                    stop_loss_price: current_price - points_per_tick * ticks_stop_loss as f64,
+                    stop_loss_price: current_price - (points_per_tick * ticks_stop_loss as f64),
                     points_per_tick,
                     direction,
                     is_finished: false,
