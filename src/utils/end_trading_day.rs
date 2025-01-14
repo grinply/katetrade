@@ -1,8 +1,5 @@
-use chrono::Timelike;
 use crate::models::action::OrderAction;
 use crate::models::side::Side;
-use crate::models::trade::Trade;
-use crate::utils::date;
 
 pub(crate) fn should_force_close_position_end_trading_day(current_time: u32, side: Side, open_quantity: usize, force_close_time: u32) -> Option<OrderAction> {
 
