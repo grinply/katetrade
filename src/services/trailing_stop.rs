@@ -149,7 +149,7 @@ impl TrailingStop {
             Side::BUY => {
                 if current_price > self.entry_price {
                     let diff = (current_price - self.entry_price) / self.points_per_tick;
-                    if diff > self.max_ticks_in_positive_direction as f64 {
+                     if diff > self.max_ticks_in_positive_direction as f64 {
                         self.max_ticks_in_positive_direction= diff as usize;
                     }
                 }
