@@ -232,6 +232,7 @@ impl TradingStrategy for VWAPDayInitStrategy {
     }
 
     fn process_new_trade(&mut self, new_trade: &Trade) -> TradeAction {
+        assert_ne!(self.points_per_tick_asset, None, "Points Per Tick Asset should not be None");
         let mut order_open_position: Option<OrderAction> = None;
         let order_close_position: Option<OrderAction> = self.should_close_position(new_trade);
 
