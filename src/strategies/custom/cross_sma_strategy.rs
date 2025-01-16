@@ -1,14 +1,15 @@
 use chrono::{NaiveTime, Timelike};
 use ta::Next;
 use crate::indicators::simple_moving_average::SimpleMovingAverage;
+use crate::indicators::volume_weighted_average_price::VolumeWeightedAveragePrice;
 use crate::models::action::{market_order_from_side, OrderAction, TradeAction};
 use crate::models::asset::Asset;
-use crate::models::candlestick::{Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
+use crate::models::candlestick::{CandleDirection, Candlestick, CandlestickGenerator, TimeCandlestickGenerator, TimeUnit};
 use crate::models::side::Side;
 use crate::models::trade::Trade;
 use crate::services::trailing_stop::TrailingStop;
 use crate::strategies::strategy::{TradingStrategy};
-use crate::utils::end_trading_day;
+use crate::utils::{date, end_trading_day};
 
 const SHORT_SMA_PERIOD: usize = 9;
 
@@ -23,7 +24,7 @@ const MIN_CANDLES_TO_START: usize = 51;
 
 pub struct CrossSMAStrategy {
     points_per_tick_asset: Option<f64>,
-    //cut_off_time_sending_orders: NaiveTime,
+    cut_off_time_sending_orders: NaiveTime,
     time_force_close_open_positions: NaiveTime,
     candle_count: usize,
     candle_parser: TimeCandlestickGenerator,
@@ -47,7 +48,7 @@ impl CrossSMAStrategy {
         false
     }
 
-    fn should_open_position(&mut self, _candlestick: &Candlestick) -> Option<OrderAction> {
+    fn should_open_position(&mut self, candlestick: &Candlestick) -> Option<OrderAction> {
         if self.open_position.is_some() {
             return None;
         }
@@ -137,7 +138,7 @@ impl TradingStrategy for CrossSMAStrategy {
     {
         CrossSMAStrategy {
             points_per_tick_asset: None,
-            //cut_off_time_sending_orders: NaiveTime::from_hms_opt(17, 20, 00).unwrap(),
+            cut_off_time_sending_orders: NaiveTime::from_hms_opt(17, 20, 00).unwrap(),
             time_force_close_open_positions: NaiveTime::from_hms_opt(17, 30, 00).unwrap(),
             candle_count: 0,
             candle_parser: TimeCandlestickGenerator::new(CANDLESTICK_PERIOD_UNIT, CANDLESTICK_PERIOD),
