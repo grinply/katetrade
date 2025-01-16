@@ -200,7 +200,7 @@ impl TradingStrategy for VWAPDayInitStrategy {
         Self: Sized
     {
         VWAPDayInitStrategy {
-            points_per_tick_asset: None,
+            points_per_tick_asset: Some(5.0), // FIXME: Hardcoded, need to update using min_point_variation
             cut_off_time_sending_orders: NaiveTime::from_hms_opt(10, 30, 00).unwrap(),
             time_force_close_open_positions: NaiveTime::from_hms_opt(17, 30, 00).unwrap(),
             min_candles: 20,
@@ -209,7 +209,6 @@ impl TradingStrategy for VWAPDayInitStrategy {
             candle_parser: TimeCandlestickGenerator::new(TimeUnit::Minutes, CANDLESTICK_PERIOD),
             short_sma: SimpleMovingAverage::new(SHORT_SMA_PERIOD).unwrap(),
             long_sma: SimpleMovingAverage::new(LONG_SMA_PERIOD).unwrap(),
-            // ema: ExponentialMovingAverage::default(SHORT_SMA_PERIOD),
             vwap: VolumeWeightedAveragePrice::new().unwrap(),
             current_side: CandleDirection::UNDEFINED,
             open_position: None,
@@ -221,7 +220,8 @@ impl TradingStrategy for VWAPDayInitStrategy {
     }
 
     fn init_trading_day(&mut self, asset: &Asset, _trades: &[Trade]) {
-        self.points_per_tick_asset = Some(asset.min_point_variation);
+        // FIXME: This is not working, need to update market-connector values for min_point_variation
+        // self.points_per_tick_asset = Some(asset.min_point_variation);
         self.candle_count = 0;
         self.quadrant_changed_signal_buffer = 0;
 
