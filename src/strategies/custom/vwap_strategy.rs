@@ -219,7 +219,7 @@ impl TradingStrategy for VWAPDayInitStrategy {
         "VWAP_init_trading_day_strategy"
     }
 
-    fn init_trading_day(&mut self, asset: &Asset, _trades: &[Trade]) {
+    fn init_trading_day(&mut self, _asset: &Asset, _trades: &[Trade]) {
         // FIXME: This is not working, need to update market-connector values for min_point_variation
         // self.points_per_tick_asset = Some(asset.min_point_variation);
         self.candle_count = 0;
