@@ -8,7 +8,7 @@ pub const S3_BUCKET_HISTORICAL_DATA: &'static str = "profitpirates";
 const CONFIGURATION_FOLDER: &'static str = ".kate";
 const CONFIGURATION_FILE: &'static str = "config.json";
 const DEFAULT_MARKET_CONNECTOR_URL: &'static str = "http://market-connector.grinply.com";
-const DEFAULT_MARKET_CONNECTOR_SOCKET_URL: &'static str = "http://market-connector.grinply.com:8022";
+const DEFAULT_MARKET_CONNECTOR_SOCKET_URL: &'static str = "market-connector.grinply.com:8022";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct KateConfiguration {
