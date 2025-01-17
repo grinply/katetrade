@@ -8,7 +8,7 @@ use crate::models::side::Side;
 /// **important:** you must call the function [TrailingStop::should_close_position] with every new price update
 /// to allow the trailing stop to properly **adjust** the desired **stop loss**
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TrailingStop {
     entry_price: f64,
     stop_loss_price: f64,
@@ -51,7 +51,7 @@ impl TrailingStop {
                 let trailing_activation_price = current_price + (points_per_tick * ticks_trigger_start_trailing as f64);
                 TrailingStop {
                     entry_price: current_price,
-                    stop_loss_price: current_price - points_per_tick * ticks_stop_loss as f64,
+                    stop_loss_price: current_price - (points_per_tick * ticks_stop_loss as f64),
                     points_per_tick,
                     direction,
                     is_finished: false,
@@ -149,7 +149,7 @@ impl TrailingStop {
             Side::BUY => {
                 if current_price > self.entry_price {
                     let diff = (current_price - self.entry_price) / self.points_per_tick;
-                    if diff > self.max_ticks_in_positive_direction as f64 {
+                     if diff > self.max_ticks_in_positive_direction as f64 {
                         self.max_ticks_in_positive_direction= diff as usize;
                     }
                 }

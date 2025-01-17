@@ -401,10 +401,10 @@ impl TimeCandlestickGenerator {
             let mut new_candle = Candlestick::new(new_trade);
             update_tick_metrics(&mut new_candle, new_trade, self.last_price);
             new_candle.start_time = round_start_time(new_candle.start_time, self.unit, self.period);
-
+            let result_candle = self.last_candle.clone()?;
             self.add_close_time_to_time_based_candlestick(&mut new_candle);
             self.last_candle = Some(new_candle);
-            return Some(self.last_candle.clone()?);
+            return Some(result_candle);
         }
 
         self.last_day = new_trade.date;
